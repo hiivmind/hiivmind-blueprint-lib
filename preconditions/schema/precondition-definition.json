@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hiivmind.dev/schemas/precondition-definition.json",
+  "$comment": "Schema version 1.0 - Precondition definition format for modular YAML files",
+  "title": "Precondition Definition Schema",
+  "description": "Schema for YAML precondition definition files",
+  "type": "object",
+  "required": ["schema_version", "category", "description", "preconditions"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$",
+      "description": "Schema version (semver major.minor)"
+    },
+    "category": {
+      "type": "string",
+      "pattern": "^(core|extensions)/[a-z-]+$",
+      "description": "Category path (e.g., 'core/filesystem', 'extensions/source')"
+    },
+    "description": {
+      "type": "string",
+      "description": "Brief description of this category"
+    },
+    "preconditions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/precondition"
+      }
+    }
+  },
+  "$defs": {
+    "precondition": {
+      "type": "object",
+      "required": ["type", "description", "parameters", "evaluation"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Unique precondition type identifier"
+        },
+        "description": {
+          "$ref": "#/$defs/preconditionDescription"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/parameter"
+          }
+        },
+        "evaluation": {
+          "$ref": "#/$defs/evaluation"
+        },
+        "examples": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/example"
+          }
+        },
+        "related": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Related precondition types"
+        },
+        "since": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Version when this precondition was introduced"
+        }
+      }
+    },
+    "preconditionDescription": {
+      "type": "object",
+      "required": ["brief"],
+      "additionalProperties": false,
+      "properties": {
+        "brief": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "One-line description"
+        },
+        "detail": {
+          "type": "string",
+          "description": "Extended description with markdown"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Additional notes and caveats"
+        }
+      }
+    },
+    "parameter": {
+      "type": "object",
+      "required": ["name", "type", "required", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Parameter name"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["string", "boolean", "number", "object", "array", "any"],
+          "description": "Parameter type"
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether parameter is required"
+        },
+        "description": {
+          "type": "string",
+          "description": "Parameter description"
+        },
+        "default": {
+          "description": "Default value if not provided"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern for string validation"
+        },
+        "enum": {
+          "type": "array",
+          "description": "Allowed values"
+        },
+        "interpolatable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether ${} interpolation is supported"
+        }
+      }
+    },
+    "evaluation": {
+      "type": "object",
+      "required": ["effect"],
+      "additionalProperties": false,
+      "description": "Describes how the precondition is evaluated (pure boolean, no side effects)",
+      "properties": {
+        "effect": {
+          "type": "string",
+          "description": "Pseudocode describing the boolean evaluation"
+        },
+        "reads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "State or file paths read during evaluation"
+        },
+        "functions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Built-in functions used (e.g., file_exists, len)"
+        }
+      }
+    },
+    "example": {
+      "type": "object",
+      "required": ["title", "yaml"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Example title"
+        },
+        "yaml": {
+          "type": "string",
+          "description": "YAML example code"
+        },
+        "context": {
+          "type": "object",
+          "description": "Context in which evaluation occurs",
+          "properties": {
+            "state": {
+              "type": "object",
+              "description": "Relevant state for evaluation"
+            },
+            "files": {
+              "type": "object",
+              "description": "Relevant files and their existence/content"
+            }
+          }
+        },
+        "result": {
+          "type": "boolean",
+          "description": "Expected evaluation result"
+        }
+      }
+    }
+  }
+}

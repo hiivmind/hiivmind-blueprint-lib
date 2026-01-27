@@ -1,0 +1,177 @@
+# Core Logging Preconditions
+# Logging lifecycle and configuration checks
+
+schema_version: "1.0"
+category: core/logging
+description: Logging state verification preconditions
+
+preconditions:
+  # --------------------------------------------------------------------------
+  # log_initialized
+  # --------------------------------------------------------------------------
+  - type: log_initialized
+    description:
+      brief: Check if logging has been initialized
+      detail: |
+        Evaluates to true if init_log has been called and logging is ready.
+        Checks the log_initialized flag in state.
+      notes:
+        - Required before log_node, log_event, etc.
+        - Set by init_log consequence
+        - Use as entry gate for logging phases
+
+    parameters: []
+
+    evaluation:
+      effect: |
+        return state.flags.log_initialized == true
+      reads:
+        - "state.flags.log_initialized"
+      functions: []
+
+    examples:
+      - title: Validate logging ready
+        yaml: |
+          - type: log_initialized
+        context:
+          state:
+            flags:
+              log_initialized: true
+        result: true
+
+      - title: Logging not initialized
+        yaml: |
+          - type: log_initialized
+        context:
+          state:
+            flags: {}
+        result: false
+
+    related:
+      - log_finalized
+      - log_level_enabled
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # log_level_enabled
+  # --------------------------------------------------------------------------
+  - type: log_level_enabled
+    description:
+      brief: Check if log level allows specific threshold
+      detail: |
+        Evaluates to true if the current log level configuration allows
+        logging at the specified level. Uses level hierarchy:
+        trace > debug > info > warn > error
+      notes:
+        - Level hierarchy from verbose to quiet
+        - trace includes all levels
+        - error only includes error level
+        - Resolved from logging config cascade
+
+    parameters:
+      - name: level
+        type: string
+        required: true
+        description: Minimum level to check
+        enum:
+          - trace
+          - debug
+          - info
+          - warn
+          - error
+        interpolatable: false
+
+    evaluation:
+      effect: |
+        level_hierarchy = ["error", "warn", "info", "debug", "trace"]
+        current_level = get_log_config("level")
+        current_index = level_hierarchy.index(current_level)
+        check_index = level_hierarchy.index(level)
+        return current_index >= check_index
+      reads:
+        - "state.logging.level"
+      functions:
+        - get_log_config
+
+    examples:
+      - title: Check if debug logging enabled
+        yaml: |
+          - type: log_level_enabled
+            level: debug
+        context:
+          state:
+            logging:
+              level: "debug"
+        result: true
+
+      - title: Trace check with info level
+        yaml: |
+          - type: log_level_enabled
+            level: trace
+        context:
+          state:
+            logging:
+              level: "info"
+        result: false
+
+      - title: Error always enabled
+        yaml: |
+          - type: log_level_enabled
+            level: error
+        context:
+          state:
+            logging:
+              level: "error"
+        result: true
+
+    related:
+      - log_initialized
+      - log_finalized
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # log_finalized
+  # --------------------------------------------------------------------------
+  - type: log_finalized
+    description:
+      brief: Check if logging has been finalized
+      detail: |
+        Evaluates to true if finalize_log has been called.
+        Used to prevent double-finalization or gate write_log.
+      notes:
+        - Set by finalize_log consequence
+        - Prevents duplicate finalization
+        - Required before write_log
+
+    parameters: []
+
+    evaluation:
+      effect: |
+        return state.flags.log_finalized == true
+      reads:
+        - "state.flags.log_finalized"
+      functions: []
+
+    examples:
+      - title: Check log is finalized
+        yaml: |
+          - type: log_finalized
+        context:
+          state:
+            flags:
+              log_finalized: true
+        result: true
+
+      - title: Log not yet finalized
+        yaml: |
+          - type: log_finalized
+        context:
+          state:
+            flags:
+              log_initialized: true
+        result: false
+
+    related:
+      - log_initialized
+      - log_level_enabled
+    since: "1.0.0"

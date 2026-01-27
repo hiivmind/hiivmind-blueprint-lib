@@ -1,0 +1,54 @@
+# Blueprint Types Package Manifest
+# Semantic type definitions for hiivmind-blueprint workflows
+
+name: hiivmind-blueprint-types
+version: "1.0.0"
+description: |
+  Externalized type definitions for hiivmind-blueprint workflows.
+  Provides 43 consequence types and 27 precondition types that can be
+  referenced by URL, similar to GitHub Actions.
+
+repository: https://github.com/hiivmind/hiivmind-blueprint-types
+license: MIT
+
+# Schema versions for each type system
+schemas:
+  consequence: "1.1"
+  precondition: "1.0"
+
+# Statistics
+stats:
+  consequence_types: 43
+  precondition_types: 27
+  core_consequence_types: 30
+  extension_consequence_types: 13
+  core_precondition_types: 22
+  extension_precondition_types: 5
+
+# Artifacts produced by releases
+artifacts:
+  - bundle.yaml           # Everything in one file (simple fetch)
+  - consequences/         # Split files (selective loading)
+  - preconditions/        # Split files (selective loading)
+  - schema/               # JSON Schema definitions
+
+# Compatibility
+minimum_blueprint_version: "1.0.0"
+
+# How to reference this package from a workflow
+usage: |
+  In your workflow.yaml:
+
+  ```yaml
+  definitions:
+    source: https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/bundle.yaml
+  ```
+
+  Or for selective loading:
+
+  ```yaml
+  definitions:
+    source: https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/
+    consequences: consequences/index.yaml
+    preconditions: preconditions/index.yaml
+  ```

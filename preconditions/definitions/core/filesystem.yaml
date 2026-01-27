@@ -1,0 +1,253 @@
+# Core Filesystem Preconditions
+# File and directory existence checks
+
+schema_version: "1.0"
+category: core/filesystem
+description: File system existence checks
+
+preconditions:
+  # --------------------------------------------------------------------------
+  # config_exists
+  # --------------------------------------------------------------------------
+  - type: config_exists
+    description:
+      brief: Check if corpus config.yaml exists
+      detail: |
+        Evaluates to true if the corpus configuration file exists at data/config.yaml.
+        This is the primary entry gate for most corpus skills.
+      notes:
+        - Path is always data/config.yaml relative to corpus root
+        - Does not validate config content, only existence
+
+    parameters: []
+
+    evaluation:
+      effect: |
+        return file_exists("data/config.yaml")
+      reads:
+        - "data/config.yaml"
+      functions:
+        - file_exists
+
+    examples:
+      - title: Entry gate for corpus skill
+        yaml: |
+          - type: config_exists
+        context:
+          files:
+            "data/config.yaml": true
+        result: true
+
+      - title: Failed check on uninitialized corpus
+        yaml: |
+          - type: config_exists
+        context:
+          files:
+            "data/config.yaml": false
+        result: false
+
+    related:
+      - index_exists
+      - file_exists
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # index_exists
+  # --------------------------------------------------------------------------
+  - type: index_exists
+    description:
+      brief: Check if corpus index.md exists
+      detail: |
+        Evaluates to true if the corpus index file exists at data/index.md.
+        Used to determine if build has been run.
+      notes:
+        - Path is always data/index.md relative to corpus root
+        - Does not validate index content
+
+    parameters: []
+
+    evaluation:
+      effect: |
+        return file_exists("data/index.md")
+      reads:
+        - "data/index.md"
+      functions:
+        - file_exists
+
+    examples:
+      - title: Check for built index
+        yaml: |
+          - type: index_exists
+        context:
+          files:
+            "data/index.md": true
+        result: true
+
+    related:
+      - config_exists
+      - index_is_placeholder
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # index_is_placeholder
+  # --------------------------------------------------------------------------
+  - type: index_is_placeholder
+    description:
+      brief: Check if index contains placeholder text
+      detail: |
+        Evaluates to true if the index file contains placeholder text indicating
+        the corpus has not been built yet. Looks for "Run hiivmind-corpus-build".
+      notes:
+        - Returns false if index doesn't exist
+        - Uses string search, not full content analysis
+
+    parameters: []
+
+    evaluation:
+      effect: |
+        if not file_exists("data/index.md"):
+          return false
+        content = read_file("data/index.md")
+        return "Run hiivmind-corpus-build" in content
+      reads:
+        - "data/index.md"
+      functions:
+        - file_exists
+        - read_file
+        - contains
+
+    examples:
+      - title: Detect placeholder index
+        yaml: |
+          - type: index_is_placeholder
+        context:
+          files:
+            "data/index.md": "# Index\nRun hiivmind-corpus-build to populate."
+        result: true
+
+      - title: Built index with content
+        yaml: |
+          - type: index_is_placeholder
+        context:
+          files:
+            "data/index.md": "# Polars Index\n## Getting Started..."
+        result: false
+
+    related:
+      - index_exists
+      - config_exists
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # file_exists
+  # --------------------------------------------------------------------------
+  - type: file_exists
+    description:
+      brief: Check if arbitrary file exists
+      detail: |
+        Evaluates to true if the specified file exists at the given path.
+        Path is relative to corpus root and supports ${} interpolation.
+      notes:
+        - Path is relative to corpus/project root
+        - Supports ${} interpolation from state
+
+    parameters:
+      - name: path
+        type: string
+        required: true
+        description: File path to check (relative to root)
+        interpolatable: true
+
+    evaluation:
+      effect: |
+        resolved_path = interpolate(path)
+        return file_exists(resolved_path)
+      reads:
+        - "${path}"
+      functions:
+        - file_exists
+        - interpolate
+
+    examples:
+      - title: Check README exists in source
+        yaml: |
+          - type: file_exists
+            path: ".source/polars/README.md"
+        context:
+          files:
+            ".source/polars/README.md": true
+        result: true
+
+      - title: Check with interpolated path
+        yaml: |
+          - type: file_exists
+            path: ".source/${source_id}/docs/index.md"
+        context:
+          state:
+            source_id: "ibis"
+          files:
+            ".source/ibis/docs/index.md": true
+        result: true
+
+    related:
+      - directory_exists
+      - config_exists
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # directory_exists
+  # --------------------------------------------------------------------------
+  - type: directory_exists
+    description:
+      brief: Check if directory exists
+      detail: |
+        Evaluates to true if the specified directory exists at the given path.
+        Path is relative to corpus root and supports ${} interpolation.
+      notes:
+        - Path is relative to corpus/project root
+        - Returns false if path is a file
+        - Supports ${} interpolation from state
+
+    parameters:
+      - name: path
+        type: string
+        required: true
+        description: Directory path to check
+        interpolatable: true
+
+    evaluation:
+      effect: |
+        resolved_path = interpolate(path)
+        return directory_exists(resolved_path)
+      reads:
+        - "${path}"
+      functions:
+        - directory_exists
+        - interpolate
+
+    examples:
+      - title: Check source directory exists
+        yaml: |
+          - type: directory_exists
+            path: ".source/polars"
+        context:
+          files:
+            ".source/polars/": true
+        result: true
+
+      - title: Check with interpolation
+        yaml: |
+          - type: directory_exists
+            path: ".source/${computed.source_id}"
+        context:
+          state:
+            computed:
+              source_id: "narwhals"
+          files:
+            ".source/narwhals/": true
+        result: true
+
+    related:
+      - file_exists
+      - source_cloned
+    since: "1.0.0"

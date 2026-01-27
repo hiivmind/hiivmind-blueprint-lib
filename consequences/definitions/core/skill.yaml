@@ -1,0 +1,154 @@
+# Core Skill Invocation Consequences
+# Pattern and skill delegation operations
+
+schema_version: "1.0"
+category: core/skill
+description: Skill and pattern invocation operations
+
+consequences:
+  # --------------------------------------------------------------------------
+  # invoke_pattern
+  # --------------------------------------------------------------------------
+  - type: invoke_pattern
+    description:
+      brief: Execute a pattern document section
+      detail: |
+        Loads and executes a pattern document (markdown file containing
+        tool-agnostic algorithms). Can execute the full document or a
+        specific section. Context variables are available during execution.
+      notes:
+        - Patterns are tool-agnostic algorithm documentation
+        - Context variables replace ${variable} in pattern
+        - Section names match markdown headings
+        - Pattern may produce outputs stored in state
+
+    parameters:
+      - name: path
+        type: string
+        required: true
+        description: Pattern document path (relative to plugin root)
+        interpolatable: true
+
+      - name: section
+        type: string
+        required: false
+        description: Specific markdown heading to execute
+        interpolatable: true
+
+      - name: context
+        type: object
+        required: false
+        description: Variables available in the pattern
+        interpolatable: true
+
+    payload:
+      kind: composite
+      tool: null
+      effect: |
+        document = read_file(path)
+        if section:
+          document = extract_section(document, section)
+        execute_pattern(document, context ?? {})
+      state_writes: []
+      state_reads: []
+
+    examples:
+      - title: Execute full pattern
+        yaml: |
+          - type: invoke_pattern
+            path: lib/blueprint/patterns/workflow-generation.md
+
+      - title: Specific section with context
+        yaml: |
+          - type: invoke_pattern
+            path: lib/blueprint/patterns/node-mapping.md
+            section: "Map Action Nodes"
+            context:
+              analysis: "${computed.analysis}"
+              target_path: "${computed.output_path}"
+
+      - title: Skill analysis pattern
+        yaml: |
+          - type: invoke_pattern
+            path: lib/blueprint/patterns/skill-analysis.md
+            section: "Extract Phases"
+            context:
+              skill_path: "${computed.skill_path}"
+              skill_content: "${computed.skill_content}"
+
+    related:
+      - invoke_skill
+      - spawn_agent
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # invoke_skill
+  # --------------------------------------------------------------------------
+  - type: invoke_skill
+    description:
+      brief: Invoke another skill and wait for completion
+      detail: |
+        Delegates to another skill using Claude's Skill tool. The invoked
+        skill takes over the conversation. Typically used as the last
+        action before reaching a success ending.
+      notes:
+        - Uses Claude's Skill tool to invoke
+        - The invoked skill takes over the conversation
+        - Control returns to workflow when skill completes
+        - Typically the last action before ending
+
+    parameters:
+      - name: skill
+        type: string
+        required: true
+        description: Skill name (without plugin prefix)
+        interpolatable: true
+
+      - name: args
+        type: string
+        required: false
+        description: Arguments to pass to the skill
+        default: ""
+        interpolatable: true
+
+    payload:
+      kind: tool_call
+      tool: Skill
+      effect: |
+        Skill(
+          skill: interpolate(skill),
+          args: interpolate(args) ?? ""
+        )
+      state_writes: []
+      state_reads: []
+
+    examples:
+      - title: Delegate to validate skill
+        yaml: |
+          - type: invoke_skill
+            skill: hiivmind-blueprint-validate
+            args: "${computed.workflow_path}"
+
+      - title: Delegate to generate skill
+        yaml: |
+          - type: invoke_skill
+            skill: hiivmind-blueprint-generate
+            args: ""
+
+      - title: Dynamic skill invocation
+        yaml: |
+          - type: invoke_skill
+            skill: "${computed.target_skill}"
+            args: "${arguments}"
+
+      - title: With computed arguments
+        yaml: |
+          - type: invoke_skill
+            skill: hiivmind-blueprint-analyze
+            args: "${computed.skill_name}"
+
+    related:
+      - invoke_pattern
+      - spawn_agent
+      - dynamic_route
+    since: "1.0.0"

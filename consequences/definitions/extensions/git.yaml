@@ -1,0 +1,312 @@
+# Git Extension Consequences
+# Git repository operations
+
+schema_version: "1.1"
+category: extensions/git
+description: Git repository operations for cloning, fetching, and SHA retrieval
+
+consequences:
+  # --------------------------------------------------------------------------
+  # clone_repo
+  # --------------------------------------------------------------------------
+  - type: clone_repo
+    description:
+      brief: Clone git repository
+      detail: |
+        Clones a git repository to the specified destination. Supports
+        shallow clones (recommended for documentation indexing) and
+        branch selection.
+      notes:
+        - Creates destination directory
+        - Shallow clone (depth 1) recommended for documentation
+        - Fails if destination exists (use git_pull for updates)
+
+    parameters:
+      - name: url
+        type: string
+        required: true
+        description: Repository URL
+        interpolatable: true
+
+      - name: dest
+        type: string
+        required: true
+        description: Destination path
+        interpolatable: true
+
+      - name: branch
+        type: string
+        required: false
+        description: Branch to clone (default branch if not specified)
+        interpolatable: true
+
+      - name: depth
+        type: number
+        required: false
+        default: 1
+        description: Shallow clone depth
+        interpolatable: false
+
+    payload:
+      kind: tool_call
+      tool: Bash
+
+      requires:
+        tools:
+          - name: git
+            min_version: "2.0"
+            check_command: "git --version"
+          - name: gh
+            optional: true
+            min_version: "2.0"
+            check_command: "gh --version"
+        network: true
+        timeout_seconds: 300
+
+      provides:
+        features:
+          - shallow_clone
+          - branch_selection
+        outputs:
+          - field: computed.clone_path
+            type: string
+            description: "Path to cloned repository (equals dest parameter)"
+
+      alternatives:
+        - condition: "tool_available('gh') and url.startsWith('https://github.com')"
+          effect: "gh repo clone ${url} ${dest} -- --depth ${depth}"
+        - condition: "tool_available('git')"
+          effect: "git clone --depth ${depth} ${url} ${dest}"
+        - fallback: true
+          error: "Neither 'gh' nor 'git' available"
+
+      effect: |
+        cmd = "git clone"
+        if depth:
+          cmd += " --depth " + depth
+        if branch:
+          cmd += " --branch " + interpolate(branch)
+        cmd += " " + interpolate(url) + " " + interpolate(dest)
+        Bash(cmd)
+      state_writes: []
+      state_reads: []
+
+    examples:
+      - title: Shallow clone default branch
+        yaml: |
+          - type: clone_repo
+            url: "${source_url}"
+            dest: ".source/${computed.source_id}"
+            depth: 1
+
+      - title: Clone specific branch
+        yaml: |
+          - type: clone_repo
+            url: "${source_url}"
+            dest: ".source/${computed.source_id}"
+            branch: "${computed.branch}"
+            depth: 1
+
+      - title: Full clone for development
+        yaml: |
+          - type: clone_repo
+            url: "${repo_url}"
+            dest: "${work_dir}"
+
+    related:
+      - get_sha
+      - git_pull
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # get_sha
+  # --------------------------------------------------------------------------
+  - type: get_sha
+    description:
+      brief: Get HEAD commit SHA
+      detail: |
+        Retrieves the HEAD commit SHA from a git repository. Returns
+        the full 40-character SHA. Useful for tracking which version
+        was indexed.
+      notes:
+        - Returns full 40-character SHA
+        - Fails if path is not a git repository
+        - Use after clone or pull to record version
+
+    parameters:
+      - name: repo_path
+        type: string
+        required: true
+        description: Path to git repository
+        interpolatable: true
+
+      - name: store_as
+        type: string
+        required: true
+        description: State field for SHA
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+        interpolatable: false
+
+    payload:
+      kind: tool_call
+      tool: Bash
+
+      requires:
+        tools:
+          - name: git
+            min_version: "2.0"
+
+      provides:
+        outputs:
+          - field: "${store_as}"
+            type: string
+            pattern: "^[a-f0-9]{40}$"
+            description: "Full 40-character commit SHA"
+
+      effect: |
+        sha = Bash("git -C " + interpolate(repo_path) + " rev-parse HEAD").trim()
+        set_state_value(store_as, sha)
+      state_writes:
+        - "${store_as}"
+      state_reads: []
+
+    examples:
+      - title: Get SHA after clone
+        yaml: |
+          - type: clone_repo
+            url: "${source_url}"
+            dest: ".source/main"
+            depth: 1
+          - type: get_sha
+            repo_path: ".source/main"
+            store_as: computed.sha
+
+      - title: Check current version
+        yaml: |
+          - type: get_sha
+            repo_path: ".source/${computed.source_id}"
+            store_as: computed.current_sha
+
+    related:
+      - clone_repo
+      - git_fetch
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # git_pull
+  # --------------------------------------------------------------------------
+  - type: git_pull
+    description:
+      brief: Pull latest changes
+      detail: |
+        Pulls the latest changes from the remote repository using
+        fast-forward only. Fails if there are local changes that
+        would be overwritten or if fast-forward is not possible.
+      notes:
+        - Uses fast-forward only to avoid merge conflicts
+        - Fails if local changes would be overwritten
+        - Fails if fast-forward not possible
+
+    parameters:
+      - name: repo_path
+        type: string
+        required: true
+        description: Path to git repository
+        interpolatable: true
+
+    payload:
+      kind: tool_call
+      tool: Bash
+
+      requires:
+        tools:
+          - name: git
+            min_version: "2.0"
+        network: true
+        timeout_seconds: 120
+
+      effect: |
+        Bash("git -C " + interpolate(repo_path) + " pull --ff-only")
+      state_writes: []
+      state_reads: []
+
+    examples:
+      - title: Pull and re-index
+        yaml: |
+          - type: git_pull
+            repo_path: ".source/main"
+          - type: get_sha
+            repo_path: ".source/main"
+            store_as: computed.new_sha
+          - type: set_state
+            field: config.sources[0].last_commit_sha
+            value: "${computed.new_sha}"
+
+      - title: Update source before indexing
+        yaml: |
+          - type: git_pull
+            repo_path: ".source/${computed.source_id}"
+
+    related:
+      - git_fetch
+      - clone_repo
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # git_fetch
+  # --------------------------------------------------------------------------
+  - type: git_fetch
+    description:
+      brief: Fetch remote refs
+      detail: |
+        Fetches remote refs without modifying the working directory.
+        Useful for checking if updates are available before pulling.
+      notes:
+        - Updates remote tracking branches
+        - Does not modify working directory
+        - Use before comparing local vs remote SHA
+
+    parameters:
+      - name: repo_path
+        type: string
+        required: true
+        description: Path to git repository
+        interpolatable: true
+
+    payload:
+      kind: tool_call
+      tool: Bash
+
+      requires:
+        tools:
+          - name: git
+            min_version: "2.0"
+        network: true
+        timeout_seconds: 60
+
+      effect: |
+        Bash("git -C " + interpolate(repo_path) + " fetch")
+      state_writes: []
+      state_reads: []
+
+    examples:
+      - title: Check for updates
+        yaml: |
+          - type: git_fetch
+            repo_path: ".source/main"
+          - type: get_sha
+            repo_path: ".source/main"
+            store_as: computed.remote_sha
+          - type: evaluate
+            expression: "computed.remote_sha != config.sources[0].last_commit_sha"
+            set_flag: needs_update
+
+      - title: Fetch before comparison
+        yaml: |
+          - type: git_fetch
+            repo_path: ".source/${source_id}"
+
+    related:
+      - git_pull
+      - get_sha
+    since: "1.0.0"

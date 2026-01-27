@@ -1,0 +1,422 @@
+# Core Intent Detection Consequences
+# 3-valued logic intent detection and dynamic routing
+
+schema_version: "1.0"
+category: core/intent
+description: 3VL intent detection and dynamic routing operations
+
+consequences:
+  # --------------------------------------------------------------------------
+  # evaluate_keywords
+  # --------------------------------------------------------------------------
+  - type: evaluate_keywords
+    description:
+      brief: Match keywords to detect intent
+      detail: |
+        Matches user input against keyword sets to detect intent. Returns
+        the first matching intent (case-insensitive). For compound intent
+        handling, use parse_intent_flags + match_3vl_rules instead.
+      notes:
+        - Matches first keyword set containing a phrase found in input
+        - Case-insensitive matching
+        - Returns null if no match found
+        - Simple approach for single-intent detection
+
+    parameters:
+      - name: input
+        type: string
+        required: true
+        description: User input to match against
+        interpolatable: true
+
+      - name: keyword_sets
+        type: object
+        required: true
+        description: Map of intent names to keyword arrays
+        interpolatable: false
+
+      - name: store_as
+        type: string
+        required: true
+        description: State field for matched intent
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+        interpolatable: false
+
+    payload:
+      kind: computation
+      tool: null
+      effect: |
+        for keyword_set_name, keywords in keyword_sets:
+          for keyword in keywords:
+            if input.toLowerCase().includes(keyword.toLowerCase()):
+              set_state_value(store_as, keyword_set_name)
+              return success
+        set_state_value(store_as, null)
+        return success
+      state_writes:
+        - "${store_as}"
+      state_reads: []
+
+    examples:
+      - title: Simple intent detection
+        yaml: |
+          - type: evaluate_keywords
+            input: "${arguments}"
+            keyword_sets:
+              init:
+                - create
+                - new
+                - initialize
+              refresh:
+                - update
+                - sync
+                - check
+            store_as: computed.detected_intent
+        state_before:
+          arguments: "create new corpus"
+        state_after:
+          computed:
+            detected_intent: "init"
+
+      - title: With workflow actions
+        yaml: |
+          - type: evaluate_keywords
+            input: "${arguments}"
+            keyword_sets:
+              analyze:
+                - analyze
+                - examine
+                - inspect
+              convert:
+                - convert
+                - transform
+                - generate
+              validate:
+                - validate
+                - check
+                - verify
+            store_as: computed.intent
+
+    related:
+      - parse_intent_flags
+      - match_3vl_rules
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # parse_intent_flags
+  # --------------------------------------------------------------------------
+  - type: parse_intent_flags
+    description:
+      brief: Parse 3VL flags from user input
+      detail: |
+        Parses user input and sets 3-valued logic (3VL) flags for intent
+        detection. Each flag can be True (T), False (F), or Unknown (U)
+        based on keyword matching.
+      notes:
+        - 3VL values: T (True), F (False), U (Unknown)
+        - Negative keywords checked first (more specific)
+        - Unknown is the default when no keywords match
+        - "See also: lib/intent_detection/framework.md"
+
+    parameters:
+      - name: input
+        type: string
+        required: true
+        description: User input to parse
+        interpolatable: true
+
+      - name: flag_definitions
+        type: object
+        required: true
+        description: Map of flag names to keyword definitions
+        interpolatable: true
+
+      - name: store_as
+        type: string
+        required: true
+        description: State field for flag values
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+        interpolatable: false
+
+    payload:
+      kind: computation
+      tool: null
+      effect: |
+        flags = {}
+        for flag_name, definition in flag_definitions:
+          flags[flag_name] = "U"  # Default: Unknown
+
+          # Check negative keywords first (more specific)
+          if definition.negative_keywords:
+            for keyword in definition.negative_keywords:
+              if input.toLowerCase().includes(keyword.toLowerCase()):
+                flags[flag_name] = "F"
+                break
+
+          # Check positive keywords (if not already F)
+          if flags[flag_name] != "F":
+            for keyword in definition.keywords:
+              if input.toLowerCase().includes(keyword.toLowerCase()):
+                flags[flag_name] = "T"
+                break
+
+        set_state_value(store_as, flags)
+        return success
+      state_writes:
+        - "${store_as}"
+      state_reads: []
+
+    examples:
+      - title: Parse intent flags
+        yaml: |
+          - type: parse_intent_flags
+            input: "${arguments}"
+            flag_definitions: "${intent_flags}"
+            store_as: computed.intent_flags
+        state_before:
+          arguments: "help me initialize a corpus"
+          intent_flags:
+            has_help:
+              keywords: ["help", "how do i", "?"]
+              description: "User is asking for help"
+            has_init:
+              keywords: ["create", "new", "init", "initialize"]
+              description: "User wants to create something"
+        state_after:
+          computed:
+            intent_flags:
+              has_help: "T"
+              has_init: "T"
+
+      - title: With negative keywords
+        yaml: |
+          - type: parse_intent_flags
+            input: "${arguments}"
+            flag_definitions:
+              has_help:
+                keywords: ["help", "how do i"]
+                negative_keywords: ["don't help", "no help"]
+            store_as: computed.flags
+
+    related:
+      - match_3vl_rules
+      - evaluate_keywords
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # match_3vl_rules
+  # --------------------------------------------------------------------------
+  - type: match_3vl_rules
+    description:
+      brief: Match 3VL flags against rule table
+      detail: |
+        Matches 3VL flags against a rule table and ranks candidate actions.
+        Uses 3-valued logic scoring: hard matches (+2), soft matches (+1),
+        exclusions (candidate removed). Determines if there's a clear winner.
+      notes:
+        - "Hard match: state and rule both T or both F (+2)"
+        - "Soft match: one is U, other is T/F (+1)"
+        - "Exclusion: T vs F or F vs T (candidate removed)"
+        - Clear winner requires 2+ point lead
+        - "See also: lib/intent_detection/framework.md"
+
+    parameters:
+      - name: flags
+        type: object
+        required: true
+        description: Map of flag names to 3VL values (T/F/U)
+        interpolatable: true
+
+      - name: rules
+        type: array
+        required: true
+        description: Array of intent rules with conditions
+        interpolatable: true
+
+      - name: store_as
+        type: string
+        required: true
+        description: State field for match results
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+        interpolatable: false
+
+    payload:
+      kind: computation
+      tool: null
+      effect: |
+        candidates = []
+        for rule in rules:
+          score = 0
+          excluded = false
+
+          for condition_key, rule_val in rule.conditions:
+            state_val = flags[condition_key] ?? "U"
+
+            if (state_val == "T" and rule_val == "T") or (state_val == "F" and rule_val == "F"):
+              score += 2  # Hard match
+            elif (state_val == "T" and rule_val == "F") or (state_val == "F" and rule_val == "T"):
+              excluded = true
+              break
+            elif state_val == "U" and rule_val == "U":
+              score += 0  # No contribution
+            else:
+              score += 1  # Soft match
+
+          if not excluded:
+            candidates.append({ rule: rule, score: score })
+
+        # Sort by score (descending), then priority (descending)
+        candidates.sort(by: (-score, -rule.priority))
+
+        # Determine if clear winner
+        if len(candidates) >= 2:
+          clear_winner = (candidates[0].score >= candidates[1].score + 2)
+        elif len(candidates) == 1:
+          clear_winner = true
+        else:
+          clear_winner = false
+
+        result = {
+          clear_winner: clear_winner,
+          winner: candidates[0].rule if clear_winner else null,
+          top_candidates: candidates[0:3],
+          all_candidates: candidates
+        }
+
+        set_state_value(store_as, result)
+        return success
+      state_writes:
+        - "${store_as}"
+      state_reads: []
+
+    examples:
+      - title: Match rules and find winner
+        yaml: |
+          - type: match_3vl_rules
+            flags: "${computed.intent_flags}"
+            rules: "${intent_rules}"
+            store_as: computed.intent_matches
+        state_before:
+          computed:
+            intent_flags:
+              has_help: "T"
+              has_init: "T"
+              has_modify: "U"
+          intent_rules:
+            - name: help_with_init
+              conditions:
+                has_help: "T"
+                has_init: "T"
+              action: delegate_init
+              priority: 80
+            - name: init_only
+              conditions:
+                has_init: "T"
+              action: delegate_init
+              priority: 60
+        state_after:
+          computed:
+            intent_matches:
+              clear_winner: true
+              winner:
+                name: "help_with_init"
+                action: "delegate_init"
+              top_candidates:
+                - rule: { name: "help_with_init" }
+                  score: 4
+
+      - title: Full pipeline in workflow
+        yaml: |
+          - type: parse_intent_flags
+            input: "${arguments}"
+            flag_definitions:
+              has_create: { keywords: ["create", "new", "init"] }
+              has_update: { keywords: ["update", "refresh", "sync"] }
+              has_query: { keywords: ["find", "search", "where"] }
+            store_as: computed.flags
+          - type: match_3vl_rules
+            flags: "${computed.flags}"
+            rules:
+              - name: create_workflow
+                conditions: { has_create: "T", has_query: "F" }
+                action: delegate_init
+              - name: refresh_workflow
+                conditions: { has_update: "T" }
+                action: delegate_refresh
+            store_as: computed.matches
+
+    related:
+      - parse_intent_flags
+      - dynamic_route
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # dynamic_route
+  # --------------------------------------------------------------------------
+  - type: dynamic_route
+    description:
+      brief: Execute dynamically determined node transition
+      detail: |
+        Sets the next node based on a value computed at runtime. Enables
+        rule-based routing where the target node is determined from state
+        rather than being statically defined in the workflow.
+      notes:
+        - Workflow engine checks computed.dynamic_target after this consequence
+        - Used when on_success should be determined at runtime
+        - Typically follows match_3vl_rules
+
+    parameters:
+      - name: action
+        type: string
+        required: true
+        description: Node name to transition to
+        interpolatable: true
+
+    payload:
+      kind: state_mutation
+      tool: null
+      effect: |
+        target_node = interpolate(action)
+        set_state_value("computed.dynamic_target", target_node)
+        return success
+      state_writes:
+        - "computed.dynamic_target"
+      state_reads: []
+
+    examples:
+      - title: Route based on matched rule
+        yaml: |
+          - type: dynamic_route
+            action: "${computed.intent_matches.winner.action}"
+        state_before:
+          computed:
+            intent_matches:
+              winner:
+                action: "delegate_init"
+        state_after:
+          computed:
+            dynamic_target: "delegate_init"
+
+      - title: Full intent detection pipeline ending with route
+        yaml: |
+          # In a node sequence:
+          # 1. parse_intent_flags -> sets computed.flags
+          # 2. match_3vl_rules -> sets computed.matches
+          # 3. conditional: check computed.matches.clear_winner
+          # 4. If true, route_winner node:
+          - type: dynamic_route
+            action: "${computed.matches.winner.action}"
+
+      - title: Fallback routing
+        yaml: |
+          # Use conditional expression to provide fallback
+          - type: set_state
+            field: computed.route_target
+            value: "${computed.matches.winner.action ?? 'show_help'}"
+          - type: dynamic_route
+            action: "${computed.route_target}"
+
+    related:
+      - match_3vl_rules
+      - invoke_skill
+    since: "1.0.0"

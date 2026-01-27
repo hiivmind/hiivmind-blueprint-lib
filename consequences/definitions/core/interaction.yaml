@@ -1,0 +1,152 @@
+# Core User Interaction Consequences
+# Display and user feedback operations
+
+schema_version: "1.0"
+category: core/interaction
+description: User interaction and display operations
+
+consequences:
+  # --------------------------------------------------------------------------
+  # display_message
+  # --------------------------------------------------------------------------
+  - type: display_message
+    description:
+      brief: Show message to user
+      detail: |
+        Displays an informational message to the user. Supports markdown
+        formatting and ${} interpolation from state. Used for progress
+        updates, summaries, and notifications.
+      notes:
+        - Supports multiline messages using YAML | syntax
+        - All ${} placeholders interpolated from state
+        - Markdown formatting is preserved
+        - No state changes occur
+
+    parameters:
+      - name: message
+        type: string
+        required: true
+        description: Message text with ${} interpolation
+        interpolatable: true
+
+    payload:
+      kind: side_effect
+      tool: null
+      effect: |
+        interpolated = interpolate(message, state)
+        display_to_user(interpolated)
+      state_writes: []
+      state_reads: []
+
+    examples:
+      - title: Simple status message
+        yaml: |
+          - type: display_message
+            message: "Source added successfully: ${computed.source_id}"
+
+      - title: Detailed summary with markdown
+        yaml: |
+          - type: display_message
+            message: |
+              ## Indexing Complete
+
+              - **Files analyzed:** ${computed.file_count}
+              - **Sections created:** ${computed.section_count}
+              - **Index location:** data/index.md
+
+      - title: Warning message
+        yaml: |
+          - type: display_message
+            message: |
+              **Warning:** Index is stale
+
+              Last indexed: ${config.sources[0].last_indexed_at}
+              Current SHA: ${computed.current_sha}
+              Indexed SHA: ${config.sources[0].last_commit_sha}
+
+    related:
+      - display_table
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # display_table
+  # --------------------------------------------------------------------------
+  - type: display_table
+    description:
+      brief: Show tabular data to user
+      detail: |
+        Displays data in a formatted table. Headers define columns, and
+        rows can be provided inline or referenced from state. Renders as
+        a markdown table.
+      notes:
+        - Rows can be state reference (${computed.table_data}) or inline array
+        - Each row should be an array matching header count
+        - Renders as markdown table
+
+    parameters:
+      - name: title
+        type: string
+        required: false
+        description: Table title (displayed above table)
+        interpolatable: true
+
+      - name: headers
+        type: array
+        required: true
+        description: Column header labels
+        interpolatable: false
+
+      - name: rows
+        type: any
+        required: true
+        description: Row data - state reference or inline array
+        interpolatable: true
+
+    payload:
+      kind: side_effect
+      tool: null
+      effect: |
+        resolved_rows = interpolate(rows, state)
+        table = format_markdown_table(headers, resolved_rows)
+        if title:
+          display_to_user("### " + interpolate(title) + "\n\n" + table)
+        else:
+          display_to_user(table)
+      state_writes: []
+      state_reads: []
+
+    examples:
+      - title: Table from state reference
+        yaml: |
+          - type: display_table
+            title: "Configured Sources"
+            headers: ["ID", "Type", "Location"]
+            rows: "${computed.sources_table}"
+        state_before:
+          computed:
+            sources_table:
+              - ["main", "git", "github.com/org/repo"]
+              - ["uploads", "local", "data/uploads"]
+
+      - title: Inline table data
+        yaml: |
+          - type: display_table
+            title: "Available Actions"
+            headers: ["Command", "Description"]
+            rows:
+              - ["init", "Create new corpus"]
+              - ["build", "Build index from docs"]
+              - ["refresh", "Update from upstream"]
+
+      - title: Table without title
+        yaml: |
+          - type: display_table
+            headers: ["Status", "Count"]
+            rows:
+              - ["Added", "${computed.added_count}"]
+              - ["Updated", "${computed.updated_count}"]
+              - ["Removed", "${computed.removed_count}"]
+
+    related:
+      - display_message
+    since: "1.0.0"

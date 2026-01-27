@@ -1,0 +1,236 @@
+# File System Extension Consequences
+# Reading and writing files
+
+schema_version: "1.1"
+category: extensions/file-system
+description: File system operations for reading and writing files
+
+consequences:
+  # --------------------------------------------------------------------------
+  # read_file
+  # --------------------------------------------------------------------------
+  - type: read_file
+    description:
+      brief: Read arbitrary file content
+      detail: |
+        Reads the contents of a file and stores it in state. Supports
+        ${} interpolation in the path. Fails if file doesn't exist.
+      notes:
+        - Path supports ${} interpolation
+        - Fails if file doesn't exist
+        - Content stored as string
+
+    parameters:
+      - name: path
+        type: string
+        required: true
+        description: File path to read
+        interpolatable: true
+
+      - name: store_as
+        type: string
+        required: true
+        description: State field for content
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+        interpolatable: false
+
+    payload:
+      kind: tool_call
+      tool: Read
+
+      provides:
+        outputs:
+          - field: "${store_as}"
+            type: string
+            description: "File content as string"
+
+      effect: |
+        content = Read(interpolate(path))
+        set_state_value(store_as, content)
+      state_writes:
+        - "${store_as}"
+      state_reads: []
+
+    examples:
+      - title: Read configuration file
+        yaml: |
+          - type: read_file
+            path: data/index.md
+            store_as: computed.index_content
+
+      - title: Read with interpolated path
+        yaml: |
+          - type: read_file
+            path: "config/${env_name}/settings.yaml"
+            store_as: computed.settings
+
+    related:
+      - write_file
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # write_file
+  # --------------------------------------------------------------------------
+  - type: write_file
+    description:
+      brief: Write content to file
+      detail: |
+        Writes content to a file. Creates parent directories if needed.
+        Overwrites existing content. Both path and content support
+        ${} interpolation.
+      notes:
+        - Creates parent directories if needed
+        - Overwrites existing content
+        - Path and content support interpolation
+
+    parameters:
+      - name: path
+        type: string
+        required: true
+        description: File path to write
+        interpolatable: true
+
+      - name: content
+        type: string
+        required: true
+        description: Content to write
+        interpolatable: true
+
+    payload:
+      kind: tool_call
+      tool: Write
+
+      requires:
+        tools:
+          - name: mkdir
+            optional: true
+            check_command: "mkdir --version"
+
+      effect: |
+        resolved_path = interpolate(path)
+        resolved_content = interpolate(content)
+        mkdir -p dirname(resolved_path)
+        Write(resolved_path, resolved_content)
+      state_writes: []
+      state_reads: []
+
+    examples:
+      - title: Write README file
+        yaml: |
+          - type: write_file
+            path: "data/uploads/${computed.source_id}/README.md"
+            content: "# ${computed.source_id}\n\nUpload documents here."
+
+      - title: Write configuration
+        yaml: |
+          - type: write_file
+            path: config.yaml
+            content: "${computed.config_yaml}"
+
+    related:
+      - read_file
+      - create_directory
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # create_directory
+  # --------------------------------------------------------------------------
+  - type: create_directory
+    description:
+      brief: Create directory including parents
+      detail: |
+        Creates a directory at the specified path. Creates parent
+        directories if they don't exist (like mkdir -p). Does not
+        fail if directory already exists.
+      notes:
+        - Creates parent directories (mkdir -p behavior)
+        - No error if directory already exists
+        - Path supports ${} interpolation
+
+    parameters:
+      - name: path
+        type: string
+        required: true
+        description: Directory path to create
+        interpolatable: true
+
+    payload:
+      kind: tool_call
+      tool: Bash
+
+      requires:
+        tools:
+          - name: mkdir
+            check_command: "mkdir --version"
+
+      effect: |
+        mkdir -p interpolate(path)
+      state_writes: []
+      state_reads: []
+
+    examples:
+      - title: Create upload directory
+        yaml: |
+          - type: create_directory
+            path: "data/uploads/${computed.source_id}"
+
+      - title: Create nested structure
+        yaml: |
+          - type: create_directory
+            path: "output/${project}/${version}/docs"
+
+    related:
+      - write_file
+      - delete_file
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # delete_file
+  # --------------------------------------------------------------------------
+  - type: delete_file
+    description:
+      brief: Delete file if exists
+      detail: |
+        Deletes a file at the specified path. Does not fail if file
+        doesn't exist. Does not delete directories.
+      notes:
+        - No error if file doesn't exist
+        - Does not delete directories
+        - Path supports ${} interpolation
+
+    parameters:
+      - name: path
+        type: string
+        required: true
+        description: File to delete
+        interpolatable: true
+
+    payload:
+      kind: tool_call
+      tool: Bash
+
+      requires:
+        tools:
+          - name: rm
+            check_command: "rm --version"
+
+      effect: |
+        rm -f interpolate(path)
+      state_writes: []
+      state_reads: []
+
+    examples:
+      - title: Delete cache file
+        yaml: |
+          - type: delete_file
+            path: ".cache/web/${source_id}/${computed.filename}"
+
+      - title: Delete temporary file
+        yaml: |
+          - type: delete_file
+            path: "${computed.temp_file}"
+
+    related:
+      - write_file
+      - create_directory
+    since: "1.0.0"

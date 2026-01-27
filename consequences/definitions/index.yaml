@@ -1,0 +1,199 @@
+# Consequence Definitions Index
+# Provides a master registry of all consequence types with local and remote sources
+
+schema_version: "1.1"
+
+# Built-in definitions (local paths relative to this file)
+sources:
+  # Core consequences (30 types)
+  - path: core/state.yaml
+    category: core/state
+    description: State mutation operations
+    types:
+      - set_flag
+      - set_state
+      - append_state
+      - clear_state
+      - merge_state
+
+  - path: core/evaluation.yaml
+    category: core/evaluation
+    description: Expression evaluation and computation
+    types:
+      - evaluate
+      - compute
+
+  - path: core/interaction.yaml
+    category: core/interaction
+    description: User interaction and display
+    types:
+      - display_message
+      - display_table
+
+  - path: core/control.yaml
+    category: core/control
+    description: Control flow and checkpoints
+    types:
+      - create_checkpoint
+      - rollback_checkpoint
+      - spawn_agent
+
+  - path: core/skill.yaml
+    category: core/skill
+    description: Skill and pattern invocation
+    types:
+      - invoke_pattern
+      - invoke_skill
+
+  - path: core/utility.yaml
+    category: core/utility
+    description: Utility operations
+    types:
+      - set_timestamp
+      - compute_hash
+
+  - path: core/intent.yaml
+    category: core/intent
+    description: 3VL intent detection and routing
+    types:
+      - evaluate_keywords
+      - parse_intent_flags
+      - match_3vl_rules
+      - dynamic_route
+
+  - path: core/logging.yaml
+    category: core/logging
+    description: Workflow execution logging
+    types:
+      - init_log
+      - log_node
+      - log_event
+      - log_warning
+      - log_error
+      - log_session_snapshot
+      - finalize_log
+      - write_log
+      - apply_log_retention
+      - output_ci_summary
+
+  # Extension consequences (10 types)
+  - path: extensions/file-system.yaml
+    category: extensions/file-system
+    description: File system operations
+    types:
+      - read_file
+      - write_file
+      - create_directory
+      - delete_file
+
+  - path: extensions/git.yaml
+    category: extensions/git
+    description: Git repository operations
+    types:
+      - clone_repo
+      - get_sha
+      - git_pull
+      - git_fetch
+
+  - path: extensions/web.yaml
+    category: extensions/web
+    description: Web fetch and caching
+    types:
+      - web_fetch
+      - cache_web_content
+
+  - path: extensions/scripting.yaml
+    category: extensions/scripting
+    description: Script execution with interpreter detection
+    types:
+      - run_script
+      - run_python
+      - run_bash
+
+# Remote extension definitions (public URLs)
+# Users can add custom consequences from external sources
+remote_sources:
+  # Example: Custom Docker consequences
+  # - url: https://raw.githubusercontent.com/hiivmind/blueprint-docker/main/consequences.yaml
+  #   types: [docker_build, docker_push, docker_run]
+  #
+  # Example: Kubernetes consequences
+  # - url: https://hiivmind.dev/consequences/kubernetes.yaml
+  #   types: [kubectl_apply, kubectl_get]
+
+# Quick lookup table (type -> source file)
+# Auto-maintained: maps each consequence type to its definition file
+type_lookup:
+  # Core - State (5)
+  set_flag: core/state.yaml
+  set_state: core/state.yaml
+  append_state: core/state.yaml
+  clear_state: core/state.yaml
+  merge_state: core/state.yaml
+
+  # Core - Evaluation (2)
+  evaluate: core/evaluation.yaml
+  compute: core/evaluation.yaml
+
+  # Core - Interaction (2)
+  display_message: core/interaction.yaml
+  display_table: core/interaction.yaml
+
+  # Core - Control (3)
+  create_checkpoint: core/control.yaml
+  rollback_checkpoint: core/control.yaml
+  spawn_agent: core/control.yaml
+
+  # Core - Skill (2)
+  invoke_pattern: core/skill.yaml
+  invoke_skill: core/skill.yaml
+
+  # Core - Utility (2)
+  set_timestamp: core/utility.yaml
+  compute_hash: core/utility.yaml
+
+  # Core - Intent (4)
+  evaluate_keywords: core/intent.yaml
+  parse_intent_flags: core/intent.yaml
+  match_3vl_rules: core/intent.yaml
+  dynamic_route: core/intent.yaml
+
+  # Core - Logging (10)
+  init_log: core/logging.yaml
+  log_node: core/logging.yaml
+  log_event: core/logging.yaml
+  log_warning: core/logging.yaml
+  log_error: core/logging.yaml
+  log_session_snapshot: core/logging.yaml
+  finalize_log: core/logging.yaml
+  write_log: core/logging.yaml
+  apply_log_retention: core/logging.yaml
+  output_ci_summary: core/logging.yaml
+
+  # Extensions - File System (4)
+  read_file: extensions/file-system.yaml
+  write_file: extensions/file-system.yaml
+  create_directory: extensions/file-system.yaml
+  delete_file: extensions/file-system.yaml
+
+  # Extensions - Git (4)
+  clone_repo: extensions/git.yaml
+  get_sha: extensions/git.yaml
+  git_pull: extensions/git.yaml
+  git_fetch: extensions/git.yaml
+
+  # Extensions - Web (2)
+  web_fetch: extensions/web.yaml
+  cache_web_content: extensions/web.yaml
+
+  # Extensions - Scripting (3)
+  run_script: extensions/scripting.yaml
+  run_python: extensions/scripting.yaml
+  run_bash: extensions/scripting.yaml
+
+# Statistics
+stats:
+  total_types: 43
+  core_types: 30
+  extension_types: 13
+  definition_files: 12

@@ -1,0 +1,139 @@
+# Precondition Definitions Index
+# Provides a master registry of all precondition types with local and remote sources
+
+schema_version: "1.0"
+
+# Built-in definitions (local paths relative to this file)
+sources:
+  # Core preconditions (22 types)
+  - path: core/filesystem.yaml
+    category: core/filesystem
+    description: File and directory existence checks
+    types:
+      - config_exists
+      - index_exists
+      - index_is_placeholder
+      - file_exists
+      - directory_exists
+
+  - path: core/state.yaml
+    category: core/state
+    description: State inspection and comparison
+    types:
+      - flag_set
+      - flag_not_set
+      - state_equals
+      - state_not_null
+      - state_is_null
+      - count_equals
+      - count_above
+      - count_below
+
+  - path: core/tool.yaml
+    category: core/tool
+    description: Tool and module availability
+    types:
+      - tool_available
+      - python_module_available
+
+  - path: core/composite.yaml
+    category: core/composite
+    description: Logical composition (AND, OR, NOR)
+    types:
+      - all_of
+      - any_of
+      - none_of
+
+  - path: core/expression.yaml
+    category: core/expression
+    description: Arbitrary expression evaluation
+    types:
+      - evaluate_expression
+
+  - path: core/logging.yaml
+    category: core/logging
+    description: Logging lifecycle checks
+    types:
+      - log_initialized
+      - log_level_enabled
+      - log_finalized
+
+  # Extension preconditions (5 types)
+  - path: extensions/source.yaml
+    category: extensions/source
+    description: Source repository checks
+    types:
+      - source_exists
+      - source_cloned
+      - source_has_updates
+
+  - path: extensions/web.yaml
+    category: extensions/web
+    description: Web fetch result verification
+    types:
+      - fetch_succeeded
+      - fetch_returned_content
+
+# Remote extension definitions (public URLs)
+# Users can add custom preconditions from external sources
+remote_sources:
+  # Example: Custom CI/CD preconditions
+  # - url: https://raw.githubusercontent.com/hiivmind/blueprint-ci/main/preconditions.yaml
+  #   types: [pipeline_passed, artifact_exists, deployment_ready]
+  #
+  # Example: Database preconditions
+  # - url: https://hiivmind.dev/preconditions/database.yaml
+  #   types: [connection_available, schema_current]
+
+# Quick lookup table (type -> source file)
+# Auto-maintained: maps each precondition type to its definition file
+type_lookup:
+  # Core - Filesystem (5)
+  config_exists: core/filesystem.yaml
+  index_exists: core/filesystem.yaml
+  index_is_placeholder: core/filesystem.yaml
+  file_exists: core/filesystem.yaml
+  directory_exists: core/filesystem.yaml
+
+  # Core - State (8)
+  flag_set: core/state.yaml
+  flag_not_set: core/state.yaml
+  state_equals: core/state.yaml
+  state_not_null: core/state.yaml
+  state_is_null: core/state.yaml
+  count_equals: core/state.yaml
+  count_above: core/state.yaml
+  count_below: core/state.yaml
+
+  # Core - Tool (2)
+  tool_available: core/tool.yaml
+  python_module_available: core/tool.yaml
+
+  # Core - Composite (3)
+  all_of: core/composite.yaml
+  any_of: core/composite.yaml
+  none_of: core/composite.yaml
+
+  # Core - Expression (1)
+  evaluate_expression: core/expression.yaml
+
+  # Core - Logging (3)
+  log_initialized: core/logging.yaml
+  log_level_enabled: core/logging.yaml
+  log_finalized: core/logging.yaml
+
+  # Extensions - Source (3)
+  source_exists: extensions/source.yaml
+  source_cloned: extensions/source.yaml
+  source_has_updates: extensions/source.yaml
+
+  # Extensions - Web (2)
+  fetch_succeeded: extensions/web.yaml
+  fetch_returned_content: extensions/web.yaml
+
+# Statistics
+stats:
+  total_types: 27
+  core_types: 22
+  extension_types: 5
+  definition_files: 8

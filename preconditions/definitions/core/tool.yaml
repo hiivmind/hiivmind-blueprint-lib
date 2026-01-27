@@ -1,0 +1,126 @@
+# Core Tool Preconditions
+# Tool and environment availability checks
+
+schema_version: "1.0"
+category: core/tool
+description: Tool and module availability preconditions
+
+preconditions:
+  # --------------------------------------------------------------------------
+  # tool_available
+  # --------------------------------------------------------------------------
+  - type: tool_available
+    description:
+      brief: Check if command-line tool is installed
+      detail: |
+        Evaluates to true if the specified command-line tool is available
+        in the system PATH. Uses `which` to check availability.
+      notes:
+        - Checks system PATH for tool
+        - Common tools: git, yq, jq, python3, curl
+        - Does not check version, only availability
+
+    parameters:
+      - name: tool
+        type: string
+        required: true
+        description: Tool name (command name)
+        pattern: "^[a-zA-Z0-9_-]+$"
+        interpolatable: false
+
+    evaluation:
+      effect: |
+        exit_code = shell("which ${tool} >/dev/null 2>&1")
+        return exit_code == 0
+      reads: []
+      functions:
+        - shell
+        - which
+
+    examples:
+      - title: Check git is available
+        yaml: |
+          - type: tool_available
+            tool: git
+        context:
+          files: {}
+        result: true
+
+      - title: Check yq is available
+        yaml: |
+          - type: tool_available
+            tool: yq
+        context:
+          files: {}
+        result: true
+
+      - title: Check unavailable tool
+        yaml: |
+          - type: tool_available
+            tool: nonexistent_tool
+        context:
+          files: {}
+        result: false
+
+    related:
+      - python_module_available
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # python_module_available
+  # --------------------------------------------------------------------------
+  - type: python_module_available
+    description:
+      brief: Check if Python module is installed
+      detail: |
+        Evaluates to true if the specified Python module can be imported.
+        Uses `python3 -c "import module"` to check.
+      notes:
+        - Uses python3 interpreter
+        - Module must be importable (installed in environment)
+        - Common modules: yaml, pymupdf, requests
+
+    parameters:
+      - name: module
+        type: string
+        required: true
+        description: Python module name
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.]*$"
+        interpolatable: false
+
+    evaluation:
+      effect: |
+        exit_code = shell("python3 -c 'import ${module}' 2>/dev/null")
+        return exit_code == 0
+      reads: []
+      functions:
+        - shell
+
+    examples:
+      - title: Check yaml module
+        yaml: |
+          - type: python_module_available
+            module: yaml
+        context:
+          files: {}
+        result: true
+
+      - title: Check pymupdf for PDF support
+        yaml: |
+          - type: python_module_available
+            module: pymupdf
+        context:
+          files: {}
+        result: true
+
+      - title: Check nested module
+        yaml: |
+          - type: python_module_available
+            module: json.decoder
+        context:
+          files: {}
+        result: true
+
+    related:
+      - tool_available
+    since: "1.0.0"

@@ -1,0 +1,413 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hiivmind.dev/schemas/consequence-definition.json",
+  "$comment": "Schema version 1.1 - Added requires, execution, provides, alternatives, script for extensibility",
+  "title": "Consequence Definition Schema",
+  "description": "Schema for YAML consequence definition files",
+  "type": "object",
+  "required": ["schema_version", "category", "description", "consequences"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$",
+      "description": "Schema version (semver major.minor)"
+    },
+    "category": {
+      "type": "string",
+      "pattern": "^(core|extensions)/[a-z-]+$",
+      "description": "Category path (e.g., 'core/state', 'extensions/git')"
+    },
+    "description": {
+      "type": "string",
+      "description": "Brief description of this category"
+    },
+    "consequences": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/consequence"
+      }
+    }
+  },
+  "$defs": {
+    "consequence": {
+      "type": "object",
+      "required": ["type", "description", "parameters", "payload"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Unique consequence type identifier"
+        },
+        "description": {
+          "$ref": "#/$defs/consequenceDescription"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/parameter"
+          }
+        },
+        "payload": {
+          "$ref": "#/$defs/payload"
+        },
+        "examples": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/example"
+          }
+        },
+        "related": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Related consequence types"
+        },
+        "since": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Version when this consequence was introduced"
+        }
+      }
+    },
+    "consequenceDescription": {
+      "type": "object",
+      "required": ["brief"],
+      "additionalProperties": false,
+      "properties": {
+        "brief": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "One-line description"
+        },
+        "detail": {
+          "type": "string",
+          "description": "Extended description with markdown"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Additional notes and caveats"
+        }
+      }
+    },
+    "parameter": {
+      "type": "object",
+      "required": ["name", "type", "required", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Parameter name"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["string", "boolean", "number", "object", "array", "any"],
+          "description": "Parameter type"
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether parameter is required"
+        },
+        "description": {
+          "type": "string",
+          "description": "Parameter description"
+        },
+        "default": {
+          "description": "Default value if not provided"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern for string validation"
+        },
+        "enum": {
+          "type": "array",
+          "description": "Allowed values"
+        },
+        "interpolatable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether ${} interpolation is supported"
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "required": ["kind", "effect"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["state_mutation", "tool_call", "computation", "side_effect", "composite"],
+          "description": "Type of operation"
+        },
+        "tool": {
+          "type": ["string", "null"],
+          "description": "Claude tool name if tool_call kind"
+        },
+        "effect": {
+          "type": "string",
+          "description": "Pseudocode describing the operation"
+        },
+        "state_writes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "State fields that may be written"
+        },
+        "state_reads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "State fields that may be read"
+        },
+        "requires": {
+          "$ref": "#/$defs/requires",
+          "description": "Tool and environment requirements"
+        },
+        "execution": {
+          "$ref": "#/$defs/execution",
+          "description": "Runtime execution context"
+        },
+        "provides": {
+          "$ref": "#/$defs/provides",
+          "description": "Outputs and capabilities provided"
+        },
+        "alternatives": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/alternative"
+          },
+          "description": "Alternative implementations for graceful degradation"
+        },
+        "script": {
+          "$ref": "#/$defs/script",
+          "description": "Reference to implementation script"
+        }
+      }
+    },
+    "example": {
+      "type": "object",
+      "required": ["title", "yaml"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Example title"
+        },
+        "yaml": {
+          "type": "string",
+          "description": "YAML example code"
+        },
+        "state_before": {
+          "type": "object",
+          "description": "State before execution"
+        },
+        "state_after": {
+          "type": "object",
+          "description": "State after execution"
+        }
+      }
+    },
+    "requires": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Declare tool and environment requirements for this consequence",
+      "properties": {
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/toolRequirement"
+          },
+          "description": "Required CLI tools"
+        },
+        "shell": {
+          "type": "string",
+          "enum": ["bash", "sh", "zsh", "pwsh", "python"],
+          "description": "Required shell interpreter"
+        },
+        "environment": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Required environment variables"
+        },
+        "network": {
+          "type": "boolean",
+          "description": "Whether network access is required"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum execution time in seconds"
+        },
+        "working_directory": {
+          "type": "string",
+          "description": "Working directory (supports interpolation)"
+        }
+      }
+    },
+    "toolRequirement": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]*$",
+          "description": "Tool name (e.g., git, python3, docker)"
+        },
+        "min_version": {
+          "type": "string",
+          "description": "Minimum required version"
+        },
+        "check_command": {
+          "type": "string",
+          "description": "Command to check tool availability"
+        },
+        "optional": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether tool is optional (enables enhanced features)"
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Runtime execution context for advanced cases",
+      "properties": {
+        "runtime": {
+          "type": "string",
+          "enum": ["bash", "python", "node"],
+          "description": "Runtime interpreter"
+        },
+        "working_directory": {
+          "type": "string",
+          "description": "Relative to repo root"
+        },
+        "constraints": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "timeout": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Timeout in seconds"
+            },
+            "max_memory": {
+              "type": "string",
+              "pattern": "^\\d+[KMGT]?$",
+              "description": "Maximum memory (e.g., 1G, 512M)"
+            },
+            "max_output": {
+              "type": "string",
+              "pattern": "^\\d+[KMGT]?$",
+              "description": "Maximum output size (e.g., 10M)"
+            }
+          }
+        }
+      }
+    },
+    "provides": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Capabilities and outputs provided by this consequence",
+      "properties": {
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Feature flags this consequence supports"
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/outputDeclaration"
+          },
+          "description": "Outputs produced by this consequence"
+        }
+      }
+    },
+    "outputDeclaration": {
+      "type": "object",
+      "required": ["field", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "type": "string",
+          "description": "State field path (e.g., computed.repo_path)"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["string", "boolean", "number", "object", "array"],
+          "description": "Output data type"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern for validation"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the output"
+        }
+      }
+    },
+    "alternative": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Alternative implementation for graceful degradation",
+      "properties": {
+        "condition": {
+          "type": "string",
+          "description": "Condition expression (e.g., tool_available('gh'))"
+        },
+        "fallback": {
+          "type": "boolean",
+          "description": "If true, this is the final fallback"
+        },
+        "effect": {
+          "type": "string",
+          "description": "Alternative effect pseudocode"
+        },
+        "error": {
+          "type": "string",
+          "description": "Error message if fallback fails"
+        }
+      }
+    },
+    "script": {
+      "type": "object",
+      "required": ["path"],
+      "additionalProperties": false,
+      "description": "Reference to implementation script in repository",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to script (relative to repo root)"
+        },
+        "entrypoint": {
+          "type": "string",
+          "description": "Optional function name to call"
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Arguments to pass (supports interpolation)"
+        }
+      }
+    }
+  }
+}

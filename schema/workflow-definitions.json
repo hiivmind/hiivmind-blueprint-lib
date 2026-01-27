@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hiivmind.dev/schemas/workflow-definitions.json",
+  "$comment": "Schema version 1.0 - Defines the definitions block for workflow.yaml files",
+  "title": "Workflow Definitions Schema",
+  "description": "Schema for the optional 'definitions' block in workflow.yaml files that specifies where type definitions are loaded from",
+  "type": "object",
+  "properties": {
+    "source": {
+      "description": "Type definitions source. Can be a URL to bundle.yaml, 'local' for embedded definitions, or a shorthand like 'hiivmind/hiivmind-blueprint-types@v1'",
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "uri",
+          "description": "Direct URL to bundle.yaml or index files"
+        },
+        {
+          "const": "local",
+          "description": "Use local embedded definitions"
+        },
+        {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+@v?[0-9\\.]+$",
+          "description": "Shorthand reference: owner/repo@version (e.g., hiivmind/hiivmind-blueprint-types@v1.0.0)"
+        }
+      ]
+    },
+    "path": {
+      "type": "string",
+      "description": "Local path to embedded definitions (required when source is 'local')"
+    },
+    "base_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "Base URL for selective loading (alternative to source)"
+    },
+    "consequences": {
+      "type": "string",
+      "description": "Path to consequences index.yaml relative to base_url"
+    },
+    "preconditions": {
+      "type": "string",
+      "description": "Path to preconditions index.yaml relative to base_url"
+    },
+    "extensions": {
+      "type": "array",
+      "description": "Additional type definition packages to load",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "format": "uri",
+            "description": "URL to extension bundle.yaml"
+          },
+          {
+            "type": "string",
+            "pattern": "^local:.+$",
+            "description": "Local extension path (e.g., local:./custom-types)"
+          },
+          {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+@v?[0-9\\.]+$",
+            "description": "Extension reference: owner/repo@version"
+          }
+        ]
+      }
+    },
+    "cache": {
+      "type": "object",
+      "description": "Caching configuration for remote definitions",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable caching of remote definitions"
+        },
+        "ttl_hours": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 24,
+          "description": "Cache time-to-live in hours (0 = indefinite)"
+        }
+      },
+      "additionalProperties": false
+    },
+    "fallback": {
+      "type": "string",
+      "enum": ["error", "warn", "embedded"],
+      "default": "error",
+      "description": "Behavior when remote fetch fails: error (fail workflow), warn (use cache or embedded), embedded (silently use embedded)"
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "$comment": "When source is 'local', path is required",
+      "if": {
+        "properties": { "source": { "const": "local" } }
+      },
+      "then": {
+        "required": ["path"]
+      }
+    },
+    {
+      "$comment": "Cannot use both source and base_url",
+      "not": {
+        "required": ["source", "base_url"]
+      }
+    }
+  ],
+  "examples": [
+    {
+      "$comment": "Simple: Single bundle fetch",
+      "source": "https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/bundle.yaml"
+    },
+    {
+      "$comment": "Shorthand: Owner/repo@version",
+      "source": "hiivmind/hiivmind-blueprint-types@v1.0.0"
+    },
+    {
+      "$comment": "Local: Embedded definitions",
+      "source": "local",
+      "path": "./vendor/blueprint-types/v1.0.0"
+    },
+    {
+      "$comment": "Selective: Directory-based loading",
+      "base_url": "https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/",
+      "consequences": "consequences/index.yaml",
+      "preconditions": "preconditions/index.yaml"
+    },
+    {
+      "$comment": "With extensions",
+      "source": "hiivmind/hiivmind-blueprint-types@v1.0.0",
+      "extensions": [
+        "https://github.com/mycorp/internal-types/releases/download/v1.0.0/bundle.yaml",
+        "local:./custom-types"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,335 @@
+# Core State Mutation Consequences
+# Fundamental state manipulation operations
+
+schema_version: "1.0"
+category: core/state
+description: State mutation operations for modifying workflow state
+
+consequences:
+  # --------------------------------------------------------------------------
+  # set_flag
+  # --------------------------------------------------------------------------
+  - type: set_flag
+    description:
+      brief: Set a boolean flag
+      detail: |
+        Sets a boolean flag in the state.flags namespace. Flags are used for
+        simple true/false state that can be checked in conditional nodes.
+      notes:
+        - Flags are stored in state.flags namespace
+        - Use for binary conditions checked in workflow branching
+
+    parameters:
+      - name: flag
+        type: string
+        required: true
+        description: Flag name (alphanumeric and underscores)
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_]*$"
+        interpolatable: false
+
+      - name: value
+        type: boolean
+        required: true
+        description: Boolean value to set
+        interpolatable: false
+
+    payload:
+      kind: state_mutation
+      tool: null
+      effect: |
+        state.flags[flag] = value
+      state_writes:
+        - "flags.${flag}"
+      state_reads: []
+
+    examples:
+      - title: Set a simple flag
+        yaml: |
+          - type: set_flag
+            flag: config_found
+            value: true
+        state_before:
+          flags: {}
+        state_after:
+          flags:
+            config_found: true
+
+      - title: Clear a flag
+        yaml: |
+          - type: set_flag
+            flag: needs_update
+            value: false
+        state_before:
+          flags:
+            needs_update: true
+        state_after:
+          flags:
+            needs_update: false
+
+    related:
+      - evaluate
+      - set_state
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # set_state
+  # --------------------------------------------------------------------------
+  - type: set_state
+    description:
+      brief: Set any state field
+      detail: |
+        Sets a state field to a specified value. Supports dot notation for
+        nested field access and ${} interpolation in values.
+      notes:
+        - Use computed.* prefix for derived values
+        - Supports nested paths via dot notation
+        - Value can include ${field} interpolation
+
+    parameters:
+      - name: field
+        type: string
+        required: true
+        description: State field path (dot notation for nested)
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+        interpolatable: false
+
+      - name: value
+        type: any
+        required: true
+        description: Value to set (supports ${} interpolation)
+        interpolatable: true
+
+    payload:
+      kind: state_mutation
+      tool: null
+      effect: |
+        path_parts = split(field, ".")
+        target = state
+        for part in path_parts[:-1]:
+          target = target[part]
+        target[path_parts[-1]] = interpolate(value)
+      state_writes:
+        - "${field}"
+      state_reads: []
+
+    examples:
+      - title: Simple field assignment
+        yaml: |
+          - type: set_state
+            field: source_type
+            value: git
+        state_before:
+          source_type: null
+        state_after:
+          source_type: git
+
+      - title: Nested field with interpolation
+        yaml: |
+          - type: set_state
+            field: computed.manifest.title
+            value: "${fetch_result.title}"
+        state_before:
+          fetch_result:
+            title: "My Project"
+          computed:
+            manifest: {}
+        state_after:
+          computed:
+            manifest:
+              title: "My Project"
+
+      - title: From computed value
+        yaml: |
+          - type: set_state
+            field: source_id
+            value: "${computed.derived_id}"
+
+    related:
+      - set_flag
+      - append_state
+      - merge_state
+      - clear_state
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # append_state
+  # --------------------------------------------------------------------------
+  - type: append_state
+    description:
+      brief: Append value to array field
+      detail: |
+        Appends a value to an array field in state. Creates the array if it
+        doesn't exist. Useful for building up lists during workflow execution.
+      notes:
+        - Array is created if field doesn't exist
+        - Value can be any type (object, string, etc.)
+
+    parameters:
+      - name: field
+        type: string
+        required: true
+        description: Array field path
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+        interpolatable: false
+
+      - name: value
+        type: any
+        required: true
+        description: Value to append (supports ${} interpolation)
+        interpolatable: true
+
+    payload:
+      kind: state_mutation
+      tool: null
+      effect: |
+        array = get_state_value(field) ?? []
+        array.push(interpolate(value))
+        set_state_value(field, array)
+      state_writes:
+        - "${field}"
+      state_reads:
+        - "${field}"
+
+    examples:
+      - title: Append object to array
+        yaml: |
+          - type: append_state
+            field: computed.discovered_urls
+            value:
+              path: "/api/users"
+              title: "User API"
+        state_before:
+          computed:
+            discovered_urls: []
+        state_after:
+          computed:
+            discovered_urls:
+              - path: "/api/users"
+                title: "User API"
+
+      - title: Append string value
+        yaml: |
+          - type: append_state
+            field: computed.processed_files
+            value: "${current_file}"
+
+    related:
+      - set_state
+      - merge_state
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # clear_state
+  # --------------------------------------------------------------------------
+  - type: clear_state
+    description:
+      brief: Reset field to null
+      detail: |
+        Resets a state field to null/empty. Useful for clearing computed
+        values between iterations or resetting state for retry.
+      notes:
+        - Sets field to null (not undefined)
+        - Does not delete the field, just clears its value
+
+    parameters:
+      - name: field
+        type: string
+        required: true
+        description: Field to clear
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+        interpolatable: false
+
+    payload:
+      kind: state_mutation
+      tool: null
+      effect: |
+        set_state_value(field, null)
+      state_writes:
+        - "${field}"
+      state_reads: []
+
+    examples:
+      - title: Clear computed errors
+        yaml: |
+          - type: clear_state
+            field: computed.errors
+        state_before:
+          computed:
+            errors:
+              - "File not found"
+              - "Parse error"
+        state_after:
+          computed:
+            errors: null
+
+    related:
+      - set_state
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # merge_state
+  # --------------------------------------------------------------------------
+  - type: merge_state
+    description:
+      brief: Merge object into state field
+      detail: |
+        Merges an object into an existing state field. Existing properties
+        are overwritten, new properties are added. Useful for partial updates.
+      notes:
+        - Shallow merge (Object.assign semantics)
+        - Creates target field if it doesn't exist
+        - Values support ${} interpolation
+
+    parameters:
+      - name: field
+        type: string
+        required: true
+        description: Object field to merge into
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+        interpolatable: false
+
+      - name: value
+        type: object
+        required: true
+        description: Object to merge (supports ${} interpolation in values)
+        interpolatable: true
+
+    payload:
+      kind: state_mutation
+      tool: null
+      effect: |
+        existing = get_state_value(field) ?? {}
+        merged = Object.assign(existing, interpolate(value))
+        set_state_value(field, merged)
+      state_writes:
+        - "${field}"
+      state_reads:
+        - "${field}"
+
+    examples:
+      - title: Merge source configuration
+        yaml: |
+          - type: merge_state
+            field: computed.source_config
+            value:
+              repo_owner: "${computed.owner}"
+              repo_name: "${computed.name}"
+              branch: main
+        state_before:
+          computed:
+            owner: "hiivmind"
+            name: "blueprint"
+            source_config:
+              url: "https://github.com/hiivmind/blueprint"
+        state_after:
+          computed:
+            source_config:
+              url: "https://github.com/hiivmind/blueprint"
+              repo_owner: "hiivmind"
+              repo_name: "blueprint"
+              branch: "main"
+
+    related:
+      - set_state
+      - append_state
+    since: "1.0.0"

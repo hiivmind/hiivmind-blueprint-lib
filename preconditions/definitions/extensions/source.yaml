@@ -1,0 +1,196 @@
+# Extension: Source Preconditions
+# Source repository checks for corpus workflows
+
+schema_version: "1.0"
+category: extensions/source
+description: Source repository existence and update checks
+
+preconditions:
+  # --------------------------------------------------------------------------
+  # source_exists
+  # --------------------------------------------------------------------------
+  - type: source_exists
+    description:
+      brief: Check if source ID exists in config.yaml
+      detail: |
+        Evaluates to true if a source with the specified ID is defined
+        in the corpus configuration file (data/config.yaml).
+      notes:
+        - Checks config.sources array for matching ID
+        - Does not verify source is cloned
+        - ID is case-sensitive
+
+    parameters:
+      - name: id
+        type: string
+        required: true
+        description: Source identifier
+        pattern: "^[a-zA-Z0-9_-]+$"
+        interpolatable: true
+
+    evaluation:
+      effect: |
+        config = load_yaml("data/config.yaml")
+        resolved_id = interpolate(id)
+        return config.sources.any(s => s.id == resolved_id)
+      reads:
+        - "data/config.yaml"
+      functions:
+        - load_yaml
+        - interpolate
+
+    examples:
+      - title: Check polars source exists
+        yaml: |
+          - type: source_exists
+            id: "polars"
+        context:
+          files:
+            "data/config.yaml": |
+              sources:
+                - id: polars
+                  type: git
+                  url: https://github.com/pola-rs/polars
+        result: true
+
+      - title: Check with interpolation
+        yaml: |
+          - type: source_exists
+            id: "${computed.source_id}"
+        context:
+          state:
+            computed:
+              source_id: "ibis"
+          files:
+            "data/config.yaml": |
+              sources:
+                - id: ibis
+                  type: git
+        result: true
+
+    related:
+      - source_cloned
+      - source_has_updates
+      - config_exists
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # source_cloned
+  # --------------------------------------------------------------------------
+  - type: source_cloned
+    description:
+      brief: Check if source has been cloned
+      detail: |
+        Evaluates to true if the source has been cloned to the .source/
+        directory. Checks for directory existence at .source/{id}/.
+      notes:
+        - Checks .source/{id} directory existence
+        - Does not verify source content or integrity
+        - Works for any source type (git, local, web)
+
+    parameters:
+      - name: id
+        type: string
+        required: true
+        description: Source identifier
+        pattern: "^[a-zA-Z0-9_-]+$"
+        interpolatable: true
+
+    evaluation:
+      effect: |
+        resolved_id = interpolate(id)
+        return directory_exists(".source/" + resolved_id)
+      reads:
+        - ".source/${id}"
+      functions:
+        - directory_exists
+        - interpolate
+
+    examples:
+      - title: Check source is cloned
+        yaml: |
+          - type: source_cloned
+            id: "polars"
+        context:
+          files:
+            ".source/polars/": true
+        result: true
+
+      - title: Source not yet cloned
+        yaml: |
+          - type: source_cloned
+            id: "new-source"
+        context:
+          files: {}
+        result: false
+
+    related:
+      - source_exists
+      - source_has_updates
+      - directory_exists
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # source_has_updates
+  # --------------------------------------------------------------------------
+  - type: source_has_updates
+    description:
+      brief: Check if git source has upstream changes
+      detail: |
+        Evaluates to true if the git source has commits on the remote
+        that are not present locally. Performs a fetch before comparing.
+      notes:
+        - Only works with git source types
+        - Performs network operation (git fetch)
+        - Compares local HEAD with upstream tracking branch
+
+    parameters:
+      - name: id
+        type: string
+        required: true
+        description: Source identifier (must be git type)
+        pattern: "^[a-zA-Z0-9_-]+$"
+        interpolatable: true
+
+    evaluation:
+      effect: |
+        resolved_id = interpolate(id)
+        source_path = ".source/" + resolved_id
+
+        # Fetch latest
+        shell("git -C " + source_path + " fetch --quiet")
+
+        # Compare
+        local_sha = shell("git -C " + source_path + " rev-parse HEAD")
+        remote_sha = shell("git -C " + source_path + " rev-parse @{u}")
+
+        return local_sha != remote_sha
+      reads:
+        - ".source/${id}"
+      functions:
+        - shell
+        - interpolate
+
+    examples:
+      - title: Source has updates
+        yaml: |
+          - type: source_has_updates
+            id: "polars"
+        context:
+          files:
+            ".source/polars/": true
+        result: true
+
+      - title: Source is current
+        yaml: |
+          - type: source_has_updates
+            id: "narwhals"
+        context:
+          files:
+            ".source/narwhals/": true
+        result: false
+
+    related:
+      - source_exists
+      - source_cloned
+    since: "1.0.0"
