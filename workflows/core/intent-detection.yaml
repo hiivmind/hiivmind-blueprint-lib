@@ -1,0 +1,173 @@
+# Reusable Intent Detection Workflow
+# Composable sub-workflow for 3VL intent detection and dynamic routing
+#
+# Usage:
+#   Gateway workflows can include this sub-workflow to handle intent detection
+#   without needing N conditional nodes for N possible actions.
+#
+# Reference: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+#
+# See: lib/intent_detection/framework.md for 3VL semantics
+# See: lib/workflow/engine.md for dynamic routing support
+
+name: intent-detection
+version: "1.0.0"
+description: >
+  Reusable 3VL intent detection workflow. Parses user input into flags,
+  matches against rules, and sets computed.matched_action for dynamic routing.
+
+# Inputs (must be set in parent workflow's state before invoking)
+# - arguments: string - User input to parse
+# - intent_flags: object - Flag definitions (keywords, negative_keywords)
+# - intent_rules: array - Rules with conditions, action, priority
+# - fallback_action: string - Action when no rules match (default: "show_main_menu")
+
+# Outputs (set in state after execution)
+# - computed.matched_action: string - The action to execute
+# - computed.intent_flags: object - Parsed 3VL flag values
+# - computed.intent_matches: object - Match results with winner and candidates
+
+initial_state:
+  phase: "intent_detection"
+  computed:
+    matched_action: null
+    intent_flags: null
+    intent_matches: null
+
+start_node: check_has_input
+
+nodes:
+  # ============================================================================
+  # PHASE 1: Input Validation
+  # ============================================================================
+
+  check_has_input:
+    type: conditional
+    description: Check if user provided input to parse
+    condition:
+      type: evaluate_expression
+      expression: "arguments != null && arguments.trim() != ''"
+    branches:
+      "true": parse_intent_flags
+      "false": use_fallback
+
+  # ============================================================================
+  # PHASE 2: Flag Parsing
+  # ============================================================================
+
+  parse_intent_flags:
+    type: action
+    description: Parse user input into 3VL flags (T/F/U)
+    actions:
+      - type: parse_intent_flags
+        input: "${arguments}"
+        flag_definitions: "${intent_flags}"
+        store_as: computed.intent_flags
+    on_success: match_intent_rules
+    on_failure: use_fallback
+
+  # ============================================================================
+  # PHASE 3: Rule Matching
+  # ============================================================================
+
+  match_intent_rules:
+    type: action
+    description: Match parsed flags against intent rules
+    actions:
+      - type: match_3vl_rules
+        flags: "${computed.intent_flags}"
+        rules: "${intent_rules}"
+        store_as: computed.intent_matches
+    on_success: check_clear_winner
+    on_failure: use_fallback
+
+  # ============================================================================
+  # PHASE 4: Winner Determination
+  # ============================================================================
+
+  check_clear_winner:
+    type: conditional
+    description: Check if there's a clear winner (2+ point lead)
+    condition:
+      type: evaluate_expression
+      expression: "computed.intent_matches.clear_winner == true"
+    branches:
+      "true": set_winner_action
+      "false": check_has_candidates
+
+  set_winner_action:
+    type: action
+    description: Set the winning rule's action as the matched action
+    actions:
+      - type: set_state
+        field: computed.matched_action
+        value: "${computed.intent_matches.winner.action}"
+    on_success: success_resolved
+    on_failure: use_fallback
+
+  check_has_candidates:
+    type: conditional
+    description: Check if there are any candidates for disambiguation
+    condition:
+      type: evaluate_expression
+      expression: "computed.intent_matches.top_candidates.length > 0"
+    branches:
+      "true": show_disambiguation
+      "false": use_fallback
+
+  # ============================================================================
+  # PHASE 5: Disambiguation
+  # ============================================================================
+
+  show_disambiguation:
+    type: user_prompt
+    description: Present top candidates for user selection
+    prompt:
+      question: "Multiple intents detected. Which did you mean?"
+      header: "Clarify"
+      options_from_state: computed.intent_matches.top_candidates
+      option_mapping:
+        id: rule.name
+        label: rule.name
+        description: rule.description
+    on_response:
+      selected:
+        consequence:
+          - type: set_state
+            field: computed.matched_action
+            value: "${user_responses.show_disambiguation.selected.rule.action}"
+        next_node: success_resolved
+      other:
+        # User typed custom text - could re-parse or use fallback
+        consequence:
+          - type: set_state
+            field: arguments
+            value: "${user_responses.show_disambiguation.text}"
+        next_node: parse_intent_flags # Re-parse with new input
+
+  # ============================================================================
+  # PHASE 6: Fallback
+  # ============================================================================
+
+  use_fallback:
+    type: action
+    description: Use fallback action when no rules match
+    actions:
+      - type: set_state
+        field: computed.matched_action
+        value: "${fallback_action ?? 'show_main_menu'}"
+    on_success: success_resolved
+    on_failure: success_resolved # Fallback should not fail
+
+# ============================================================================
+# ENDINGS
+# ============================================================================
+
+endings:
+  success_resolved:
+    type: success
+    message: "Intent resolved"
+    summary:
+      matched_action: "${computed.matched_action}"
+      flags_parsed: "${computed.intent_flags != null}"
+      clear_winner: "${computed.intent_matches.clear_winner ?? false}"

@@ -1,0 +1,318 @@
+# Core Control Flow Consequences
+# Checkpoints, rollback, and agent spawning
+
+schema_version: "1.0"
+category: core/control
+description: Control flow, checkpoints, and agent spawning operations
+
+consequences:
+  # --------------------------------------------------------------------------
+  # create_checkpoint
+  # --------------------------------------------------------------------------
+  - type: create_checkpoint
+    description:
+      brief: Save state snapshot for potential rollback
+      detail: |
+        Creates a deep copy of the entire state at a named checkpoint.
+        Used before risky operations to enable state restoration if
+        something fails.
+      notes:
+        - Creates deep copy of entire state
+        - Multiple checkpoints can coexist
+        - Checkpoint names should be descriptive
+        - Does NOT checkpoint file system - only state
+
+    parameters:
+      - name: name
+        type: string
+        required: true
+        description: Checkpoint identifier
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_-]*$"
+        interpolatable: false
+
+    payload:
+      kind: state_mutation
+      tool: null
+      effect: |
+        state.checkpoints = state.checkpoints ?? {}
+        state.checkpoints[name] = deep_copy(state)
+      state_writes:
+        - "checkpoints.${name}"
+      state_reads: []
+
+    examples:
+      - title: Checkpoint before risky clone
+        yaml: |
+          - type: create_checkpoint
+            name: before_clone
+
+      - title: Checkpoint before destructive operation
+        yaml: |
+          - type: create_checkpoint
+            name: pre_delete
+
+    related:
+      - rollback_checkpoint
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # rollback_checkpoint
+  # --------------------------------------------------------------------------
+  - type: rollback_checkpoint
+    description:
+      brief: Restore state from checkpoint
+      detail: |
+        Restores the entire state from a previously created checkpoint.
+        Used in error handling to reset state after a failed operation.
+      notes:
+        - Restores complete state snapshot
+        - Does NOT rollback file system changes
+        - Fails if checkpoint doesn't exist
+
+    parameters:
+      - name: name
+        type: string
+        required: true
+        description: Checkpoint to restore
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_-]*$"
+        interpolatable: false
+
+    payload:
+      kind: state_mutation
+      tool: null
+      effect: |
+        if not state.checkpoints or not state.checkpoints[name]:
+          throw Error("Checkpoint not found: " + name)
+        state = state.checkpoints[name]
+      state_writes:
+        - "*"
+      state_reads:
+        - "checkpoints.${name}"
+
+    examples:
+      - title: Rollback after clone failure
+        yaml: |
+          - type: rollback_checkpoint
+            name: before_clone
+
+      - title: Pattern for safe risky operations
+        yaml: |
+          # Before risky operation
+          - type: create_checkpoint
+            name: before_clone
+          # ... risky operations ...
+          # On failure:
+          - type: rollback_checkpoint
+            name: before_clone
+          - type: display_message
+            message: "Clone failed. State restored."
+
+    related:
+      - create_checkpoint
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # spawn_agent
+  # --------------------------------------------------------------------------
+  - type: spawn_agent
+    description:
+      brief: Launch a Task agent for parallel work
+      detail: |
+        Spawns a Claude Task agent to perform work in parallel. Can run
+        synchronously or in the background. Results are stored in state
+        when the agent completes.
+      notes:
+        - Uses Claude's Task tool to spawn subagent
+        - Background agents run concurrently
+        - Results stored when agent completes
+        - Multiple spawn_agent calls can run in parallel
+
+    parameters:
+      - name: subagent_type
+        type: string
+        required: true
+        description: Agent type from available Task agents
+        interpolatable: false
+
+      - name: prompt
+        type: string
+        required: true
+        description: Task prompt for the agent
+        interpolatable: true
+
+      - name: store_as
+        type: string
+        required: true
+        description: State field for agent result
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+        interpolatable: true
+
+      - name: run_in_background
+        type: boolean
+        required: false
+        default: false
+        description: Run agent asynchronously
+        interpolatable: false
+
+    payload:
+      kind: tool_call
+      tool: Task
+      effect: |
+        agent_result = Task(
+          subagent_type: subagent_type,
+          prompt: interpolate(prompt),
+          run_in_background: run_in_background ?? false
+        )
+        set_state_value(interpolate(store_as), agent_result)
+      state_writes:
+        - "${store_as}"
+      state_reads: []
+
+    examples:
+      - title: Spawn source scanner
+        yaml: |
+          - type: spawn_agent
+            subagent_type: source-scanner
+            prompt: "Scan source ${source_id} for documentation structure"
+            store_as: computed.scan_results.${source_id}
+            run_in_background: true
+
+      - title: Parallel scanning of multiple sources
+        yaml: |
+          # Spawn multiple scanners in parallel
+          - type: spawn_agent
+            subagent_type: source-scanner
+            prompt: "Scan source main: ${config.sources[0].repo_url}"
+            store_as: computed.scan_results.main
+            run_in_background: true
+          - type: spawn_agent
+            subagent_type: source-scanner
+            prompt: "Scan source secondary: ${config.sources[1].repo_url}"
+            store_as: computed.scan_results.secondary
+            run_in_background: true
+
+      - title: Synchronous exploration
+        yaml: |
+          - type: spawn_agent
+            subagent_type: Explore
+            prompt: "Find all Python files containing the class ${class_name}"
+            store_as: computed.found_files
+            run_in_background: false
+
+    related:
+      - invoke_skill
+      - invoke_pattern
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # inline
+  # --------------------------------------------------------------------------
+  - type: inline
+    description:
+      brief: Execute embedded pseudocode for non-reusable logic
+      detail: |
+        Allows embedding custom logic directly in a workflow when the operation
+        is too specific to warrant a reusable consequence type. The pseudocode
+        is executed by the workflow engine with access to state.
+
+        Use sparingly - prefer reusable consequence types when the logic might
+        be needed elsewhere.
+      notes:
+        - Pseudocode has full access to state
+        - Can read and write state fields
+        - Results can be stored via store_as
+        - Use for workflow-specific transformations
+        - Consider extracting to a reusable type if used more than once
+
+    parameters:
+      - name: description
+        type: string
+        required: true
+        description: Human-readable description of what this code does
+        interpolatable: false
+
+      - name: pseudocode
+        type: string
+        required: true
+        description: |
+          The logic to execute. Has access to 'state' object and can use
+          standard operations like get_state_value(), set_state_value().
+        interpolatable: false
+
+      - name: store_as
+        type: string
+        required: false
+        description: State field to store the result in (if pseudocode returns a value)
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+        interpolatable: true
+
+      - name: state_reads
+        type: array
+        required: false
+        description: Document which state fields this code reads
+        items: { type: string }
+
+      - name: state_writes
+        type: array
+        required: false
+        description: Document which state fields this code writes
+        items: { type: string }
+
+    payload:
+      kind: computation
+      tool: null
+      effect: |
+        # Execute the embedded pseudocode
+        result = execute_pseudocode(pseudocode, state)
+
+        # Store result if store_as is specified
+        if store_as:
+          set_state_value(interpolate(store_as), result)
+      state_writes:
+        - "${store_as}"
+      state_reads: []
+
+    examples:
+      - title: Custom transformation
+        yaml: |
+          - type: inline
+            description: "Transform matched candidates to menu format"
+            pseudocode: |
+              candidates = state.computed.intent_matches.top_candidates
+              menu_items = candidates.map(c => ({
+                id: c.rule.name,
+                label: c.rule.name,
+                description: c.rule.description,
+                action: c.rule.action
+              }))
+              return menu_items
+            store_as: computed.menu_items
+            state_reads:
+              - computed.intent_matches.top_candidates
+            state_writes:
+              - computed.menu_items
+
+      - title: Complex validation
+        yaml: |
+          - type: inline
+            description: "Validate source configuration completeness"
+            pseudocode: |
+              source = state.current_source
+              errors = []
+              if not source.url:
+                errors.append("Missing URL")
+              if source.type == "git" and not source.branch:
+                errors.append("Git sources require a branch")
+              state.validation_errors = errors
+              return errors.length == 0
+            store_as: computed.is_valid
+            state_reads:
+              - current_source
+            state_writes:
+              - validation_errors
+              - computed.is_valid
+
+    related:
+      - compute
+      - evaluate
+    since: "2.0.0"
