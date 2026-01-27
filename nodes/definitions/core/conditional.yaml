@@ -1,0 +1,125 @@
+# Conditional Node Type Definition
+# Branches based on a precondition evaluation
+
+schema_version: "1.0"
+category: core
+
+nodes:
+  - type: conditional
+    description:
+      brief: Branches based on a precondition evaluation
+      detail: |
+        A conditional node evaluates a single precondition and routes to one of
+        two branches based on the result. This enables deterministic branching
+        based on state, flags, or any condition supported by precondition types.
+
+        The condition is evaluated once; the result determines which branch is taken.
+      notes:
+        - Condition is a single precondition object
+        - Both true and false branches are required
+        - Use for binary decisions based on state
+        - For multi-condition gates, use validation_gate instead
+
+    fields:
+      - name: type
+        type: string
+        required: true
+        value: "conditional"
+        description: Node type discriminator
+
+      - name: description
+        type: string
+        required: false
+        description: Human-readable purpose for debugging and documentation
+
+      - name: condition
+        type: precondition
+        required: true
+        description: |
+          A single precondition object that evaluates to true or false.
+          Must have a 'type' field matching a defined precondition type
+          (e.g., flag_set, file_exists, state_equals).
+
+      - name: branches
+        type: object
+        required: true
+        description: Routing configuration for condition results
+        properties:
+          - name: "true"
+            type: node_reference
+            required: true
+            description: Node or ending to route to when condition evaluates to true
+          - name: "false"
+            type: node_reference
+            required: true
+            description: Node or ending to route to when condition evaluates to false
+
+    execution:
+      effect: |
+        result = evaluate_precondition(node.condition, state)
+        if result == true:
+          return route_to(node.branches.true)
+        else:
+          return route_to(node.branches.false)
+      state_reads:
+        - Fields referenced in condition parameters via ${} interpolation
+        - Fields checked by the precondition type
+      state_writes: []
+
+    examples:
+      - title: Branch on flag
+        yaml: |
+          check_manifest:
+            type: conditional
+            description: Route based on whether manifest was detected
+            condition:
+              type: flag_set
+              flag: manifest_detected
+            branches:
+              true: present_manifest_option
+              false: ask_source_type
+        explanation: |
+          Checks if the manifest_detected flag is true. If so, routes to
+          present_manifest_option; otherwise routes to ask_source_type.
+
+      - title: Branch on state value
+        yaml: |
+          check_source_type:
+            type: conditional
+            description: Route based on detected source type
+            condition:
+              type: state_equals
+              field: source_type
+              value: git
+            branches:
+              true: configure_git_source
+              false: configure_other_source
+
+      - title: Branch on file existence
+        yaml: |
+          check_existing_corpus:
+            type: conditional
+            condition:
+              type: file_exists
+              path: "data/config.yaml"
+            branches:
+              true: load_existing_config
+              false: initialize_new_corpus
+
+      - title: Branch on expression evaluation
+        yaml: |
+          check_first_source:
+            type: conditional
+            description: Check if this is the first source being added
+            condition:
+              type: evaluate_expression
+              expression: "len(computed.config.sources) == 0"
+            branches:
+              true: show_first_source_guidance
+              false: proceed_to_add_source
+
+    related:
+      - action
+      - validation_gate
+      - user_prompt
+    since: "1.0.0"

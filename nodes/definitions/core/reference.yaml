@@ -1,0 +1,148 @@
+# Reference Node Type Definition
+# Loads and executes a reference document section
+
+schema_version: "1.0"
+category: core
+
+nodes:
+  - type: reference
+    description:
+      brief: Loads and executes a reference document section
+      detail: |
+        A reference node delegates execution to a reference document, typically a
+        markdown file containing detailed procedure instructions. This enables
+        complex multi-step procedures to be documented separately while remaining
+        callable from workflows.
+
+        Context variables can be passed to the document and will be available for
+        interpolation within the document content.
+      notes:
+        - Doc path is relative to plugin root
+        - Section parameter allows targeting specific headings
+        - Context variables are available in the referenced document
+        - Useful for reusable procedures across multiple workflows
+        - Document execution follows engine.md interpretation patterns
+
+    fields:
+      - name: type
+        type: string
+        required: true
+        value: "reference"
+        description: Node type discriminator
+
+      - name: doc
+        type: string
+        required: true
+        description: |
+          Path to the reference document, relative to plugin root.
+          Typically a markdown file in lib/ or references/ directory.
+
+      - name: section
+        type: string
+        required: false
+        description: |
+          Optional section heading within the document to execute.
+          If omitted, the entire document is executed.
+
+      - name: context
+        type: object
+        required: false
+        description: |
+          Variables to make available within the referenced document.
+          These can be referenced using ${} interpolation syntax.
+        additionalProperties:
+          type: any
+          interpolatable: true
+
+      - name: next_node
+        type: node_reference
+        required: true
+        description: Node or ending to route to after document execution completes
+
+    execution:
+      effect: |
+        # Resolve document path
+        doc_path = resolve_path(plugin_root, node.doc)
+
+        # Read document content
+        doc_content = read_file(doc_path)
+
+        # Extract section if specified
+        if node.section:
+          doc_content = extract_section(doc_content, node.section)
+
+        # Build context with interpolated values
+        context = {}
+        if node.context:
+          for key, value in node.context.items():
+            context[key] = interpolate(value, state)
+
+        # Execute document content with context
+        # (LLM interprets the document following engine patterns)
+        execute_document(doc_content, context, state)
+
+        # Route to next node
+        return route_to(node.next_node)
+      state_reads:
+        - Fields referenced in context values via ${} interpolation
+      state_writes:
+        - Depends on document content execution
+
+    examples:
+      - title: Execute git clone procedure
+        yaml: |
+          clone_repository:
+            type: reference
+            doc: "lib/corpus/patterns/sources/git.md"
+            section: "Clone Repository"
+            context:
+              repo_url: "${computed.repo_url}"
+              clone_path: "${computed.clone_path}"
+              branch: "${user_responses.branch}"
+            next_node: verify_clone
+        explanation: |
+          Loads the git.md document, extracts the "Clone Repository" section,
+          and executes it with the provided context variables. After completion,
+          routes to verify_clone.
+
+      - title: Full document execution
+        yaml: |
+          run_build_process:
+            type: reference
+            doc: "references/build-index.md"
+            context:
+              source_paths: "${computed.source_paths}"
+              output_path: "${computed.output_path}"
+            next_node: finalize_build
+        explanation: |
+          Executes the entire build-index.md document with source and output
+          paths from computed state.
+
+      - title: Conditional documentation
+        yaml: |
+          show_git_help:
+            type: reference
+            doc: "references/source-types/git-help.md"
+            next_node: ask_git_url
+        explanation: |
+          Displays help documentation about git source configuration before
+          prompting for the repository URL. No context needed for informational docs.
+
+      - title: Complex procedure with multiple context values
+        yaml: |
+          process_web_source:
+            type: reference
+            doc: "lib/corpus/patterns/sources/web.md"
+            section: "Fetch and Cache"
+            context:
+              urls: "${computed.discovered_urls}"
+              cache_dir: "${computed.cache_directory}"
+              max_depth: "${user_responses.crawl_depth}"
+              include_images: "${flags.include_images}"
+              user_agent: "hiivmind-corpus/1.0"
+            next_node: verify_cached_content
+
+    related:
+      - action
+      - conditional
+    since: "1.0.0"

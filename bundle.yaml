@@ -15,16 +15,19 @@ package:
 schemas:
   consequence: "1.1"
   precondition: "1.0"
+  node: "1.0"
 
 # Statistics
 stats:
-  total_types: 70
+  total_types: 75
   consequence_types: 43
   precondition_types: 27
+  node_types: 5
   core_consequence_types: 30
   extension_consequence_types: 13
   core_precondition_types: 22
   extension_precondition_types: 5
+  core_node_types: 5
 
 # ============================================================================
 # CONSEQUENCES (43 types)
@@ -722,3 +725,69 @@ preconditions:
       brief: Check if web fetch returned non-empty content
       parameters:
         - {name: result_field, type: string, required: true}
+
+
+# ============================================================================
+# NODES (5 types)
+# ============================================================================
+
+nodes:
+  schema_version: "1.0"
+
+  # Master lookup table: type -> category
+  type_lookup:
+    action: core
+    conditional: core
+    user_prompt: core
+    validation_gate: core
+    reference: core
+
+  # Categories
+  categories:
+    core:
+      description: Fundamental node types for workflow execution
+      types: [action, conditional, user_prompt, validation_gate, reference]
+
+  # Type signatures (minimal for validation, full definitions in separate files)
+  types:
+    action:
+      brief: Executes operations and routes based on success/failure
+      fields:
+        - {name: type, type: string, required: true, value: "action"}
+        - {name: description, type: string, required: false}
+        - {name: actions, type: array, required: true, items: consequence}
+        - {name: on_success, type: node_reference, required: true}
+        - {name: on_failure, type: node_reference, required: true}
+
+    conditional:
+      brief: Branches based on a precondition evaluation
+      fields:
+        - {name: type, type: string, required: true, value: "conditional"}
+        - {name: description, type: string, required: false}
+        - {name: condition, type: precondition, required: true}
+        - {name: branches, type: object, required: true}
+
+    user_prompt:
+      brief: Presents an AskUserQuestion and routes based on response
+      fields:
+        - {name: type, type: string, required: true, value: "user_prompt"}
+        - {name: prompt, type: object, required: true}
+        - {name: on_response, type: object, required: true}
+
+    validation_gate:
+      brief: Runs multiple preconditions; all must pass to proceed
+      fields:
+        - {name: type, type: string, required: true, value: "validation_gate"}
+        - {name: description, type: string, required: false}
+        - {name: validations, type: array, required: true}
+        - {name: on_valid, type: node_reference, required: true}
+        - {name: on_invalid, type: node_reference, required: true}
+
+    reference:
+      brief: Loads and executes a reference document section
+      fields:
+        - {name: type, type: string, required: true, value: "reference"}
+        - {name: doc, type: string, required: true}
+        - {name: section, type: string, required: false}
+        - {name: context, type: object, required: false}
+        - {name: next_node, type: node_reference, required: true}

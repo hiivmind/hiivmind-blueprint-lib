@@ -1,0 +1,57 @@
+# Node Type Definitions Index
+# Registry of node types for hiivmind-blueprint workflows
+
+schema_version: "1.0"
+description: Node type definitions for workflow execution
+
+# Master lookup table: type -> definition file
+type_lookup:
+  action: core/action
+  conditional: core/conditional
+  user_prompt: core/user-prompt
+  validation_gate: core/validation-gate
+  reference: core/reference
+
+# Statistics
+stats:
+  total_types: 5
+  core_types: 5
+  extension_types: 0
+
+# Categories
+categories:
+  core:
+    description: Fundamental node types for workflow execution
+    types:
+      - action           # Execute operations, route on success/failure
+      - conditional      # Branch based on precondition evaluation
+      - user_prompt      # Present AskUserQuestion, route based on response
+      - validation_gate  # Run multiple preconditions, all must pass
+      - reference        # Load and execute reference document
+
+# Type Summary
+types:
+  - type: action
+    brief: Executes operations and routes based on success/failure
+    category: core
+    since: "1.0.0"
+
+  - type: conditional
+    brief: Branches based on a precondition evaluation
+    category: core
+    since: "1.0.0"
+
+  - type: user_prompt
+    brief: Presents an AskUserQuestion and routes based on response
+    category: core
+    since: "1.0.0"
+
+  - type: validation_gate
+    brief: Runs multiple preconditions; all must pass to proceed
+    category: core
+    since: "1.0.0"
+
+  - type: reference
+    brief: Loads and executes a reference document section
+    category: core
+    since: "1.0.0"

@@ -15,21 +15,26 @@ license: MIT
 schemas:
   consequence: "1.1"
   precondition: "1.0"
+  node: "1.0"
 
 # Statistics
 stats:
+  total_types: 75
   consequence_types: 43
   precondition_types: 27
+  node_types: 5
   core_consequence_types: 30
   extension_consequence_types: 13
   core_precondition_types: 22
   extension_precondition_types: 5
+  core_node_types: 5
 
 # Artifacts produced by releases
 artifacts:
   - bundle.yaml           # Everything in one file (simple fetch)
   - consequences/         # Split files (selective loading)
   - preconditions/        # Split files (selective loading)
+  - nodes/                # Node type definitions (selective loading)
   - schema/               # JSON Schema definitions
 
 # Compatibility
