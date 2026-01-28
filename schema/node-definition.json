@@ -1,0 +1,320 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/node-definition.json",
+  "$comment": "Schema version 1.0 - Node type definition format for modular YAML files",
+  "title": "Node Type Definition Schema",
+  "description": "Schema for YAML node type definition files",
+  "type": "object",
+  "required": ["schema_version", "category", "nodes"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "common.json#/$defs/semver_short",
+      "description": "Schema version (semver major.minor)"
+    },
+    "category": {
+      "type": "string",
+      "enum": ["core", "extensions"],
+      "description": "Node category (flat, unlike precondition/consequence paths)"
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["type", "description", "fields", "execution"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "$ref": "common.json#/$defs/identifier",
+          "description": "Unique node type identifier"
+        },
+        "description": {
+          "$ref": "#/$defs/nodeDescription"
+        },
+        "deprecated": {
+          "$ref": "#/$defs/deprecation"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          },
+          "description": "Field definitions for this node type"
+        },
+        "execution": {
+          "$ref": "#/$defs/execution"
+        },
+        "examples": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/example"
+          }
+        },
+        "related": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Related node types"
+        },
+        "since": {
+          "$ref": "common.json#/$defs/semver",
+          "description": "Version when this node type was introduced"
+        },
+        "audit_since": {
+          "$ref": "common.json#/$defs/semver",
+          "description": "Version when audit capability was added (for conditional)"
+        },
+        "deprecated_since": {
+          "$ref": "common.json#/$defs/semver",
+          "description": "Version when this node type was deprecated"
+        }
+      }
+    },
+    "nodeDescription": {
+      "type": "object",
+      "required": ["brief"],
+      "additionalProperties": false,
+      "properties": {
+        "brief": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "One-line description"
+        },
+        "detail": {
+          "type": "string",
+          "description": "Extended description with markdown"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Additional notes and caveats"
+        }
+      }
+    },
+    "deprecation": {
+      "type": "object",
+      "required": ["since", "replacement", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "since": {
+          "$ref": "common.json#/$defs/semver",
+          "description": "Version when deprecation occurred"
+        },
+        "replacement": {
+          "type": "string",
+          "description": "Recommended replacement node type"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Explanation of why this was deprecated"
+        },
+        "migration": {
+          "type": "string",
+          "description": "Code example showing how to migrate"
+        }
+      }
+    },
+    "field": {
+      "type": "object",
+      "required": ["name", "type", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "common.json#/$defs/identifier",
+          "description": "Field name"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["string", "boolean", "number", "array", "object", "precondition", "consequence", "node_reference", "any"],
+          "description": "Field type (includes special types for workflow references)"
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether field is required"
+        },
+        "description": {
+          "type": "string",
+          "description": "Field description"
+        },
+        "value": {
+          "description": "Constant value (for discriminator fields like type)"
+        },
+        "default": {
+          "description": "Default value if not provided"
+        },
+        "min_items": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Minimum array items (when type is array)"
+        },
+        "max_items": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum array items (when type is array)"
+        },
+        "max_length": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum string length (when type is string)"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern for validation"
+        },
+        "items": {
+          "oneOf": [
+            { "$ref": "#/$defs/field" },
+            { "$ref": "#/$defs/inlineItemDefinition" },
+            { "type": "string", "description": "Simple type reference (e.g., 'consequence')" }
+          ],
+          "description": "Schema for array items (when type is array)"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          },
+          "description": "Nested properties (when type is object)"
+        },
+        "additionalProperties": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/field"
+              }
+            },
+            { "$ref": "#/$defs/field" },
+            { "$ref": "#/$defs/inlineItemDefinition" }
+          ],
+          "description": "Schema for additional object properties"
+        },
+        "interpolatable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether ${} interpolation is supported"
+        },
+        "required_unless": {
+          "type": "string",
+          "description": "Field is required unless this other field is provided"
+        },
+        "required_with": {
+          "type": "string",
+          "description": "Field is required when this other field is provided"
+        },
+        "reserved_keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reservedKey"
+          },
+          "description": "Reserved keys with special meaning (for additionalProperties objects)"
+        }
+      }
+    },
+    "reservedKey": {
+      "type": "object",
+      "required": ["name", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Reserved key name"
+        },
+        "description": {
+          "type": "string",
+          "description": "What this key does"
+        },
+        "for": {
+          "type": "string",
+          "description": "Context in which this key is used"
+        }
+      }
+    },
+    "inlineItemDefinition": {
+      "type": "object",
+      "description": "Inline item definition for arrays (shorthand without name/required/description at top level)",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["string", "boolean", "number", "array", "object", "precondition", "consequence", "node_reference", "any"],
+          "description": "Item type"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          },
+          "description": "Properties for object items"
+        },
+        "additional_properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/field"
+          },
+          "description": "Additional property definitions"
+        },
+        "interpolatable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether ${} interpolation is supported"
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": ["effect"],
+      "additionalProperties": false,
+      "description": "Describes how the node executes (may have side effects)",
+      "properties": {
+        "effect": {
+          "type": "string",
+          "description": "Pseudocode describing the execution behavior"
+        },
+        "state_reads": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "State fields that may be read during execution"
+        },
+        "state_writes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "State fields that may be written during execution"
+        }
+      }
+    },
+    "example": {
+      "type": "object",
+      "required": ["title", "yaml"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Example title"
+        },
+        "yaml": {
+          "type": "string",
+          "description": "YAML example code"
+        },
+        "explanation": {
+          "type": "string",
+          "description": "Explanation of what the example demonstrates"
+        }
+      }
+    }
+  }
+}

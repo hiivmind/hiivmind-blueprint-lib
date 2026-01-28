@@ -38,11 +38,12 @@ sources:
 
   - path: core/composite.yaml
     category: core/composite
-    description: Logical composition (AND, OR, NOR)
+    description: Logical composition (AND, OR, NOR, XOR)
     types:
       - all_of
       - any_of
       - none_of
+      - xor_of
 
   - path: core/expression.yaml
     category: core/expression
@@ -109,10 +110,11 @@ type_lookup:
   tool_available: core/tool.yaml
   python_module_available: core/tool.yaml
 
-  # Core - Composite (3)
+  # Core - Composite (4)
   all_of: core/composite.yaml
   any_of: core/composite.yaml
   none_of: core/composite.yaml
+  xor_of: core/composite.yaml
 
   # Core - Expression (1)
   evaluate_expression: core/expression.yaml
@@ -133,7 +135,7 @@ type_lookup:
 
 # Statistics
 stats:
-  total_types: 27
-  core_types: 22
+  total_types: 28
+  core_types: 23
   extension_types: 5
   definition_files: 8

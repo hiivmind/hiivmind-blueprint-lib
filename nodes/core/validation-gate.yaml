@@ -1,14 +1,61 @@
 # Validation Gate Node Type Definition
-# Runs multiple preconditions; all must pass to proceed
+# DEPRECATED: Use conditional node with audit.enabled instead
+#
+# Migration: See examples below for converting to conditional + audit
 
-schema_version: "1.0"
+schema_version: "2.0"
 category: core
 
 nodes:
   - type: validation_gate
+    deprecated:
+      since: "2.0.0"
+      replacement: conditional
+      reason: |
+        validation_gate forces all_of semantics and uses different field names
+        (on_valid/on_invalid) than other nodes. The conditional node with
+        audit.enabled provides the same functionality with more flexibility:
+        - Choose any composite logic (all_of, any_of, xor_of)
+        - Consistent field names (on_true/on_false)
+        - More flexible message configuration
+      migration: |
+        # Old validation_gate
+        validate_env:
+          type: validation_gate
+          validations:
+            - type: file_exists
+              path: "config.yaml"
+              error_message: "Config missing"
+            - type: tool_available
+              tool: git
+              error_message: "Git not installed"
+          on_valid: proceed
+          on_invalid: show_errors
+
+        # New conditional with audit
+        validate_env:
+          type: conditional
+          condition:
+            type: all_of
+            conditions:
+              - type: file_exists
+                path: "config.yaml"
+              - type: tool_available
+                tool: git
+          audit:
+            enabled: true
+            messages:
+              file_exists: "Config missing"
+              tool_available: "Git not installed"
+          branches:
+            on_true: proceed
+            on_false: show_errors
+
     description:
-      brief: Runs multiple preconditions; all must pass to proceed
+      brief: "[DEPRECATED] Runs multiple preconditions; all must pass to proceed"
       detail: |
+        **DEPRECATED in v2.0.0** - Use `conditional` node with `audit.enabled: true` instead.
+
         A validation_gate node evaluates multiple preconditions. All validations
         must pass for the workflow to proceed via on_valid; if any fail, routes
         to on_invalid. Each validation can have a custom error_message for reporting.
@@ -16,8 +63,9 @@ nodes:
         Use this for entry checks, pre-action validation, or any scenario requiring
         multiple conditions to be satisfied before proceeding.
       notes:
+        - "DEPRECATED: Use conditional with audit.enabled instead"
         - All validations must pass for on_valid routing
-        - First failure short-circuits remaining validations
+        - Evaluates all validations (no short-circuit) to collect all errors
         - Error messages are collected for display on invalid
         - Different from conditional (single condition, binary branch)
 
@@ -153,7 +201,54 @@ nodes:
             on_valid: begin_sync
             on_invalid: source_access_error
 
+      # Migration examples
+      - title: "Migration: Pre-operation validation → conditional"
+        yaml: |
+          # BEFORE (deprecated)
+          validate_environment:
+            type: validation_gate
+            validations:
+              - type: file_exists
+                path: "data/config.yaml"
+                error_message: "Config file missing"
+              - type: tool_available
+                tool: git
+                error_message: "Git not installed"
+            on_valid: start_processing
+            on_invalid: show_errors
+
+          # AFTER (recommended)
+          validate_environment:
+            type: conditional
+            description: Ensure environment is ready
+            condition:
+              type: all_of
+              conditions:
+                - type: file_exists
+                  path: "data/config.yaml"
+                - type: tool_available
+                  tool: git
+            audit:
+              enabled: true
+              messages:
+                file_exists: "Config file missing"
+                tool_available: "Git not installed"
+            branches:
+              on_true: start_processing
+              on_false: show_errors
+        explanation: |
+          Migration steps:
+          1. Change type from validation_gate to conditional
+          2. Wrap validations in condition.type: all_of with conditions array
+          3. Move error_message fields to audit.messages keyed by type
+          4. Add audit.enabled: true
+          5. Rename on_valid/on_invalid to branches.on_true/on_false
+
+          Note: The new format stores results in computed.audit_results instead
+          of computed.validation_errors. Update any nodes that read this value.
+
     related:
       - conditional
       - action
     since: "1.0.0"
+    deprecated_since: "2.0.0"

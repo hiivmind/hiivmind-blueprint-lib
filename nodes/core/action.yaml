@@ -64,8 +64,8 @@ nodes:
       state_reads:
         - Any fields referenced in action parameters via ${} interpolation
       state_writes:
-        - "computed.${store_as}" for each action with store_as
-        - Additional writes defined by individual consequence types
+        - "computed.${store_as} for each action with store_as"
+        - "Additional writes defined by individual consequence types"
 
     examples:
       - title: Basic action chain

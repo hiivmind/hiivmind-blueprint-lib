@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/node-types.json",
-  "$comment": "Schema version 1.0 - Node type definitions extracted from workflow.json for reuse",
+  "$comment": "Schema version 2.0 - Node type definitions. validation_gate deprecated in favor of conditional with audit.",
   "title": "Blueprint Node Types Schema",
-  "description": "Definitions for workflow node types: action, conditional, user_prompt, validation_gate, reference",
+  "description": "Definitions for workflow node types: action, conditional, user_prompt, validation_gate (deprecated), reference",
   "$defs": {
     "node": {
       "type": "object",
@@ -79,7 +79,31 @@
         "description": { "type": "string" },
         "condition": {
           "$ref": "#/$defs/precondition",
-          "description": "Condition to evaluate"
+          "description": "Condition to evaluate (often a composite like all_of, any_of, xor_of)"
+        },
+        "audit": {
+          "type": "object",
+          "description": "Enable audit mode for comprehensive condition evaluation without short-circuiting",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Enable audit mode (evaluate all conditions, collect results)"
+            },
+            "output": {
+              "type": "string",
+              "default": "computed.audit_results",
+              "description": "State path where audit results are written"
+            },
+            "messages": {
+              "type": "object",
+              "description": "Error messages keyed by precondition type name",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
         },
         "branches": {
           "type": "object",
@@ -120,6 +144,7 @@
     },
     "validation_gate_node": {
       "type": "object",
+      "$comment": "DEPRECATED in v2.0.0 - Use conditional node with audit.enabled instead",
       "required": ["validations", "on_valid", "on_invalid"],
       "properties": {
         "type": { "const": "validation_gate" },
