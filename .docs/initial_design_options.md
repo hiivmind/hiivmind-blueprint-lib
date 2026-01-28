@@ -54,9 +54,9 @@ The `clone_repo` type is resolved locally from `lib/consequences/definitions/ext
 ```yaml
 # workflow.yaml
 definitions:
-  consequences: hiivmind/hiivmind-blueprint-types@v1    # ← External reference
+  consequences: hiivmind/hiivmind-blueprint-lib@v1    # ← External reference
   # or explicit URL:
-  # consequences: https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1/consequences.yaml
+  # consequences: https://github.com/hiivmind/hiivmind-blueprint-lib/releases/download/v1/consequences.yaml
 
 nodes:
   clone_source:
@@ -73,7 +73,7 @@ nodes:
 ### Candidate: The Type Definition Layer
 
 ```
-hiivmind/hiivmind-blueprint-types/
+hiivmind/hiivmind-blueprint-lib/
 ├── consequences/
 │   ├── definitions/
 │   │   ├── core/
@@ -122,9 +122,9 @@ v2.0.0  →  Breaking changes (renamed types, removed parameters)
 **Workflow references:**
 ```yaml
 definitions:
-  consequences: hiivmind/hiivmind-blueprint-types@v1     # Floating major
-  consequences: hiivmind/hiivmind-blueprint-types@v1.2  # Floating patch
-  consequences: hiivmind/hiivmind-blueprint-types@v1.2.3  # Pinned exact
+  consequences: hiivmind/hiivmind-blueprint-lib@v1     # Floating major
+  consequences: hiivmind/hiivmind-blueprint-lib@v1.2  # Floating patch
+  consequences: hiivmind/hiivmind-blueprint-lib@v1.2.3  # Pinned exact
 ```
 
 ### Option B: Schema Version as Contract
@@ -157,7 +157,7 @@ Maximum reproducibility, but poor ergonomics. Better as an optional lock mechani
 
 ```yaml
 definitions:
-  consequences: https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-types/v1.2.0/consequences/index.yaml
+  consequences: https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v1.2.0/consequences/index.yaml
 ```
 
 **Pros:** Simple, works anywhere
@@ -167,7 +167,7 @@ definitions:
 
 ```yaml
 definitions:
-  consequences: hiivmind/hiivmind-blueprint-types@v1
+  consequences: hiivmind/hiivmind-blueprint-lib@v1
 ```
 
 Resolution logic:
@@ -186,7 +186,7 @@ my-plugin/
 ├── .claude-plugin/
 │   └── plugin.json
 ├── vendor/
-│   └── hiivmind-blueprint-types/       # ← vendored definitions
+│   └── hiivmind-blueprint-lib/       # ← vendored definitions
 │       └── v1.2.0/
 └── skills/
     └── my-skill/
@@ -196,7 +196,7 @@ my-plugin/
 ```yaml
 # workflow.yaml
 definitions:
-  consequences: vendor://hiivmind-blueprint-types/v1.2.0
+  consequences: vendor://hiivmind-blueprint-lib/v1.2.0
 ```
 
 ---
@@ -206,9 +206,9 @@ definitions:
 ### Layer 1: Global Cache (User-Level)
 
 ```
-~/.claude/cache/hiivmind-blueprint-types/
+~/.claude/cache/hiivmind-blueprint-lib/
 ├── hiivmind/
-│   └── hiivmind-blueprint-types/
+│   └── hiivmind-blueprint-lib/
 │       ├── v1.2.0/
 │       │   ├── consequences/
 │       │   └── preconditions/
@@ -221,9 +221,9 @@ Shared across all plugins. Fetched once per version.
 ### Layer 2: Lock File (Plugin-Level)
 
 ```yaml
-# .hiivmind-blueprint-types.lock
+# .hiivmind-blueprint-lib.lock
 resolved:
-  hiivmind/hiivmind-blueprint-types:
+  hiivmind/hiivmind-blueprint-lib:
     requested: "@v1"
     resolved: "v1.3.2"
     sha256: "a1b2c3d4..."
@@ -243,7 +243,7 @@ If network unavailable:
 
 ## Release Workflow
 
-### For hiivmind-blueprint-types Maintainers
+### For hiivmind-blueprint-lib Maintainers
 
 ```bash
 # Tag release
@@ -296,17 +296,17 @@ v1.3.0/
 
 ```yaml
 definitions:
-  consequences: hiivmind/hiivmind-blueprint-types@v1
+  consequences: hiivmind/hiivmind-blueprint-lib@v1
   extensions:
-    - hiivmind/hiivmind-blueprint-types-docker@v1
-    - hiivmind/hiivmind-blueprint-types-kubernetes@v1
+    - hiivmind/hiivmind-blueprint-lib-docker@v1
+    - hiivmind/hiivmind-blueprint-lib-kubernetes@v1
 ```
 
 ### Third-Party Extensions
 
 ```yaml
 definitions:
-  consequences: hiivmind/hiivmind-blueprint-types@v1
+  consequences: hiivmind/hiivmind-blueprint-lib@v1
   extensions:
     - mycorp/internal-consequences@v2
     - community/ml-pipeline-types@v1
@@ -319,7 +319,7 @@ Extensions declare their types in their own `index.yaml`:
 ```yaml
 # mycorp/internal-consequences index.yaml
 schema_version: "1.0"
-extends: hiivmind/hiivmind-blueprint-types@v1
+extends: hiivmind/hiivmind-blueprint-lib@v1
 types:
   - deploy_to_staging
   - run_integration_tests
@@ -413,7 +413,7 @@ workflow:
 
 ### Phase 1: Establish the External Repo
 
-1. Extract `lib/consequences/` and `lib/preconditions/` to `hiivmind/hiivmind-blueprint-types`
+1. Extract `lib/consequences/` and `lib/preconditions/` to `hiivmind/hiivmind-blueprint-lib`
 2. Set up semantic versioning with GitHub releases
 3. Publish `v1.0.0` as baseline
 
@@ -422,12 +422,12 @@ workflow:
 ```yaml
 # External (default for new workflows)
 definitions:
-  source: hiivmind/hiivmind-blueprint-types@v1
+  source: hiivmind/hiivmind-blueprint-lib@v1
 
 # Embedded (for offline/airgapped)
 definitions:
   source: local
-  path: ./vendor/hiivmind-blueprint-types
+  path: ./vendor/hiivmind-blueprint-lib
 ```
 
 ### Phase 3: Extension Registry
@@ -435,9 +435,9 @@ definitions:
 ```yaml
 # Multiple sources composed
 definitions:
-  base: hiivmind/hiivmind-blueprint-types@v1
+  base: hiivmind/hiivmind-blueprint-lib@v1
   extensions:
-    - hiivmind/hiivmind-blueprint-types-ci@v1
+    - hiivmind/hiivmind-blueprint-lib-ci@v1
     - local:./custom-types
 ```
 
@@ -462,14 +462,14 @@ definitions:
 | Aspect | GitHub Actions | Workflow Types |
 |--------|---------------|----------------|
 | **Unit** | Action (executable) | Type definition (schema) |
-| **Resolution** | `actions/checkout@v4` | `hiivmind/hiivmind-blueprint-types@v1` |
+| **Resolution** | `actions/checkout@v4` | `hiivmind/hiivmind-blueprint-lib@v1` |
 | **Granularity** | Per-action | Per-package (many types) |
 | **Execution** | Actions run code | Types define structure |
 | **Caching** | Per-workflow-run | Global + lockfile |
 | **Offline** | Fails | Cached fallback |
 | **Extensions** | Composite actions | Extension packages |
 
-The key difference: GitHub Actions are **executable units**, while hiivmind-blueprint-types are **semantic definitions**. This means hiivmind-blueprint-types can be cached more aggressively and composed more freely.
+The key difference: GitHub Actions are **executable units**, while hiivmind-blueprint-lib are **semantic definitions**. This means hiivmind-blueprint-lib can be cached more aggressively and composed more freely.
 
 ---
 
@@ -477,7 +477,7 @@ The key difference: GitHub Actions are **executable units**, while hiivmind-blue
 
 This analysis covers the architectural landscape. If this direction is approved:
 
-1. Create `hiivmind/hiivmind-blueprint-types` repo with extracted definitions
+1. Create `hiivmind/hiivmind-blueprint-lib` repo with extracted definitions
 2. Design resolution protocol (URL scheme, caching)
 3. Implement loader that supports both embedded and external
 4. Establish release automation
@@ -506,4 +506,4 @@ This analysis covers the architectural landscape. If this direction is approved:
   there's no code execution at resolution time.
 
   The document ends with open questions for discussion rather than a task list.
-  ⎿  Tool use rejected with user message: we will call this repo hiivmind-blueprint-types
+  ⎿  Tool use rejected with user message: we will call this repo hiivmind-blueprint-lib

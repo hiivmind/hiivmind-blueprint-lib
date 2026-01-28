@@ -113,7 +113,7 @@ consequences:
         detection. Each flag can be True (T), False (F), or Unknown (U)
         based on keyword matching.
       notes:
-        - 3VL values: T (True), F (False), U (Unknown)
+        - "3VL values: T (True), F (False), U (Unknown)"
         - Negative keywords checked first (more specific)
         - Unknown is the default when no keywords match
         - "See also: lib/intent_detection/framework.md"

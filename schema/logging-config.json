@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/logging-config.json",
+  "title": "Blueprint Logging Configuration",
+  "description": "Schema for .hiivmind/blueprint/logging.yaml plugin-level logging configuration",
+  "type": "object",
+  "properties": {
+    "logging": {
+      "$ref": "#/$defs/loggingConfig"
+    }
+  },
+  "required": ["logging"],
+  "additionalProperties": false,
+  "$defs": {
+    "loggingConfig": {
+      "type": "object",
+      "description": "Logging configuration for Blueprint workflows",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Master switch to enable/disable all logging",
+          "default": true
+        },
+        "level": {
+          "type": "string",
+          "description": "Minimum log level to capture",
+          "enum": ["error", "warn", "info", "debug", "trace"],
+          "default": "info"
+        },
+        "auto": {
+          "$ref": "#/$defs/autoConfig"
+        },
+        "capture": {
+          "$ref": "#/$defs/captureConfig"
+        },
+        "output": {
+          "$ref": "#/$defs/outputConfig"
+        },
+        "retention": {
+          "$ref": "#/$defs/retentionConfig"
+        },
+        "ci": {
+          "$ref": "#/$defs/ciConfig"
+        }
+      },
+      "additionalProperties": false
+    },
+    "autoConfig": {
+      "type": "object",
+      "description": "Automatic logging behavior configuration",
+      "properties": {
+        "init": {
+          "type": "boolean",
+          "description": "Auto-inject init_log at workflow start",
+          "default": true
+        },
+        "finalize": {
+          "type": "boolean",
+          "description": "Auto-inject finalize_log at workflow endings",
+          "default": true
+        },
+        "write": {
+          "type": "boolean",
+          "description": "Auto-inject write_log after finalize",
+          "default": true
+        },
+        "node_tracking": {
+          "type": "boolean",
+          "description": "Auto-inject log_node after each node execution",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "captureConfig": {
+      "type": "object",
+      "description": "Level-aware capture settings",
+      "properties": {
+        "nodes": {
+          "type": "boolean",
+          "description": "Record node_history (info level and above)",
+          "default": true
+        },
+        "state_changes": {
+          "type": "boolean",
+          "description": "Log state mutations (trace level only)",
+          "default": false
+        },
+        "user_responses": {
+          "type": "boolean",
+          "description": "Log user prompt selections (debug level and above)",
+          "default": true
+        },
+        "timing": {
+          "type": "boolean",
+          "description": "Record timestamps (always)",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "outputConfig": {
+      "type": "object",
+      "description": "Log output configuration",
+      "properties": {
+        "format": {
+          "type": "string",
+          "description": "Output format for log files",
+          "enum": ["yaml", "json", "markdown"],
+          "default": "yaml"
+        },
+        "location": {
+          "type": "string",
+          "description": "Directory for log files (relative to skill/plugin root)",
+          "default": ".logs/",
+          "pattern": "^[^/].*$"
+        },
+        "filename": {
+          "type": "string",
+          "description": "Filename template with placeholders: {skill_name}, {timestamp}, {ext}",
+          "default": "{skill_name}-{timestamp}.{ext}",
+          "pattern": "^[^/]+$"
+        }
+      },
+      "additionalProperties": false
+    },
+    "retentionConfig": {
+      "type": "object",
+      "description": "Log retention policy",
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "description": "Retention strategy",
+          "enum": ["none", "days", "count"],
+          "default": "count"
+        },
+        "days": {
+          "type": "integer",
+          "description": "Days to retain logs (when strategy is 'days')",
+          "minimum": 1,
+          "maximum": 365,
+          "default": 30
+        },
+        "count": {
+          "type": "integer",
+          "description": "Number of log files to retain (when strategy is 'count')",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 10
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "strategy": { "const": "days" }
+            },
+            "required": ["strategy"]
+          },
+          "then": {
+            "required": ["days"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "strategy": { "const": "count" }
+            },
+            "required": ["strategy"]
+          },
+          "then": {
+            "required": ["count"]
+          }
+        }
+      ]
+    },
+    "ciConfig": {
+      "type": "object",
+      "description": "CI/CD integration configuration",
+      "properties": {
+        "format": {
+          "type": "string",
+          "description": "CI output format",
+          "enum": ["none", "github", "plain", "json"],
+          "default": "none"
+        },
+        "annotations": {
+          "type": "boolean",
+          "description": "Emit GitHub annotations for errors and warnings",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "logging": {
+        "enabled": true,
+        "level": "info",
+        "auto": {
+          "init": true,
+          "finalize": true,
+          "write": true,
+          "node_tracking": true
+        },
+        "capture": {
+          "nodes": true,
+          "state_changes": false,
+          "user_responses": true,
+          "timing": true
+        },
+        "output": {
+          "format": "yaml",
+          "location": ".logs/",
+          "filename": "{skill_name}-{timestamp}.{ext}"
+        },
+        "retention": {
+          "strategy": "count",
+          "count": 10
+        },
+        "ci": {
+          "format": "none",
+          "annotations": true
+        }
+      }
+    },
+    {
+      "logging": {
+        "level": "warn",
+        "output": {
+          "location": "data/logs/"
+        },
+        "retention": {
+          "strategy": "days",
+          "days": 14
+        },
+        "ci": {
+          "format": "github"
+        }
+      }
+    }
+  ]
+}

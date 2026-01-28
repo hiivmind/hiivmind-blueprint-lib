@@ -1,9 +1,46 @@
 # Changelog
 
-All notable changes to hiivmind-blueprint-types will be documented in this file.
+All notable changes to hiivmind-blueprint-lib will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [2.0.0] - 2026-01-28
+
+### BREAKING CHANGES
+
+- **Removed bundle.yaml**: Types are now fetched directly from raw GitHub URLs
+  - Use `source: hiivmind/hiivmind-blueprint-lib@v2.0.0` in workflow definitions
+  - Resolves to `https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/`
+- **No caching**: Types are always fetched fresh (simplest approach)
+- **No lock files**: Removed types.lock - use exact version pins for reproducibility
+- **Directory structure simplified**: Removed redundant `definitions/` level
+  - `consequences/definitions/core/` → `consequences/core/`
+  - `consequences/definitions/extensions/` → `consequences/extensions/`
+  - `preconditions/definitions/core/` → `preconditions/core/`
+  - `preconditions/definitions/extensions/` → `preconditions/extensions/`
+  - `nodes/definitions/core/` → `nodes/core/`
+- Update your workflow references from `hiivmind/hiivmind-blueprint-lib@v1.x.x` to `hiivmind/hiivmind-blueprint-lib@v2.0.0`
+
+### Added
+
+- **Workflows support**: Reusable workflow definitions in `workflows/` directory
+- **intent-detection workflow**: Reusable 3VL intent detection for dynamic routing
+  - Parses user input into flags, matches against rules, sets `computed.matched_action`
+  - Handles disambiguation when multiple intents match
+  - Reference: `hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection`
+- `workflows/index.yaml` registry for workflow definitions
+- `workflow` schema version (1.0)
+- `logging/defaults.yaml` for framework logging configuration defaults
+
+### Changed
+
+- Simplified file paths (removed `definitions/` nesting)
+- Updated all URLs to use new package name
+
+### Removed
+
+- `bundle.yaml` - no longer needed with direct raw GitHub URL approach
 
 ## [1.0.0] - 2026-01-27
 

@@ -1,0 +1,39 @@
+# Workflow Definitions Index
+# hiivmind-blueprint-lib
+#
+# Reusable workflow definitions for Blueprint-enabled plugins.
+
+schema_version: "1.0"
+category: "workflows"
+
+stats:
+  total_workflows: 1
+  core_workflows: 1
+
+# Workflow registry
+sources:
+  - path: core/intent-detection.yaml
+    category: core
+    name: intent-detection
+    version: "1.0.0"
+    description: >
+      Reusable 3VL intent detection workflow. Parses user input into flags,
+      matches against rules, and sets computed.matched_action for dynamic routing.
+    depends_on:
+      consequences:
+        - parse_intent_flags
+        - match_3vl_rules
+        - set_state
+      preconditions:
+        - evaluate_expression
+
+# Quick lookup table (workflow -> source file)
+type_lookup:
+  intent-detection: core/intent-detection.yaml
+
+# Summary
+workflows:
+  - name: intent-detection
+    brief: Reusable 3VL intent detection for dynamic routing
+    category: core
+    since: "2.0.0"

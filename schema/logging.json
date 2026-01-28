@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/logging.json",
+  "title": "Workflow Execution Log",
+  "description": "Defines the structure of workflow execution logs. This schema is domain-agnostic; plugins extend it with custom event types and domain-specific fields.",
+  "type": "object",
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "description": "Workflow and session identity information",
+      "properties": {
+        "workflow_name": {
+          "type": "string",
+          "description": "Name of the workflow being executed"
+        },
+        "workflow_version": {
+          "$ref": "common.json#/$defs/semver",
+          "description": "Version of the workflow"
+        },
+        "skill_name": {
+          "type": ["string", "null"],
+          "description": "Name of the skill invoking this workflow"
+        },
+        "plugin_name": {
+          "type": ["string", "null"],
+          "description": "Name of the plugin containing the skill"
+        },
+        "execution_path": {
+          "type": "string",
+          "description": "Path to the workflow file being executed"
+        },
+        "session": {
+          "$ref": "#/$defs/session"
+        }
+      },
+      "required": ["workflow_name", "workflow_version", "execution_path"]
+    },
+    "parameters": {
+      "type": "object",
+      "description": "Input parameters passed to the workflow",
+      "additionalProperties": true
+    },
+    "execution": {
+      "$ref": "#/$defs/execution"
+    },
+    "node_history": {
+      "type": "array",
+      "description": "Chronological record of node executions",
+      "items": {
+        "$ref": "#/$defs/nodeEntry"
+      }
+    },
+    "events": {
+      "type": "array",
+      "description": "Custom events emitted during execution",
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "description": "Non-fatal issues encountered during execution",
+      "items": {
+        "$ref": "#/$defs/warning"
+      }
+    },
+    "errors": {
+      "type": "array",
+      "description": "Errors encountered during execution",
+      "items": {
+        "$ref": "#/$defs/error"
+      }
+    },
+    "summary": {
+      "type": ["string", "null"],
+      "description": "Human-readable summary of the execution"
+    }
+  },
+  "required": ["metadata", "execution", "node_history"],
+  "$defs": {
+    "session": {
+      "type": "object",
+      "description": "Session tracking information",
+      "properties": {
+        "id": {
+          "type": ["string", "null"],
+          "description": "Unique session identifier"
+        },
+        "transcript_path": {
+          "type": ["string", "null"],
+          "description": "Path to the conversation transcript"
+        },
+        "invocation_index": {
+          "type": "integer",
+          "description": "Number of times this workflow has been invoked in the session",
+          "minimum": 0
+        },
+        "snapshot_points": {
+          "type": "array",
+          "description": "Points where state snapshots were captured",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "description": "Execution timing and outcome information",
+      "properties": {
+        "start_time": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO8601 timestamp when execution started"
+        },
+        "end_time": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "ISO8601 timestamp when execution ended"
+        },
+        "duration_seconds": {
+          "type": ["number", "null"],
+          "description": "Total execution duration in seconds",
+          "minimum": 0
+        },
+        "outcome": {
+          "$ref": "#/$defs/outcomeType"
+        },
+        "ending_node": {
+          "type": ["string", "null"],
+          "description": "The ending node reached (if any)"
+        }
+      },
+      "required": ["start_time"]
+    },
+    "outcomeType": {
+      "type": ["string", "null"],
+      "description": "Overall execution outcome",
+      "enum": ["success", "partial", "error", "cancelled", null]
+    },
+    "nodeOutcome": {
+      "type": "string",
+      "description": "Individual node execution outcome",
+      "enum": ["success", "skipped", "error", "blocked"]
+    },
+    "nodeEntry": {
+      "type": "object",
+      "description": "Record of a single node execution",
+      "properties": {
+        "node": {
+          "type": "string",
+          "description": "Name of the node that was executed"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO8601 timestamp when the node started"
+        },
+        "outcome": {
+          "$ref": "#/$defs/nodeOutcome"
+        },
+        "details": {
+          "type": "object",
+          "description": "Additional node-specific execution details",
+          "additionalProperties": true
+        }
+      },
+      "required": ["node", "timestamp", "outcome"]
+    },
+    "event": {
+      "type": "object",
+      "description": "Custom event emitted during execution",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Event type identifier"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO8601 timestamp when the event occurred"
+        },
+        "data": {
+          "type": "object",
+          "description": "Event-specific data payload",
+          "additionalProperties": true
+        }
+      },
+      "required": ["type", "timestamp"]
+    },
+    "warning": {
+      "type": "object",
+      "description": "Non-fatal issue encountered during execution",
+      "properties": {
+        "message": {
+          "type": "string",
+          "description": "Human-readable warning message"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO8601 timestamp when the warning was logged"
+        },
+        "node": {
+          "type": "string",
+          "description": "Node where the warning occurred"
+        },
+        "context": {
+          "type": "object",
+          "description": "Additional context about the warning",
+          "additionalProperties": true
+        }
+      },
+      "required": ["message", "timestamp"]
+    },
+    "error": {
+      "type": "object",
+      "description": "Error encountered during execution",
+      "properties": {
+        "message": {
+          "type": "string",
+          "description": "Human-readable error message"
+        },
+        "error_type": {
+          "type": "string",
+          "description": "Classification of the error type"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO8601 timestamp when the error occurred"
+        },
+        "node": {
+          "type": "string",
+          "description": "Node where the error occurred"
+        },
+        "context": {
+          "type": "object",
+          "description": "Additional context about the error",
+          "additionalProperties": true
+        },
+        "recoverable": {
+          "type": "boolean",
+          "description": "Whether the error is potentially recoverable"
+        }
+      },
+      "required": ["message", "error_type", "timestamp"]
+    }
+  }
+}

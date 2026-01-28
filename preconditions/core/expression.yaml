@@ -17,10 +17,10 @@ preconditions:
         Supports comparisons, logical operators, and built-in functions.
         Use for complex conditions that don't fit standard precondition types.
       notes:
-        - Field access via dot notation: source_type, computed.count
-        - Comparisons: ==, !=, >, <, >=, <=
-        - Logical: &&, ||, !
-        - Functions: len(), contains(), startswith(), endswith()
+        - "Field access via dot notation: source_type, computed.count"
+        - "Comparisons: ==, !=, >, <, >=, <="
+        - "Logical: &&, ||, !"
+        - "Functions: len(), contains(), startswith(), endswith()"
         - Use sparingly; prefer typed preconditions when possible
 
     parameters:

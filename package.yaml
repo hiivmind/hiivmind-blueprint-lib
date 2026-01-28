@@ -1,14 +1,14 @@
-# Blueprint Types Package Manifest
-# Semantic type definitions for hiivmind-blueprint workflows
+# Blueprint Types Library Package Manifest
+# Semantic type definitions and reusable workflows for hiivmind-blueprint
 
-name: hiivmind-blueprint-types
-version: "1.0.0"
+name: hiivmind-blueprint-lib
+version: "2.0.0"
 description: |
-  Externalized type definitions for hiivmind-blueprint workflows.
-  Provides 43 consequence types and 27 precondition types that can be
-  referenced by URL, similar to GitHub Actions.
+  Externalized type definitions and reusable workflows for hiivmind-blueprint.
+  Provides 43 consequence types, 27 precondition types, 5 node types, and
+  1 reusable workflow that can be referenced by URL.
 
-repository: https://github.com/hiivmind/hiivmind-blueprint-types
+repository: https://github.com/hiivmind/hiivmind-blueprint-lib
 license: MIT
 
 # Schema versions for each type system
@@ -16,6 +16,7 @@ schemas:
   consequence: "1.1"
   precondition: "1.0"
   node: "1.0"
+  workflow: "1.0"
 
 # Statistics
 stats:
@@ -28,17 +29,20 @@ stats:
   core_precondition_types: 22
   extension_precondition_types: 5
   core_node_types: 5
+  workflows: 1
+  core_workflows: 1
 
 # Artifacts produced by releases
 artifacts:
-  - bundle.yaml           # Everything in one file (simple fetch)
-  - consequences/         # Split files (selective loading)
-  - preconditions/        # Split files (selective loading)
-  - nodes/                # Node type definitions (selective loading)
-  - schema/               # JSON Schema definitions
+  - consequences/ # Index and type definitions
+  - preconditions/ # Index and type definitions
+  - nodes/ # Node type definitions
+  - workflows/ # Reusable workflow definitions
+  - logging/ # Logging configuration defaults
+  - schema/ # JSON Schema definitions
 
 # Compatibility
-minimum_blueprint_version: "1.0.0"
+minimum_blueprint_version: "2.0.0"
 
 # How to reference this package from a workflow
 usage: |
@@ -46,14 +50,20 @@ usage: |
 
   ```yaml
   definitions:
-    source: https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/bundle.yaml
+    source: hiivmind/hiivmind-blueprint-lib@v2.0.0
   ```
 
-  Or for selective loading:
+  This fetches types from raw GitHub URLs at runtime.
+
+  Reference a reusable workflow:
 
   ```yaml
-  definitions:
-    source: https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/
-    consequences: consequences/index.yaml
-    preconditions: preconditions/index.yaml
+  detect_intent:
+    type: reference
+    workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+    context:
+      arguments: "${arguments}"
+      intent_flags: "${intent_flags}"
+      intent_rules: "${intent_rules}"
+    next_node: execute_dynamic_route
   ```

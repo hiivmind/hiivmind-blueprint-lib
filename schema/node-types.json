@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/node-types.json",
+  "$comment": "Schema version 1.0 - Node type definitions extracted from workflow.json for reuse",
+  "title": "Blueprint Node Types Schema",
+  "description": "Definitions for workflow node types: action, conditional, user_prompt, validation_gate, reference",
+  "$defs": {
+    "node": {
+      "type": "object",
+      "description": "A workflow node definition",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "action",
+            "conditional",
+            "user_prompt",
+            "validation_gate",
+            "reference"
+          ],
+          "description": "Node type"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of what this node does"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "action" } } },
+          "then": { "$ref": "#/$defs/action_node" }
+        },
+        {
+          "if": { "properties": { "type": { "const": "conditional" } } },
+          "then": { "$ref": "#/$defs/conditional_node" }
+        },
+        {
+          "if": { "properties": { "type": { "const": "user_prompt" } } },
+          "then": { "$ref": "#/$defs/user_prompt_node" }
+        },
+        {
+          "if": { "properties": { "type": { "const": "validation_gate" } } },
+          "then": { "$ref": "#/$defs/validation_gate_node" }
+        },
+        {
+          "if": { "properties": { "type": { "const": "reference" } } },
+          "then": { "$ref": "#/$defs/reference_node" }
+        }
+      ]
+    },
+    "action_node": {
+      "type": "object",
+      "required": ["actions", "on_success", "on_failure"],
+      "properties": {
+        "type": { "const": "action" },
+        "description": { "type": "string" },
+        "actions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/consequence" },
+          "minItems": 1,
+          "description": "Consequences to execute sequentially"
+        },
+        "on_success": {
+          "$ref": "common.json#/$defs/node_reference",
+          "description": "Node or ending to transition to on success"
+        },
+        "on_failure": {
+          "$ref": "common.json#/$defs/node_reference",
+          "description": "Node or ending to transition to on failure"
+        }
+      }
+    },
+    "conditional_node": {
+      "type": "object",
+      "required": ["condition", "branches"],
+      "properties": {
+        "type": { "const": "conditional" },
+        "description": { "type": "string" },
+        "condition": {
+          "$ref": "#/$defs/precondition",
+          "description": "Condition to evaluate"
+        },
+        "branches": {
+          "type": "object",
+          "description": "Branch targets for true/false conditions",
+          "required": ["on_true", "on_false"],
+          "properties": {
+            "on_true": {
+              "$ref": "common.json#/$defs/node_reference",
+              "description": "Node to transition to if condition is true"
+            },
+            "on_false": {
+              "$ref": "common.json#/$defs/node_reference",
+              "description": "Node to transition to if condition is false"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "user_prompt_node": {
+      "type": "object",
+      "required": ["prompt", "on_response"],
+      "properties": {
+        "type": { "const": "user_prompt" },
+        "description": { "type": "string" },
+        "prompt": {
+          "$ref": "#/$defs/prompt",
+          "description": "Prompt configuration"
+        },
+        "on_response": {
+          "type": "object",
+          "description": "Map of option IDs to response handlers",
+          "additionalProperties": {
+            "$ref": "#/$defs/response_handler"
+          }
+        }
+      }
+    },
+    "validation_gate_node": {
+      "type": "object",
+      "required": ["validations", "on_valid", "on_invalid"],
+      "properties": {
+        "type": { "const": "validation_gate" },
+        "description": { "type": "string" },
+        "validations": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/precondition" },
+              {
+                "properties": {
+                  "error_message": {
+                    "type": "string",
+                    "description": "Error message if validation fails"
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 1,
+          "description": "Preconditions to validate"
+        },
+        "on_valid": {
+          "$ref": "common.json#/$defs/node_reference",
+          "description": "Node to transition to if all validations pass"
+        },
+        "on_invalid": {
+          "$ref": "common.json#/$defs/node_reference",
+          "description": "Node to transition to if any validation fails"
+        }
+      }
+    },
+    "reference_node": {
+      "type": "object",
+      "required": ["doc", "next_node"],
+      "properties": {
+        "type": { "const": "reference" },
+        "description": { "type": "string" },
+        "doc": {
+          "type": "string",
+          "description": "Path to pattern document"
+        },
+        "section": {
+          "type": "string",
+          "description": "Specific section to execute"
+        },
+        "context": {
+          "type": "object",
+          "description": "Variables to pass to the pattern",
+          "additionalProperties": true
+        },
+        "next_node": {
+          "$ref": "common.json#/$defs/node_reference",
+          "description": "Node to transition to after reference executes"
+        }
+      }
+    },
+    "prompt": {
+      "type": "object",
+      "required": ["question", "header"],
+      "oneOf": [
+        {
+          "required": ["options"],
+          "properties": {
+            "options_from_state": { "not": {} }
+          }
+        },
+        {
+          "required": ["options_from_state", "option_mapping"],
+          "properties": {
+            "options": { "not": {} }
+          }
+        }
+      ],
+      "properties": {
+        "question": {
+          "type": "string",
+          "description": "Question to ask the user"
+        },
+        "header": {
+          "type": "string",
+          "maxLength": 12,
+          "description": "Short header/tag (max 12 characters)"
+        },
+        "options": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/prompt_option" },
+          "minItems": 2,
+          "maxItems": 4,
+          "description": "Static choices (2-4 options). Mutually exclusive with options_from_state."
+        },
+        "options_from_state": {
+          "type": "string",
+          "description": "State path to array of items for dynamic options. Mutually exclusive with options."
+        },
+        "option_mapping": {
+          "type": "object",
+          "description": "Expressions to transform each item from options_from_state into an option",
+          "required": ["id", "label", "description"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Expression for option ID (e.g., 'rule.name')"
+            },
+            "label": {
+              "type": "string",
+              "description": "Expression for display label"
+            },
+            "description": {
+              "type": "string",
+              "description": "Expression for option description"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "prompt_option": {
+      "type": "object",
+      "required": ["id", "label"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique option identifier"
+        },
+        "label": {
+          "type": "string",
+          "description": "Display label"
+        },
+        "description": {
+          "type": "string",
+          "description": "Option description"
+        }
+      },
+      "additionalProperties": false
+    },
+    "response_handler": {
+      "type": "object",
+      "properties": {
+        "consequence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/consequence" },
+          "description": "Consequences to apply when this option is selected"
+        },
+        "next_node": {
+          "$ref": "common.json#/$defs/node_reference",
+          "description": "Node to transition to"
+        }
+      }
+    },
+    "precondition": {
+      "type": "object",
+      "description": "A workflow precondition (boolean check). The schema validates structure only - precondition type validation is delegated to runtime.",
+      "$comment": "Schema version 2.0 - Precondition-agnostic design. Type validation at runtime.",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "$ref": "common.json#/$defs/identifier",
+          "description": "Precondition type identifier (e.g., file_exists, flag_set, all_of)"
+        },
+        "error_message": {
+          "type": "string",
+          "description": "Error message to display if precondition fails (used in validation gates)"
+        }
+      },
+      "additionalProperties": true
+    },
+    "consequence": {
+      "type": "object",
+      "description": "A workflow consequence (action to execute). The schema validates structure only - consequence type validation is delegated to runtime.",
+      "$comment": "Schema version 2.0 - Consequence-agnostic design. Type validation at runtime.",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "$ref": "common.json#/$defs/identifier",
+          "description": "Consequence type identifier (e.g., set_state, clone_repo, run_python)"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

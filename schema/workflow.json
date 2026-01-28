@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/workflow.json",
+  "$comment": "Schema version 2.1 - Added definitions block for external type references. Uses $ref composition.",
+  "title": "Blueprint Workflow Schema",
+  "description": "JSON Schema for hiivmind-blueprint workflow.yaml files",
+  "type": "object",
+  "required": ["name", "version", "start_node", "nodes", "endings"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Workflow name (used as identifier)"
+    },
+    "version": {
+      "$ref": "common.json#/$defs/semver"
+    },
+    "description": {
+      "type": "string",
+      "description": "Brief description of the workflow's purpose"
+    },
+    "definitions": {
+      "$ref": "#/$defs/definitions",
+      "description": "External type definitions source (optional - defaults to embedded definitions)"
+    },
+    "entry_preconditions": {
+      "type": "array",
+      "items": {
+        "$ref": "node-types.json#/$defs/precondition"
+      },
+      "description": "Conditions that must be true before workflow can start"
+    },
+    "initial_state": {
+      "type": "object",
+      "description": "Initial state values when workflow begins. Note: Some fields are computed at runtime and not declared here - see $comment for details.",
+      "$comment": "Runtime fields (computed at initialization, not declared): interface (string: 'claude_code' or 'claude_ai' based on AskUserQuestion tool availability), workflow_name, workflow_version, current_node, previous_node, history, user_responses, checkpoints",
+      "properties": {
+        "phase": { "type": "string" },
+        "flags": {
+          "type": "object",
+          "additionalProperties": { "type": "boolean" }
+        },
+        "computed": { "type": "object" }
+      },
+      "additionalProperties": true
+    },
+    "imports": {
+      "type": "object",
+      "description": "External YAML files to load at workflow start",
+      "additionalProperties": { "type": "string" }
+    },
+    "start_node": {
+      "$ref": "common.json#/$defs/node_reference",
+      "description": "ID of the first node to execute"
+    },
+    "nodes": {
+      "type": "object",
+      "description": "Map of node IDs to node definitions",
+      "additionalProperties": {
+        "$ref": "node-types.json#/$defs/node"
+      }
+    },
+    "endings": {
+      "type": "object",
+      "description": "Map of ending IDs to ending definitions",
+      "additionalProperties": {
+        "$ref": "#/$defs/ending"
+      }
+    }
+  },
+  "$defs": {
+    "ending": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["success", "failure", "error", "cancelled"],
+          "description": "Ending type (success, failure/error, or cancelled)"
+        },
+        "message": {
+          "type": "string",
+          "description": "Message to display (supports ${} interpolation)"
+        },
+        "summary": {
+          "type": "object",
+          "description": "Summary data to display",
+          "additionalProperties": true
+        },
+        "details": {
+          "type": "string",
+          "description": "Additional details for error endings"
+        },
+        "recovery": {
+          "description": "Recovery guidance for error endings. Can be a simple string or structured object.",
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Simple recovery suggestion text"
+            },
+            {
+              "type": "object",
+              "description": "Structured recovery guidance",
+              "properties": {
+                "suggestion": {
+                  "type": "string",
+                  "description": "Human-readable recovery suggestion"
+                },
+                "related_skill": {
+                  "type": "string",
+                  "description": "Skill to suggest for recovery"
+                },
+                "retry_node": {
+                  "type": "string",
+                  "description": "Node to retry from"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      }
+    },
+    "definitions": {
+      "type": "object",
+      "description": "External type definitions source configuration. Allows workflows to reference type definitions from URLs or local paths.",
+      "$comment": "Schema version 1.0 - External type definitions support (GitHub Actions-style references)",
+      "properties": {
+        "source": {
+          "description": "Type definitions source. Can be a URL to bundle.yaml, 'local' for embedded definitions, or a shorthand like 'hiivmind/hiivmind-blueprint-lib@v1'",
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "uri",
+              "description": "Direct URL to bundle.yaml"
+            },
+            {
+              "const": "local",
+              "description": "Use local embedded definitions"
+            },
+            {
+              "$ref": "common.json#/$defs/repo_reference",
+              "description": "Shorthand: owner/repo@version"
+            }
+          ]
+        },
+        "path": {
+          "type": "string",
+          "description": "Local path to embedded definitions (required when source is 'local')"
+        },
+        "base_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Base URL for selective loading"
+        },
+        "consequences": {
+          "type": "string",
+          "description": "Path to consequences index.yaml relative to base_url"
+        },
+        "preconditions": {
+          "type": "string",
+          "description": "Path to preconditions index.yaml relative to base_url"
+        },
+        "extensions": {
+          "type": "array",
+          "items": { "$ref": "common.json#/$defs/repo_reference" },
+          "description": "Additional type definition packages to load"
+        },
+        "fallback": {
+          "type": "string",
+          "enum": ["error", "warn", "embedded"],
+          "default": "error",
+          "description": "Behavior when remote fetch fails"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

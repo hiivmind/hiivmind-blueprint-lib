@@ -1,15 +1,15 @@
-# hiivmind-blueprint-types
+# hiivmind-blueprint-lib
 
-Externalized type definitions for [hiivmind-blueprint](https://github.com/hiivmind/hiivmind-blueprint) workflows.
+Externalized type definitions and reusable workflows for [hiivmind-blueprint](https://github.com/hiivmind/hiivmind-blueprint).
 
 ## Overview
 
-This package provides semantic type definitions that workflows can reference by URL, similar to how GitHub Actions work:
+This package provides semantic type definitions and reusable workflows that can be referenced by URL, similar to how GitHub Actions work:
 
 ```yaml
 # In your workflow.yaml
 definitions:
-  source: https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/bundle.yaml
+  source: hiivmind/hiivmind-blueprint-lib@v2.0.0
 
 nodes:
   clone_source:
@@ -17,6 +17,16 @@ nodes:
     actions:
       - type: clone_repo          # Type resolved from external definitions
         url: "${source.url}"
+
+  # Reference a reusable workflow
+  detect_intent:
+    type: reference
+    workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+    context:
+      arguments: "${arguments}"
+      intent_flags: "${intent_flags}"
+      intent_rules: "${intent_rules}"
+    next_node: execute_dynamic_route
 ```
 
 ## Why External Types?
@@ -27,6 +37,7 @@ nodes:
 | Manual sync on updates | Version-controlled releases |
 | No extension ecosystem | Third-party extensions possible |
 | Plugin-coupled versioning | Independent semantic versioning |
+| Workflows duplicated | Reusable workflow library |
 
 ## Type Inventory
 
@@ -60,39 +71,53 @@ nodes:
 | extensions/source | 3 | Source repository checks |
 | extensions/web | 2 | Web fetch verification |
 
+### Workflows (1 workflow)
+
+| Workflow | Description |
+|----------|-------------|
+| intent-detection | Reusable 3VL intent detection for dynamic routing |
+
 ## Usage
 
-### Simple: Single Bundle Fetch
+### Type Definitions
+
+Types are fetched directly from raw GitHub URLs at runtime:
 
 ```yaml
 definitions:
-  source: https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/bundle.yaml
+  source: hiivmind/hiivmind-blueprint-lib@v2.0.0
 ```
 
-### Selective: Directory-Based Loading
-
-```yaml
-definitions:
-  base_url: https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/
-  consequences: consequences/index.yaml
-  preconditions: preconditions/index.yaml
+This resolves to:
+```
+https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/
 ```
 
-### Local: Embedded Fallback
+The type loader fetches:
+1. `consequences/index.yaml` - consequence type registry
+2. `preconditions/index.yaml` - precondition type registry
+3. Individual type files on demand
+
+### Reference a Reusable Workflow
 
 ```yaml
-definitions:
-  source: local
-  path: ./vendor/blueprint-types/v1.0.0
+detect_intent:
+  type: reference
+  workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+  context:
+    arguments: "${arguments}"
+    intent_flags: "${intent_flags}"
+    intent_rules: "${intent_rules}"
+  next_node: execute_dynamic_route
 ```
 
 ## Version Pinning
 
 | Reference | Behavior |
 |-----------|----------|
-| `v1.0.0` | Exact version (recommended for production) |
-| `v1.0` | Latest patch in v1.0.x |
-| `v1` | Latest minor in v1.x.x (for development) |
+| `v2.0.0` | Exact version (recommended for production) |
+| `v2.0` | Latest patch in v2.0.x |
+| `v2` | Latest minor in v2.x.x (for development) |
 | `main` | Latest commit (not recommended) |
 
 ## Extending with Custom Types
@@ -102,40 +127,46 @@ Create your own extension package:
 ```yaml
 # mycorp-blueprint-types/package.yaml
 name: mycorp-blueprint-types
-extends: hiivmind/hiivmind-blueprint-types@v1
+extends: hiivmind/hiivmind-blueprint-lib@v2
 
 # Reference in workflow
 definitions:
-  base: https://github.com/hiivmind/hiivmind-blueprint-types/releases/download/v1.0.0/bundle.yaml
+  source: hiivmind/hiivmind-blueprint-lib@v2.0.0
   extensions:
-    - https://github.com/mycorp/mycorp-blueprint-types/releases/download/v1.0.0/bundle.yaml
+    - mycorp/custom-types@v1.0.0
 ```
 
 ## File Structure
 
 ```
-hiivmind-blueprint-types/
+hiivmind-blueprint-lib/
 ├── package.yaml              # Package manifest
-├── bundle.yaml               # All definitions in one file
 ├── consequences/
-│   ├── definitions/
-│   │   ├── index.yaml        # Master registry
-│   │   ├── core/             # 8 core categories
-│   │   │   ├── state.yaml
-│   │   │   ├── evaluation.yaml
-│   │   │   └── ...
-│   │   └── extensions/       # 4 extension categories
-│   │       ├── file-system.yaml
-│   │       └── ...
+│   ├── index.yaml            # Master registry
+│   ├── core/                 # 8 core categories
+│   │   ├── state.yaml
+│   │   ├── evaluation.yaml
+│   │   └── ...
+│   ├── extensions/           # 4 extension categories
+│   │   ├── file-system.yaml
+│   │   └── ...
 │   └── schema/
 │       └── consequence-definition.json
 ├── preconditions/
-│   ├── definitions/
-│   │   ├── index.yaml
-│   │   ├── core/
-│   │   └── extensions/
+│   ├── index.yaml
+│   ├── core/
+│   ├── extensions/
 │   └── schema/
 │       └── precondition-definition.json
+├── nodes/
+│   ├── index.yaml
+│   └── core/
+├── workflows/                 # Reusable workflow definitions
+│   ├── index.yaml
+│   └── core/
+│       └── intent-detection.yaml
+├── logging/                   # Logging configuration defaults
+│   └── defaults.yaml
 └── schema/
     └── workflow-definitions.json  # Schema for definitions block
 ```

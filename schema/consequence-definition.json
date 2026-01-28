@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hiivmind.dev/schemas/consequence-definition.json",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/consequence-definition.json",
   "$comment": "Schema version 1.1 - Added requires, execution, provides, alternatives, script for extensibility",
   "title": "Consequence Definition Schema",
   "description": "Schema for YAML consequence definition files",
@@ -9,14 +9,11 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "type": "string",
-      "pattern": "^\\d+\\.\\d+$",
+      "$ref": "common.json#/$defs/semver_short",
       "description": "Schema version (semver major.minor)"
     },
     "category": {
-      "type": "string",
-      "pattern": "^(core|extensions)/[a-z-]+$",
-      "description": "Category path (e.g., 'core/state', 'extensions/git')"
+      "$ref": "common.json#/$defs/category_path"
     },
     "description": {
       "type": "string",
@@ -37,8 +34,7 @@
       "additionalProperties": false,
       "properties": {
         "type": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9_]*$",
+          "$ref": "common.json#/$defs/identifier",
           "description": "Unique consequence type identifier"
         },
         "description": {
@@ -47,7 +43,7 @@
         "parameters": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/parameter"
+            "$ref": "common.json#/$defs/parameter"
           }
         },
         "payload": {
@@ -67,8 +63,7 @@
           "description": "Related consequence types"
         },
         "since": {
-          "type": "string",
-          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "$ref": "common.json#/$defs/semver",
           "description": "Version when this consequence was introduced"
         }
       }
@@ -93,47 +88,6 @@
             "type": "string"
           },
           "description": "Additional notes and caveats"
-        }
-      }
-    },
-    "parameter": {
-      "type": "object",
-      "required": ["name", "type", "required", "description"],
-      "additionalProperties": false,
-      "properties": {
-        "name": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9_]*$",
-          "description": "Parameter name"
-        },
-        "type": {
-          "type": "string",
-          "enum": ["string", "boolean", "number", "object", "array", "any"],
-          "description": "Parameter type"
-        },
-        "required": {
-          "type": "boolean",
-          "description": "Whether parameter is required"
-        },
-        "description": {
-          "type": "string",
-          "description": "Parameter description"
-        },
-        "default": {
-          "description": "Default value if not provided"
-        },
-        "pattern": {
-          "type": "string",
-          "description": "Regex pattern for string validation"
-        },
-        "enum": {
-          "type": "array",
-          "description": "Allowed values"
-        },
-        "interpolatable": {
-          "type": "boolean",
-          "default": true,
-          "description": "Whether ${} interpolation is supported"
         }
       }
     },

@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/intent-mapping.json",
+  "title": "Blueprint Intent Mapping Schema",
+  "description": "JSON Schema for hiivmind-blueprint intent-mapping.yaml files (3VL intent detection)",
+  "type": "object",
+  "required": ["intent_flags", "intent_rules"],
+  "properties": {
+    "intent_flags": {
+      "type": "object",
+      "description": "Map of flag names to flag definitions for 3VL intent parsing",
+      "additionalProperties": {
+        "$ref": "#/$defs/intent_flag"
+      }
+    },
+    "intent_rules": {
+      "type": "array",
+      "description": "Array of intent rules for 3VL matching",
+      "items": {
+        "$ref": "#/$defs/intent_rule"
+      },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "intent_flag": {
+      "type": "object",
+      "required": ["keywords"],
+      "properties": {
+        "keywords": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "Phrases that set this flag to T (True)"
+        },
+        "negative_keywords": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Phrases that set this flag to F (False)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of what this flag indicates"
+        }
+      },
+      "additionalProperties": false
+    },
+    "intent_rule": {
+      "type": "object",
+      "required": ["name", "conditions", "action"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique identifier for this rule"
+        },
+        "conditions": {
+          "type": "object",
+          "description": "Map of flag names to required 3VL values",
+          "additionalProperties": {
+            "$ref": "common.json#/$defs/three_valued_logic"
+          }
+        },
+        "action": {
+          "type": "string",
+          "description": "Node name or action to execute when this rule matches"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Priority for tie-breaking (higher = more preferred)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of this rule's intent"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

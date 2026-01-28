@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/common.json",
+  "$comment": "Schema version 1.0 - Shared definitions used by multiple Blueprint schemas",
+  "title": "Blueprint Common Definitions",
+  "description": "Shared definitions for semver, identifiers, parameters and other common patterns used across Blueprint schemas",
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Semantic version (e.g., 1.0.0)",
+      "examples": ["1.0.0", "2.1.3", "0.0.1"]
+    },
+    "semver_short": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "Short semantic version (major.minor, e.g., 1.0)",
+      "examples": ["1.0", "2.1", "0.1"]
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "Lowercase identifier with underscores (e.g., my_identifier)",
+      "examples": ["my_identifier", "flag_set", "clone_repo"]
+    },
+    "node_reference": {
+      "type": "string",
+      "description": "Reference to a node ID or ending ID in the workflow",
+      "examples": ["validate_input", "process_data", "success", "error_exit"]
+    },
+    "state_path": {
+      "type": "string",
+      "description": "Dot-notation path to a state field (e.g., computed.repo_path)",
+      "examples": ["flags.initialized", "computed.repo_path", "user_responses.choice"]
+    },
+    "interpolatable_string": {
+      "type": "string",
+      "description": "String that may contain ${...} interpolation expressions",
+      "examples": ["${source.url}", "Processing ${computed.file_count} files"]
+    },
+    "parameter": {
+      "type": "object",
+      "description": "Parameter definition for preconditions and consequences",
+      "required": ["name", "type", "required", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/identifier",
+          "description": "Parameter name"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["string", "boolean", "number", "object", "array", "any"],
+          "description": "Parameter type"
+        },
+        "required": {
+          "type": "boolean",
+          "description": "Whether parameter is required"
+        },
+        "description": {
+          "type": "string",
+          "description": "Parameter description"
+        },
+        "default": {
+          "description": "Default value if not provided"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern for string validation"
+        },
+        "enum": {
+          "type": "array",
+          "description": "Allowed values"
+        },
+        "interpolatable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether ${} interpolation is supported"
+        },
+        "items": {
+          "type": "object",
+          "description": "Schema for array items (when type is 'array')",
+          "additionalProperties": true
+        }
+      }
+    },
+    "category_path": {
+      "type": "string",
+      "pattern": "^(core|extensions)/[a-z-]+$",
+      "description": "Category path (e.g., 'core/state', 'extensions/git')",
+      "examples": ["core/state", "core/filesystem", "extensions/git", "extensions/web"]
+    },
+    "repo_reference": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+@v?[0-9\\.]+$",
+      "description": "GitHub repo reference: owner/repo@version",
+      "examples": ["hiivmind/hiivmind-blueprint-lib@v2.0.0", "myorg/custom-types@v1.0"]
+    },
+    "three_valued_logic": {
+      "type": "string",
+      "enum": ["T", "F", "U"],
+      "description": "3-Valued Logic: T=True, F=False, U=Unknown"
+    }
+  }
+}

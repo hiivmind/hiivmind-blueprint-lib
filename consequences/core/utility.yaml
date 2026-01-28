@@ -17,7 +17,7 @@ consequences:
         Used for recording when operations occurred, cache invalidation,
         and audit trails.
       notes:
-        - Format: 2025-01-23T14:30:00.000Z
+        - "Format: 2025-01-23T14:30:00.000Z"
         - Always uses UTC timezone
         - Useful for last_indexed_at, created_at fields
 
@@ -83,8 +83,8 @@ consequences:
         Output includes algorithm prefix.
       notes:
         - Uses SHA-256 algorithm
-        - Output format: sha256:abc123def456...
-        - The sha256: prefix identifies the algorithm
+        - "Output format: sha256:abc123def456..."
+        - "The sha256: prefix identifies the algorithm"
         - Useful for comparing content versions
 
     parameters:

@@ -45,11 +45,11 @@ nodes:
         required: true
         description: Routing configuration for condition results
         properties:
-          - name: "true"
+          - name: on_true
             type: node_reference
             required: true
             description: Node or ending to route to when condition evaluates to true
-          - name: "false"
+          - name: on_false
             type: node_reference
             required: true
             description: Node or ending to route to when condition evaluates to false
@@ -58,9 +58,9 @@ nodes:
       effect: |
         result = evaluate_precondition(node.condition, state)
         if result == true:
-          return route_to(node.branches.true)
+          return route_to(node.branches.on_true)
         else:
-          return route_to(node.branches.false)
+          return route_to(node.branches.on_false)
       state_reads:
         - Fields referenced in condition parameters via ${} interpolation
         - Fields checked by the precondition type
@@ -76,8 +76,8 @@ nodes:
               type: flag_set
               flag: manifest_detected
             branches:
-              true: present_manifest_option
-              false: ask_source_type
+              on_true: present_manifest_option
+              on_false: ask_source_type
         explanation: |
           Checks if the manifest_detected flag is true. If so, routes to
           present_manifest_option; otherwise routes to ask_source_type.
@@ -92,8 +92,8 @@ nodes:
               field: source_type
               value: git
             branches:
-              true: configure_git_source
-              false: configure_other_source
+              on_true: configure_git_source
+              on_false: configure_other_source
 
       - title: Branch on file existence
         yaml: |
@@ -103,8 +103,8 @@ nodes:
               type: file_exists
               path: "data/config.yaml"
             branches:
-              true: load_existing_config
-              false: initialize_new_corpus
+              on_true: load_existing_config
+              on_false: initialize_new_corpus
 
       - title: Branch on expression evaluation
         yaml: |
@@ -115,8 +115,8 @@ nodes:
               type: evaluate_expression
               expression: "len(computed.config.sources) == 0"
             branches:
-              true: show_first_source_guidance
-              false: proceed_to_add_source
+              on_true: show_first_source_guidance
+              on_false: proceed_to_add_source
 
     related:
       - action

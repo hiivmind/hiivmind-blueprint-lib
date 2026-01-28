@@ -17,7 +17,7 @@ preconditions:
         in the system PATH. Uses `which` to check availability.
       notes:
         - Checks system PATH for tool
-        - Common tools: git, yq, jq, python3, curl
+        - "Common tools: git, yq, jq, python3, curl"
         - Does not check version, only availability
 
     parameters:
@@ -78,7 +78,7 @@ preconditions:
       notes:
         - Uses python3 interpreter
         - Module must be importable (installed in environment)
-        - Common modules: yaml, pymupdf, requests
+        - "Common modules: yaml, pymupdf, requests"
 
     parameters:
       - name: module

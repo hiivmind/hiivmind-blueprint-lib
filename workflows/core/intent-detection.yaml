@@ -48,8 +48,8 @@ nodes:
       type: evaluate_expression
       expression: "arguments != null && arguments.trim() != ''"
     branches:
-      "true": parse_intent_flags
-      "false": use_fallback
+      on_true: parse_intent_flags
+      on_false: use_fallback
 
   # ============================================================================
   # PHASE 2: Flag Parsing
@@ -92,8 +92,8 @@ nodes:
       type: evaluate_expression
       expression: "computed.intent_matches.clear_winner == true"
     branches:
-      "true": set_winner_action
-      "false": check_has_candidates
+      on_true: set_winner_action
+      on_false: check_has_candidates
 
   set_winner_action:
     type: action
@@ -112,8 +112,8 @@ nodes:
       type: evaluate_expression
       expression: "computed.intent_matches.top_candidates.length > 0"
     branches:
-      "true": show_disambiguation
-      "false": use_fallback
+      on_true: show_disambiguation
+      on_false: use_fallback
 
   # ============================================================================
   # PHASE 5: Disambiguation
