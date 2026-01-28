@@ -1,0 +1,228 @@
+# Workflow Execution Traversal
+# Core loop for executing workflow nodes
+#
+# This file defines the abstract execution engine that the LLM interprets
+# directly. It is the authoritative source for workflow execution semantics.
+
+schema_version: "2.0"
+category: execution
+
+execution:
+  traversal:
+    description:
+      brief: Core workflow execution loop
+      detail: |
+        Executes workflows following a 3-phase model:
+        Phase 1: Initialize - Load workflow, types, state
+        Phase 2: Execute - Loop through nodes until ending
+        Phase 3: Complete - Finalize log, write output
+
+        This is an LLM-native execution model: the LLM interprets these patterns
+        directly, enabling extensibility through new type definitions rather than
+        engine modifications.
+      notes:
+        - Single entry point per workflow (start_node)
+        - Node dispatch based on node.type field
+        - State is shared and mutable throughout execution
+        - Supports both static and dynamic routing targets
+        - Logging auto-injection based on config flags
+
+    phases:
+      - id: initialize
+        description: |
+          Load workflow, resolve types, initialize state, check entry preconditions.
+          This phase runs once before the execution loop begins.
+        effect: |
+          FUNCTION initialize(workflow_path, plugin_root, runtime_flags):
+              # 1. Load workflow
+              workflow = parse_yaml(read_file(workflow_path))
+
+              # 2. Load type definitions (see resolution/type-loader.yaml)
+              types = load_types(workflow.definitions)
+
+              # 3. Load and resolve logging config (see execution/logging.yaml)
+              logging_config = load_logging_config(workflow, plugin_root, runtime_flags)
+
+              # 4. Validate
+              validate_schema(workflow)
+              validate_types_exist(workflow, types)
+              validate_graph_connectivity(workflow)
+
+              # 5. Check entry preconditions
+              FOR each precondition IN workflow.entry_preconditions:
+                  result = evaluate_precondition(precondition, types)
+                  IF result == false:
+                      DISPLAY "Cannot start: {precondition.error_message or 'precondition failed'}"
+                      STOP
+
+              # 6. Initialize state (see execution/state.yaml for structure)
+              state = {
+                  workflow_name: workflow.name,
+                  workflow_version: workflow.version,
+                  current_node: workflow.start_node,
+                  previous_node: null,
+                  interface: detect_interface(),
+                  history: [],
+                  user_responses: {},
+                  computed: {},
+                  flags: copy(workflow.initial_state.flags or {}),
+                  checkpoints: {},
+                  logging: logging_config,
+                  log: null,
+                  ...workflow.initial_state  # Copy custom fields
+              }
+
+              # 7. Auto-inject init_log if enabled
+              IF logging_config.enabled AND logging_config.auto.init:
+                  execute_consequence({
+                      type: "init_log",
+                      workflow_name: workflow.name,
+                      log_level: logging_config.level
+                  }, types, state)
+
+              RETURN { workflow, types, state }
+
+      - id: execute
+        description: |
+          Main execution loop. Processes nodes sequentially until an ending is reached.
+          Each iteration: get node, check for ending, dispatch, record history, route.
+        effect: |
+          FUNCTION execute(workflow, types, state):
+              LOOP:
+                  node = workflow.nodes[state.current_node]
+
+                  # Check for ending
+                  IF state.current_node IN workflow.endings:
+                      ending = workflow.endings[state.current_node]
+                      GOTO Phase 3 (completion)
+
+                  # Execute node based on type (see nodes/core/*.yaml)
+                  outcome = dispatch_node(node, types, state)
+
+                  # Record in history
+                  state.history.append({
+                      node: state.current_node,
+                      outcome: outcome,
+                      timestamp: now()
+                  })
+
+                  # Auto-inject log_node if enabled
+                  IF state.logging.enabled AND state.logging.auto.node_tracking:
+                      execute_consequence({
+                          type: "log_node",
+                          node_id: state.current_node,
+                          outcome: outcome
+                      }, types, state)
+
+                  # Update position
+                  state.previous_node = state.current_node
+                  state.current_node = outcome.next_node
+
+              UNTIL ending
+
+      - id: complete
+        description: |
+          Finalization phase. Generates logs, displays results to user.
+          Runs once after the execution loop reaches an ending.
+        effect: |
+          FUNCTION complete(ending, state, types):
+              # Auto-inject finalize_log if enabled
+              IF state.logging.enabled AND state.logging.auto.finalize:
+                  execute_consequence({
+                      type: "finalize_log",
+                      status: ending.type,
+                      summary: ending.summary
+                  }, types, state)
+
+              # Auto-inject write_log if enabled
+              IF state.logging.enabled AND state.logging.auto.write:
+                  filename = interpolate_filename(state.logging.output.filename, {
+                      skill_name: state.workflow_name,
+                      timestamp: now().format("YYYY-MM-DD_HH-mm-ss"),
+                      ext: format_to_extension(state.logging.output.format)
+                  })
+                  execute_consequence({
+                      type: "write_log",
+                      path: "{state.logging.output.location}/{filename}"
+                  }, types, state)
+
+              # Display result to user
+              message = interpolate(ending.message, state)
+
+              IF ending.type == "success":
+                  DISPLAY message
+                  IF ending.summary:
+                      FOR each key, value IN ending.summary:
+                          DISPLAY "  {key}: {interpolate(value, state)}"
+
+              ELSE IF ending.type == "error":
+                  DISPLAY "Error: " + message
+                  IF ending.details:
+                      DISPLAY interpolate(ending.details, state)
+                  IF ending.recovery:
+                      DISPLAY "Try running: /{ending.recovery}"
+
+              RETURN ending.type
+
+    dispatch:
+      description: |
+        Node type dispatch. Routes to the appropriate node executor based on type.
+        Each node type has its own execution semantics defined in nodes/core/*.yaml.
+      effect: |
+        FUNCTION dispatch_node(node, types, state):
+            # Dispatch based on node.type
+            # See nodes/core/*.yaml for individual node execution semantics
+            SWITCH node.type:
+                CASE "action":
+                    RETURN execute_action_node(node, types, state)
+                CASE "conditional":
+                    RETURN execute_conditional_node(node, types, state)
+                CASE "user_prompt":
+                    RETURN execute_user_prompt_node(node, types, state)
+                CASE "validation_gate":
+                    # DEPRECATED: Use conditional with audit.enabled
+                    RETURN execute_validation_gate_node(node, types, state)
+                CASE "reference":
+                    RETURN execute_reference_node(node, types, state)
+                DEFAULT:
+                    THROW "Unknown node type: {node.type}"
+
+    interface_detection:
+      description: |
+        Detects the execution environment (Claude Code vs Claude.ai).
+        This affects how user prompts are presented.
+      effect: |
+        FUNCTION detect_interface():
+            # Claude Code: AskUserQuestion tool is available
+            # Claude.ai: No tool access, conversational mode
+            IF tool_available("AskUserQuestion"):
+                RETURN "claude_code"
+            ELSE:
+                RETURN "claude_ai"
+
+    capabilities:
+      interface_modes:
+        - id: claude_code
+          description: Full tool access, AskUserQuestion available
+          features:
+            - Structured prompts via AskUserQuestion tool
+            - Multi-select support
+            - File operations via tools
+        - id: claude_ai
+          description: Conversational mode, no tool access
+          features:
+            - Markdown table prompts
+            - Single response per turn
+            - User types responses in chat
+
+    benefits:
+      - name: Extensibility
+        description: New types require only definition files, not engine changes
+      - name: Self-describing
+        description: Type definitions fully specify behavior via pseudocode effects
+      - name: Natural handling
+        description: The LLM naturally handles interpolation, error recovery, tool calls
+      - name: Zero deployment
+        description: Updates to types or engine apply to all skills immediately
+
+    since: "1.0.0"

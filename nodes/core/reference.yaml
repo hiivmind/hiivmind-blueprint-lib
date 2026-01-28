@@ -1,27 +1,37 @@
 # Reference Node Type Definition
-# Loads and executes a reference document section
+# Loads and executes a reference document or remote workflow
+#
+# Supports both local documents (doc) and remote workflows (workflow).
+# See resolution/workflow-loader.yaml for remote loading protocol.
 
-schema_version: "1.0"
+schema_version: "2.1"
 category: core
 
 nodes:
   - type: reference
     description:
-      brief: Loads and executes a reference document section
+      brief: Loads and executes a reference document or remote workflow
       detail: |
-        A reference node delegates execution to a reference document, typically a
-        markdown file containing detailed procedure instructions. This enables
-        complex multi-step procedures to be documented separately while remaining
-        callable from workflows.
+        A reference node delegates execution to either a local reference document
+        or a remote workflow. This enables complex multi-step procedures to be
+        documented separately while remaining callable from workflows.
 
-        Context variables can be passed to the document and will be available for
-        interpolation within the document content.
+        For local documents: typically markdown files containing detailed procedure
+        instructions. Context variables are available for interpolation.
+
+        For remote workflows: fetched from GitHub repositories, enabling distributed
+        composable workflow ecosystems. See resolution/workflow-loader.yaml for
+        the loading protocol.
+
+        State is SHARED between parent and referenced workflow/document.
       notes:
-        - Doc path is relative to plugin root
-        - Section parameter allows targeting specific headings
-        - Context variables are available in the referenced document
-        - Useful for reusable procedures across multiple workflows
-        - Document execution follows engine.md interpretation patterns
+        - Must specify either 'doc' (local) or 'workflow' (remote), not both
+        - For local: doc path is relative to plugin root
+        - For remote: uses owner/repo@version:workflow-name format
+        - Section parameter only applies to doc references
+        - Context variables are merged into state for sub-execution
+        - State is shared (unlike invoke_skill which isolates state)
+        - next_node supports variable interpolation for dynamic routing
 
     fields:
       - name: type
@@ -32,10 +42,20 @@ nodes:
 
       - name: doc
         type: string
-        required: true
+        required_unless: workflow
         description: |
           Path to the reference document, relative to plugin root.
           Typically a markdown file in lib/ or references/ directory.
+          Mutually exclusive with 'workflow'.
+
+      - name: workflow
+        type: string
+        required_unless: doc
+        description: |
+          Remote workflow reference in format: owner/repo@version:workflow-name
+          Example: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+          Mutually exclusive with 'doc'.
+          See resolution/workflow-loader.yaml for loading protocol.
 
       - name: section
         type: string
@@ -43,13 +63,15 @@ nodes:
         description: |
           Optional section heading within the document to execute.
           If omitted, the entire document is executed.
+          Only applicable when using 'doc' (not 'workflow').
 
       - name: context
         type: object
         required: false
         description: |
-          Variables to make available within the referenced document.
+          Variables to make available within the referenced document/workflow.
           These can be referenced using ${} interpolation syntax.
+          For workflows, maps to workflow inputs.
         additionalProperties:
           type: any
           interpolatable: true
@@ -57,39 +79,60 @@ nodes:
       - name: next_node
         type: node_reference
         required: true
-        description: Node or ending to route to after document execution completes
+        description: |
+          Node or ending to route to after execution completes.
+          Supports variable interpolation (e.g., "${computed.dynamic_target}").
 
     execution:
       effect: |
-        # Resolve document path
-        doc_path = resolve_path(plugin_root, node.doc)
+        # Determine source: remote workflow or local document
+        if node.workflow:
+          # Remote workflow reference (v2.1+)
+          # See resolution/workflow-loader.yaml for full loading protocol
+          workflow = load_workflow(node.workflow)
+        else if node.doc:
+          # Local file reference
+          doc_path = resolve_path(plugin_root, node.doc)
+          doc_content = read_file(doc_path)
 
-        # Read document content
-        doc_content = read_file(doc_path)
+          # Extract section if specified (only for doc references)
+          if node.section:
+            doc_content = extract_section(doc_content, node.section)
+        else:
+          throw Error("Reference node requires 'workflow' or 'doc' parameter")
 
-        # Extract section if specified
-        if node.section:
-          doc_content = extract_section(doc_content, node.section)
-
-        # Build context with interpolated values
+        # Build context with interpolation
         context = {}
         if node.context:
           for key, value in node.context.items():
             context[key] = interpolate(value, state)
 
-        # Execute document content with context
-        # (LLM interprets the document following engine patterns)
-        execute_document(doc_content, context, state)
+        # Merge context into state (for shared state execution)
+        for key, value in context.items():
+          state[key] = value
 
-        # Route to next node
-        return route_to(node.next_node)
+        # Execute based on source type
+        if node.workflow:
+          # Execute as sub-workflow with shared state
+          # Note: Reference execution shares state (unlike invoke_skill)
+          execute_workflow(workflow, types, state)
+        else:
+          # Execute document with context
+          execute_document(doc_content, context, state)
+
+        # Resolve next node (supports dynamic interpolation)
+        target = resolve_routing_target(node.next_node, state)
+
+        return route_to(target)
       state_reads:
         - Fields referenced in context values via ${} interpolation
       state_writes:
-        - Depends on document content execution
+        - Depends on workflow/document execution
+        - Remote workflows can read and modify parent state directly
 
     examples:
-      - title: Execute git clone procedure
+      # === Local document references ===
+      - title: Execute git clone procedure (local doc)
         yaml: |
           clone_repository:
             type: reference
@@ -105,7 +148,7 @@ nodes:
           and executes it with the provided context variables. After completion,
           routes to verify_clone.
 
-      - title: Full document execution
+      - title: Full document execution (local doc)
         yaml: |
           run_build_process:
             type: reference
@@ -118,17 +161,57 @@ nodes:
           Executes the entire build-index.md document with source and output
           paths from computed state.
 
-      - title: Conditional documentation
+      # === Remote workflow references ===
+      - title: Remote workflow for intent detection
         yaml: |
-          show_git_help:
+          detect_intent:
             type: reference
-            doc: "references/source-types/git-help.md"
-            next_node: ask_git_url
+            workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+            context:
+              arguments: "${arguments}"
+              intent_flags: "${intent_flags}"
+              intent_rules: "${intent_rules}"
+              fallback_action: "show_main_menu"
+            next_node: execute_dynamic_route
         explanation: |
-          Displays help documentation about git source configuration before
-          prompting for the repository URL. No context needed for informational docs.
+          Fetches the intent-detection workflow from hiivmind-blueprint-lib
+          and executes it with context mapped as workflow inputs.
+          After completion, routes to execute_dynamic_route.
+          The workflow sets computed.matched_action and other outputs
+          that are directly available in parent state.
 
-      - title: Complex procedure with multiple context values
+      - title: Remote workflow with dynamic routing
+        yaml: |
+          detect_intent:
+            type: reference
+            workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+            context:
+              arguments: "${arguments}"
+              intent_flags: "${intent_flags}"
+              intent_rules: "${intent_rules}"
+            next_node: "${computed.dynamic_target}"
+        explanation: |
+          The next_node uses variable interpolation to route dynamically
+          based on the workflow output. The intent-detection workflow sets
+          computed.dynamic_target based on the matched intent.
+
+      - title: Using outputs from remote workflow
+        yaml: |
+          # Parent workflow can use outputs directly after reference node
+          execute_matched_intent:
+            type: action
+            actions:
+              - type: dynamic_route
+                action: "${computed.matched_action}"
+            on_success: "${computed.dynamic_target}"
+            on_failure: show_main_menu
+        explanation: |
+          After detect_intent reference node completes, the parent workflow
+          has access to computed.matched_action, computed.intent_flags,
+          and computed.intent_matches set by the sub-workflow.
+
+      # === State sharing examples ===
+      - title: Complex procedure with multiple context values (local doc)
         yaml: |
           process_web_source:
             type: reference
@@ -142,7 +225,24 @@ nodes:
               user_agent: "hiivmind-corpus/1.0"
             next_node: verify_cached_content
 
+      - title: Override logging for sub-workflow
+        yaml: |
+          detect_intent:
+            type: reference
+            workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+            context:
+              arguments: "${arguments}"
+              logging:
+                level: "debug"
+                auto:
+                  node_tracking: true
+            next_node: execute_dynamic_route
+        explanation: |
+          Pass logging config in context to override for this sub-workflow.
+          More verbose logging for intent detection debugging.
+
     related:
       - action
       - conditional
     since: "1.0.0"
+    workflow_since: "2.1.0"

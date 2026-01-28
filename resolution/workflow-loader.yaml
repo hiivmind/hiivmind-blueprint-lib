@@ -1,0 +1,307 @@
+# Workflow Loader
+# Load reusable workflows from remote repositories
+#
+# This file defines how reusable sub-workflows are loaded and resolved
+# at execution time via reference nodes.
+
+schema_version: "2.0"
+category: resolution
+
+resolution:
+  workflow_loader:
+    description:
+      brief: Load reusable workflows from remote repositories
+      detail: |
+        Workflows can reference reusable sub-workflows via the reference node type.
+        The workflow loader resolves these references from remote repositories,
+        enabling distributed, composable workflow ecosystems.
+
+        Sub-workflows share state with the parent workflow, allowing them to
+        read and modify parent state directly.
+      notes:
+        - Workflows are fetched from GitHub raw URLs
+        - Supports version pinning for reproducibility
+        - Sub-workflows share state (unlike invoke_skill)
+        - Dependencies are validated before execution
+
+    reference_format:
+      pattern: "{owner}/{repo}@{version}:{workflow-name}"
+      examples:
+        - "hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection"
+        - "mycorp/custom-workflows@v1.0.0:validation-pipeline"
+
+    loading_algorithm:
+      description: Main loading function for workflow references
+      effect: |
+        FUNCTION load_workflow(workflow_ref):
+            # 1. Parse reference
+            source = parse_workflow_reference(workflow_ref)
+
+            # 2. Construct raw URL
+            base_url = "https://raw.githubusercontent.com/{source.owner}/{source.repo}/{source.version}/"
+
+            # 3. Fetch workflow index
+            index_url = base_url + "workflows/index.yaml"
+            index = fetch(index_url)
+
+            # 4. Verify workflow exists
+            IF source.workflow_name NOT IN index.workflows:
+                THROW "Workflow not found: {source.workflow_name} in {source.base_ref}"
+
+            # 5. Fetch workflow content
+            workflow_info = index.workflows[source.workflow_name]
+            workflow_url = base_url + "workflows/" + workflow_info.path
+            workflow = fetch(workflow_url)
+
+            # 6. Validate workflow
+            validate_workflow(workflow)
+
+            RETURN workflow
+
+    reference_parsing:
+      description: Parse workflow reference into components
+      effect: |
+        FUNCTION parse_workflow_reference(ref):
+            # Parse: owner/repo@version:workflow-name
+            match = ref.match(/^([^\/]+)\/([^@]+)@([^:]+):(.+)$/)
+
+            IF NOT match:
+                THROW "Invalid workflow reference format: {ref}"
+
+            RETURN {
+                owner: match[1],
+                repo: match[2],
+                version: match[3],
+                workflow_name: match[4],
+                base_ref: "{match[1]}/{match[2]}@{match[3]}"
+            }
+
+    local_references:
+      description: Use doc parameter for local workflow references
+      example: |
+        detect_intent:
+          type: reference
+          doc: "lib/workflows/intent-detection.yaml"
+          context:
+            arguments: "${arguments}"
+          next_node: execute_dynamic_route
+
+    workflow_index_format:
+      description: Structure of workflow index files
+      example: |
+        # workflows/index.yaml
+        schema_version: "2.0"
+
+        workflows:
+          intent-detection:
+            version: "1.0.0"
+            path: "core/intent-detection.yaml"
+            description: "3VL intent detection with dynamic routing"
+            depends_on:
+              consequences:
+                - parse_intent_flags
+                - match_3vl_rules
+                - set_state
+                - dynamic_route
+              preconditions:
+                - evaluate_expression
+            inputs:
+              - name: arguments
+                type: string
+                required: true
+                description: "User input to parse"
+              - name: intent_flags
+                type: object
+                required: true
+                description: "Flag definitions from intent-mapping.yaml"
+              - name: intent_rules
+                type: array
+                required: true
+                description: "Rules from intent-mapping.yaml"
+              - name: fallback_action
+                type: string
+                required: false
+                default: "show_main_menu"
+                description: "Action when no rules match"
+            outputs:
+              - name: computed.matched_action
+                type: string
+                description: "The resolved action to execute"
+              - name: computed.intent_flags
+                type: object
+                description: "Parsed 3VL flag values"
+
+      fields:
+        - name: version
+          required: true
+          description: Workflow version (semver)
+        - name: path
+          required: true
+          description: Path to workflow file relative to workflows/
+        - name: description
+          required: true
+          description: What the workflow does
+        - name: depends_on
+          required: false
+          description: Type dependencies for validation
+        - name: depends_on.consequences
+          required: false
+          description: Required consequence types
+        - name: depends_on.preconditions
+          required: false
+          description: Required precondition types
+        - name: inputs
+          required: true
+          description: Input parameters
+        - name: outputs
+          required: true
+          description: Output fields set by workflow
+
+    dependency_validation:
+      description: Validate workflow dependencies before execution
+      effect: |
+        FUNCTION validate_workflow_dependencies(workflow_info, type_registry):
+            IF workflow_info.depends_on:
+                # Check consequences
+                FOR each type_name IN workflow_info.depends_on.consequences:
+                    IF type_name NOT IN type_registry.consequences:
+                        THROW "Workflow requires missing consequence type: {type_name}"
+
+                # Check preconditions
+                FOR each type_name IN workflow_info.depends_on.preconditions:
+                    IF type_name NOT IN type_registry.preconditions:
+                        THROW "Workflow requires missing precondition type: {type_name}"
+
+    execution:
+      description: Execute reference node with remote workflow
+      effect: |
+        FUNCTION execute_reference_node(node, types, state):
+            IF node.workflow:
+                # Remote workflow reference
+                workflow = load_workflow(node.workflow)
+            ELSE IF node.doc:
+                # Local file reference
+                workflow = parse_yaml(read_file(node.doc))
+            ELSE:
+                THROW "Reference node requires 'workflow' or 'doc' parameter"
+
+            # Build context with interpolation
+            context = {}
+            FOR each key, value IN node.context:
+                context[key] = interpolate(value, state)
+
+            # Merge context into state (for shared state execution)
+            FOR each key, value IN context:
+                state[key] = value
+
+            # Execute the referenced workflow
+            # Note: State is SHARED - the workflow can read/write parent state
+            execute_workflow(workflow, types, state)
+
+            # Resolve next node (supports dynamic interpolation)
+            target = resolve_routing_target(node.next_node, state)
+
+            RETURN { next_node: target }
+
+    input_output_mapping:
+      description: How inputs and outputs are mapped
+
+      inputs:
+        description: Inputs are mapped from parent state via context parameter
+        example: |
+          detect_intent:
+            type: reference
+            workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+            context:
+              arguments: "${arguments}"           # Maps state.arguments
+              intent_flags: "${intent_flags}"     # Maps state.intent_flags
+              intent_rules: "${intent_rules}"     # Maps state.intent_rules
+              fallback_action: "show_main_menu"   # Literal value
+            next_node: execute_dynamic_route
+
+      outputs:
+        description: Outputs are automatically available in parent state
+        example: |
+          # After intent-detection workflow completes:
+          # - state.computed.matched_action is set
+          # - state.computed.intent_flags is set
+          # - state.computed.intent_matches is set
+
+          # Parent workflow can use these directly:
+          execute_dynamic_route:
+            type: action
+            actions:
+              - type: dynamic_route
+                action: "${computed.matched_action}"
+            on_success: "${computed.dynamic_target}"
+            on_failure: show_main_menu
+
+    isolated_execution:
+      description: Use invoke_skill for isolated execution with explicit mapping
+      example: |
+        detect_intent:
+          type: action
+          actions:
+            - type: invoke_skill
+              skill: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+              input:
+                arguments: "${arguments}"
+                intent_flags: "${intent_flags}"
+                intent_rules: "${intent_rules}"
+              output_mapping:
+                - from: computed.matched_action
+                  to: computed.resolved_action
+          on_success: execute_dynamic_route
+          on_failure: show_main_menu
+
+      comparison:
+        - type: reference
+          state: Shared
+          use_case: Pattern libraries, documentation, composable workflows
+        - type: invoke_skill
+          state: Isolated
+          use_case: Reusable skills, clean boundaries
+
+    version_pinning:
+      description: Use exact versions for reproducible builds
+
+      formats:
+        - format: "@v2.0.0"
+          behavior: Exact version (recommended for production)
+        - format: "@v2.0"
+          behavior: Latest patch in v2.0.x
+        - format: "@v2"
+          behavior: Latest minor in v2.x.x (development)
+
+    error_messages:
+      description: Provide clear, actionable error messages
+
+      examples:
+        - error: "Workflow not found"
+          context: |
+            Reference: hiivmind/hiivmind-blueprint-lib@v2.0.0:my-workflow
+            URL: https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/workflows/index.yaml
+
+            Available workflows in this version:
+            - intent-detection (v1.0.0)
+
+            Suggestions:
+            - Check the workflow name for typos
+            - Verify the workflow exists in the specified version
+            - Check available workflows: https://github.com/hiivmind/hiivmind-blueprint-lib/releases
+
+        - error: "Workflow dependency missing"
+          context: |
+            Workflow: intent-detection@v1.0.0
+            Missing consequence type: parse_intent_flags
+
+            The workflow requires consequence types that are not in the loaded type registry.
+
+            Loaded types: hiivmind/hiivmind-blueprint-lib@v1.0.0 (35 consequences)
+            Required types: 43 consequences (workflow needs v2.0.0+)
+
+            Suggestions:
+            - Update type definitions to v2.0.0 or later
+            - Add an extension with the missing type
+
+    since: "2.1.0"

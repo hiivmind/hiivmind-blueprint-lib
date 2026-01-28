@@ -1,0 +1,306 @@
+# Type Definition Loader
+# Load type definitions from remote GitHub repositories
+#
+# This file defines how consequence and precondition type definitions
+# are loaded and resolved at workflow initialization.
+
+schema_version: "2.0"
+category: resolution
+
+resolution:
+  type_loader:
+    description:
+      brief: Load type definitions from remote GitHub repositories
+      detail: |
+        Workflows reference type definitions via the definitions block.
+        The type loader fetches these definitions from GitHub and builds
+        a TypeRegistry that the execution engine uses to dispatch
+        consequences and evaluate preconditions.
+
+        Supports version pinning for reproducible builds and extension
+        loading for custom type definitions.
+      notes:
+        - Uses raw.githubusercontent.com for fetching
+        - Supports version pinning (@v2.0.0)
+        - Lazy loads individual type files on first use
+        - Extensions can add custom types with namespace prefixing on collision
+
+    source_format:
+      pattern: "{owner}/{repo}@{version}"
+      examples:
+        - "hiivmind/hiivmind-blueprint-lib@v2.0.0"
+        - "mycorp/custom-types@v1.0.0"
+
+      version_formats:
+        - format: "@v2.0.0"
+          behavior: Exact version (recommended)
+        - format: "@v2.0"
+          behavior: Latest patch in v2.0.x
+        - format: "@v2"
+          behavior: Latest minor in v2.x.x
+
+    loading_algorithm:
+      description: Main loading function for type definitions
+      effect: |
+        FUNCTION load_types(definitions_block):
+            # 1. Parse source
+            source = definitions_block.source
+            parts = parse_source(source)  # {owner, repo, version}
+
+            # 2. Construct base URL
+            base_url = "https://raw.githubusercontent.com/{parts.owner}/{parts.repo}/{parts.version}/"
+
+            # 3. Fetch index files
+            consequences_index = fetch(base_url + "consequences/index.yaml")
+            preconditions_index = fetch(base_url + "preconditions/index.yaml")
+
+            # 4. Build registry from indexes
+            registry = build_registry(consequences_index, preconditions_index, base_url)
+
+            # 5. Load extensions
+            IF definitions_block.extensions:
+                FOR each ext IN definitions_block.extensions:
+                    ext_registry = load_types({ source: ext })
+                    registry = merge_registry(registry, ext_registry)
+
+            RETURN registry
+
+    source_parsing:
+      description: Parse GitHub shorthand into components
+      effect: |
+        FUNCTION parse_source(source):
+            # Parse: owner/repo@version
+            match = source.match(/^([^\/]+)\/([^@]+)@(.+)$/)
+
+            IF NOT match:
+                THROW "Invalid source format: {source}. Expected: owner/repo@version"
+
+            RETURN {
+                owner: match[1],
+                repo: match[2],
+                version: match[3]
+            }
+
+    url_construction:
+      description: Construct raw GitHub URL from components
+      effect: |
+        FUNCTION construct_base_url(owner, repo, version):
+            RETURN "https://raw.githubusercontent.com/{owner}/{repo}/{version}/"
+
+    fetching:
+      description: Fetch YAML content from URL
+      effect: |
+        FUNCTION fetch(url):
+            # Use WebFetch tool
+            response = CALL WebFetch with:
+                url: url
+                prompt: "Return the raw YAML content"
+
+            IF response.status >= 400:
+                THROW "Failed to fetch types: {response.status} {url}"
+
+            # Handle redirects
+            IF response.redirect_url:
+                RETURN fetch(response.redirect_url)
+
+            RETURN parse_yaml(response.content)
+
+      fetch_order:
+        - "consequences/index.yaml - type lookup table"
+        - "preconditions/index.yaml - type lookup table"
+        - "Individual definition files on demand (lazy loading)"
+
+    index_format:
+      description: Structure of type index files
+      example: |
+        # consequences/index.yaml
+        schema_version: "1.1"
+
+        type_lookup:
+          set_flag: core/state
+          set_state: core/state
+          clone_repo: extensions/git
+          # ... all types
+
+        categories:
+          core/state:
+            description: State mutation operations
+            types: [set_flag, set_state, append_state, ...]
+
+    registry_building:
+      description: Build TypeRegistry from index files
+      effect: |
+        FUNCTION build_registry(consequences_index, preconditions_index, base_url):
+            registry = {
+                consequences: {},
+                preconditions: {},
+                base_url: base_url
+            }
+
+            # Build type lookup from indexes
+            FOR each type_name, category IN consequences_index.type_lookup:
+                registry.consequences[type_name] = {
+                    category: category,
+                    loaded: false  # Lazy load full definition
+                }
+
+            FOR each type_name, category IN preconditions_index.type_lookup:
+                registry.preconditions[type_name] = {
+                    category: category,
+                    loaded: false
+                }
+
+            RETURN registry
+
+      result_structure: |
+        type_registry:
+          schema_version: "1.1"
+
+          consequences:
+            set_flag:
+              category: core/state
+              loaded: false
+            clone_repo:
+              category: extensions/git
+              loaded: false
+            # ... all consequence types
+
+          preconditions:
+            file_exists:
+              category: core/filesystem
+              loaded: false
+            flag_set:
+              category: core/state
+              loaded: false
+            # ... all precondition types
+
+    lazy_loading:
+      description: Load full type definitions on first use
+      effect: |
+        FUNCTION get_type_definition(registry, type_name, kind):
+            # kind is "consequences" or "preconditions"
+            entry = registry[kind][type_name]
+
+            IF NOT entry:
+                THROW "Unknown {kind} type: {type_name}"
+
+            IF NOT entry.loaded:
+                # Construct path: core/state -> consequences/core/state.yaml
+                category_path = entry.category
+                url = registry.base_url + "{kind}/" + category_path + ".yaml"
+
+                definitions = fetch(url)
+                entry.definition = definitions.types[type_name]
+                entry.loaded = true
+
+            RETURN entry.definition
+
+    extension_loading:
+      description: Load additional type sources
+      usage: |
+        definitions:
+          source: hiivmind/hiivmind-blueprint-lib@v2.0.0
+          extensions:
+            - mycorp/custom-types@v1.0.0
+
+      merge_strategy:
+        description: Merge extension types into base registry
+        effect: |
+          FUNCTION merge_registry(base, extension):
+              result = copy(base)
+
+              FOR each type_name, entry IN extension.consequences:
+                  IF type_name IN result.consequences:
+                      # Collision - require namespace prefix
+                      namespaced_name = "{extension.source}:{type_name}"
+                      result.consequences[namespaced_name] = entry
+                  ELSE:
+                      result.consequences[type_name] = entry
+
+              FOR each type_name, entry IN extension.preconditions:
+                  IF type_name IN result.preconditions:
+                      namespaced_name = "{extension.source}:{type_name}"
+                      result.preconditions[namespaced_name] = entry
+                  ELSE:
+                      result.preconditions[type_name] = entry
+
+              RETURN result
+
+      namespaced_usage: |
+        # When collisions exist, use namespace prefix
+        nodes:
+          my_action:
+            type: action
+            actions:
+              # Base type (unambiguous)
+              - type: set_flag
+                flag: ready
+                value: true
+
+              # Namespaced type (collision resolved)
+              - type: mycorp/custom-types:clone_repo
+                url: "${internal_repo}"
+
+    validation:
+      description: Validate workflow types after loading
+      effect: |
+        FUNCTION validate_workflow_types(workflow, registry):
+            # Check all consequence types in action nodes
+            FOR each node IN workflow.nodes:
+                IF node.type == "action":
+                    FOR each action IN node.actions:
+                        IF action.type NOT IN registry.consequences:
+                            THROW "Unknown consequence type: {action.type}"
+
+                IF node.type == "conditional":
+                    validate_precondition_type(node.condition, registry)
+
+                IF node.type == "validation_gate":
+                    FOR each validation IN node.validations:
+                        validate_precondition_type(validation, registry)
+
+            # Check entry preconditions
+            FOR each precondition IN workflow.entry_preconditions:
+                validate_precondition_type(precondition, registry)
+
+        FUNCTION validate_precondition_type(precondition, registry):
+            IF precondition.type NOT IN registry.preconditions:
+                THROW "Unknown precondition type: {precondition.type}"
+
+            # Recursively check composite conditions
+            IF precondition.type IN ["all_of", "any_of", "xor_of", "none_of"]:
+                FOR each cond IN precondition.conditions:
+                    validate_precondition_type(cond, registry)
+
+    error_messages:
+      description: Provide clear, actionable error messages
+
+      examples:
+        - error: "Failed to resolve type definitions"
+          context: |
+            Source: hiivmind/hiivmind-blueprint-lib@v2.0.0
+            URL: https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/consequences/index.yaml
+            Error: 404 Not Found
+
+            Suggestions:
+            - Check the version exists: https://github.com/hiivmind/hiivmind-blueprint-lib/tags
+            - Verify network connectivity
+
+        - error: "Unknown consequence type"
+          context: |
+            Unknown consequence type: docker_build
+
+            This type is not in the loaded definitions.
+
+            Loaded from: hiivmind/hiivmind-blueprint-lib@v2.0.0 (43 consequences)
+
+            Suggestions:
+            - Check for typos in the type name
+            - Add an extension with this type:
+                definitions:
+                  source: hiivmind/hiivmind-blueprint-lib@v2.0.0
+                  extensions:
+                    - mycorp/docker-types@v1.0.0
+            - Define a custom consequence in your plugin
+
+    since: "2.0.0"

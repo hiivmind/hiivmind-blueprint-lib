@@ -1,0 +1,249 @@
+# Consequence Dispatch
+# Type-based consequence execution
+#
+# This file defines how consequences are dispatched and executed based on
+# their type definitions from the TypeRegistry.
+
+schema_version: "2.0"
+category: execution
+
+execution:
+  consequence_dispatch:
+    description:
+      brief: Type-based consequence execution
+      detail: |
+        Consequences are operations that modify state, call tools, compute values,
+        or produce side effects. Each consequence has a type that maps to a definition
+        in the TypeRegistry (loaded from consequences/core/*.yaml or extensions).
+
+        The dispatch algorithm resolves the type definition, checks requirements,
+        and routes to the appropriate handler based on payload.kind.
+      notes:
+        - Type definitions specify behavior via payload.effect
+        - Requirements are checked before execution
+        - Results can be stored in state.computed via store_as
+        - Supports ${...} interpolation in parameters
+
+    dispatch_algorithm:
+      description: Main dispatch function for consequence execution
+      effect: |
+        FUNCTION execute_consequence(consequence, types, state):
+            # 1. Resolve type definition
+            type_def = types.consequences[consequence.type]
+            IF type_def == null:
+                THROW "Unknown consequence type: {consequence.type}"
+
+            # 2. Check requirements
+            IF type_def.payload.requires:
+                check_requirements(type_def.payload.requires)
+
+            # 3. Dispatch based on payload.kind
+            SWITCH type_def.payload.kind:
+                CASE "state_mutation":
+                    execute_state_mutation(consequence, type_def, state)
+
+                CASE "computation":
+                    execute_computation(consequence, type_def, state)
+
+                CASE "tool_call":
+                    execute_tool_call(consequence, type_def, state)
+
+                CASE "composite":
+                    execute_composite(consequence, type_def, types, state)
+
+                CASE "side_effect":
+                    execute_side_effect(consequence, type_def, state)
+
+                DEFAULT:
+                    THROW "Unknown payload kind: {type_def.payload.kind}"
+
+    kinds:
+      - kind: state_mutation
+        description: |
+          Direct state modifications (set_flag, set_state, append_state, etc.)
+          These consequences modify the runtime state directly.
+        examples:
+          - set_flag
+          - set_state
+          - append_state
+          - clear_flag
+        effect: |
+          FUNCTION execute_state_mutation(consequence, type_def, state):
+              # Interpolate parameter values
+              params = interpolate_params(consequence, type_def, state)
+
+              # Apply effect to state
+              # The LLM interprets type_def.payload.effect and applies it
+              apply_effect(type_def.payload.effect, params, state)
+
+      - kind: computation
+        description: |
+          Expression evaluation and result storage (evaluate, compute)
+          These consequences evaluate expressions and optionally store results.
+        examples:
+          - evaluate
+          - compute
+          - parse_intent_flags
+          - match_3vl_rules
+        effect: |
+          FUNCTION execute_computation(consequence, type_def, state):
+              params = interpolate_params(consequence, type_def, state)
+
+              # Evaluate expression
+              result = evaluate_expression(params.expression, state)
+
+              # Store result
+              IF consequence.store_as:
+                  set_nested(state.computed, consequence.store_as, result)
+              IF consequence.set_flag:
+                  state.flags[consequence.set_flag] = result
+
+      - kind: tool_call
+        description: |
+          Execute a Claude Code tool (Bash, Read, Write, WebFetch, etc.)
+          These consequences map to actual tool invocations.
+        examples:
+          - clone_repo
+          - read_file
+          - write_file
+          - web_fetch
+          - run_command
+        effect: |
+          FUNCTION execute_tool_call(consequence, type_def, state):
+              params = interpolate_params(consequence, type_def, state)
+
+              # Check tool availability
+              IF NOT tool_available(type_def.payload.tool):
+                  # Try alternatives if defined
+                  FOR each alt IN type_def.payload.alternatives:
+                      IF evaluate_condition(alt.condition, state):
+                          CALL tool with alt.effect
+                          RETURN
+                  IF type_def.payload.alternatives.fallback:
+                      THROW type_def.payload.alternatives.fallback.error
+
+              # Build tool call from effect
+              tool_call = build_tool_call(type_def.payload.effect, params)
+
+              # Execute tool
+              result = CALL type_def.payload.tool with tool_call
+
+              # Store result if specified
+              IF consequence.store_as:
+                  set_nested(state.computed, consequence.store_as, result)
+
+      - kind: composite
+        description: |
+          Multiple sub-consequences executed in sequence.
+          Used for complex operations that combine multiple steps.
+        examples:
+          - add_source (combines multiple state and file operations)
+          - clone_and_verify (clone + checksum)
+        effect: |
+          FUNCTION execute_composite(consequence, type_def, types, state):
+              FOR each sub_consequence IN type_def.payload.consequences:
+                  execute_consequence(sub_consequence, types, state)
+
+      - kind: side_effect
+        description: |
+          Display or output without state mutation.
+          Used for user feedback and debugging.
+        examples:
+          - display_message
+          - display_table
+          - log_debug
+        effect: |
+          FUNCTION execute_side_effect(consequence, type_def, state):
+              params = interpolate_params(consequence, type_def, state)
+
+              SWITCH type_def.type:
+                  CASE "display_message":
+                      DISPLAY interpolate(params.message, state)
+                  CASE "display_table":
+                      DISPLAY render_table(params.data, params.columns)
+                  CASE "log_debug":
+                      LOG_DEBUG interpolate(params.message, state)
+
+    parameter_interpolation:
+      description: |
+        Consequence parameters are interpolated against state before execution.
+        This resolves ${...} references to actual values.
+      effect: |
+        FUNCTION interpolate_params(consequence, type_def, state):
+            params = {}
+
+            # Get parameter definitions from type
+            FOR each param_def IN type_def.parameters:
+                raw_value = consequence[param_def.name]
+
+                IF raw_value == null:
+                    IF param_def.required:
+                        THROW "Missing required parameter: {param_def.name}"
+                    ELSE IF param_def.default != null:
+                        raw_value = param_def.default
+                    ELSE:
+                        CONTINUE
+
+                # Interpolate string values
+                IF typeof(raw_value) == "string":
+                    params[param_def.name] = interpolate(raw_value, state)
+                ELSE IF typeof(raw_value) == "object":
+                    params[param_def.name] = deep_interpolate(raw_value, state)
+                ELSE:
+                    params[param_def.name] = raw_value
+
+            RETURN params
+
+        FUNCTION deep_interpolate(obj, state):
+            IF typeof(obj) == "string":
+                RETURN interpolate(obj, state)
+            IF typeof(obj) == "array":
+                RETURN obj.map(item => deep_interpolate(item, state))
+            IF typeof(obj) == "object":
+                result = {}
+                FOR each key, value IN obj:
+                    result[key] = deep_interpolate(value, state)
+                RETURN result
+            RETURN obj
+
+    requirements_check:
+      description: |
+        Some consequences require specific conditions to be met before execution.
+        Requirements are defined in type_def.payload.requires.
+      effect: |
+        FUNCTION check_requirements(requires):
+            FOR each req IN requires:
+                SWITCH req.type:
+                    CASE "tool":
+                        IF NOT tool_available(req.tool):
+                            THROW "Required tool not available: {req.tool}"
+                    CASE "interface":
+                        IF state.interface != req.interface:
+                            THROW "Requires {req.interface} interface"
+                    CASE "flag":
+                        IF NOT state.flags[req.flag]:
+                            THROW "Required flag not set: {req.flag}"
+
+    error_handling:
+      description: |
+        Consequence execution failures are caught and propagated to the node level.
+        The node's on_failure routing determines what happens next.
+
+      behavior:
+        - If a consequence fails, subsequent consequences in the same action node are skipped
+        - Error information is available for logging and display
+        - Checkpoints can be used to rollback state on failure
+
+      effect: |
+        # Error propagation in action node
+        FUNCTION execute_action_node(node, types, state):
+            TRY:
+                FOR each action IN node.actions:
+                    execute_consequence(action, types, state)
+                RETURN { success: true, next_node: node.on_success }
+            CATCH error:
+                IF node.checkpoint_rollback:
+                    rollback_checkpoint(node.checkpoint_rollback, state)
+                RETURN { success: false, next_node: node.on_failure, error: error }
+
+    since: "1.0.0"
