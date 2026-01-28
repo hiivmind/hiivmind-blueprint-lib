@@ -34,6 +34,9 @@ sources:
     description: Tool and module availability
     types:
       - tool_available
+      - tool_version_gte
+      - tool_authenticated
+      - tool_daemon_ready
       - python_module_available
 
   - path: core/composite.yaml
@@ -75,6 +78,12 @@ sources:
       - fetch_succeeded
       - fetch_returned_content
 
+  - path: extensions/network.yaml
+    category: extensions/network
+    description: Network connectivity checks
+    types:
+      - network_available
+
 # Remote extension definitions (public URLs)
 # Users can add custom preconditions from external sources
 remote_sources:
@@ -106,8 +115,11 @@ type_lookup:
   count_above: core/state.yaml
   count_below: core/state.yaml
 
-  # Core - Tool (2)
+  # Core - Tool (5)
   tool_available: core/tool.yaml
+  tool_version_gte: core/tool.yaml
+  tool_authenticated: core/tool.yaml
+  tool_daemon_ready: core/tool.yaml
   python_module_available: core/tool.yaml
 
   # Core - Composite (4)
@@ -133,9 +145,12 @@ type_lookup:
   fetch_succeeded: extensions/web.yaml
   fetch_returned_content: extensions/web.yaml
 
+  # Extensions - Network (1)
+  network_available: extensions/network.yaml
+
 # Statistics
 stats:
-  total_types: 28
-  core_types: 23
-  extension_types: 5
-  definition_files: 8
+  total_types: 32
+  core_types: 26
+  extension_types: 6
+  definition_files: 9

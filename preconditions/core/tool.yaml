@@ -124,3 +124,220 @@ preconditions:
     related:
       - tool_available
     since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # tool_version_gte
+  # --------------------------------------------------------------------------
+  - type: tool_version_gte
+    description:
+      brief: Check if tool version meets minimum requirement
+      detail: |
+        Evaluates to true if the installed tool version is >= min_version.
+        Uses tool's --version output and extracts version number for comparison.
+        Falls back to tool_available if version cannot be determined.
+      notes:
+        - Compares semantic versions (major.minor or major.minor.patch)
+        - Falls back to existence check if version pattern unknown
+        - Uses tool registry for version extraction patterns
+
+    parameters:
+      - name: tool
+        type: string
+        required: true
+        description: Tool name (command name)
+        pattern: "^[a-zA-Z0-9_-]+$"
+        interpolatable: false
+
+      - name: min_version
+        type: string
+        required: true
+        description: Minimum required version (e.g., "2.0" or "2.0.0")
+        pattern: "^\\d+\\.\\d+(\\.\\d+)?$"
+        interpolatable: false
+
+    evaluation:
+      effect: |
+        if not tool_available(tool):
+          return false
+        version_output = shell(tool + " --version 2>&1")
+        installed_version = extract_version(version_output, tool)
+        if installed_version == null:
+          return true  # Can't determine version, assume OK
+        return compare_versions(installed_version, min_version) >= 0
+      reads: []
+      functions:
+        - shell
+        - tool_available
+        - extract_version
+        - compare_versions
+
+    examples:
+      - title: Check git version 2.0+
+        yaml: |
+          - type: tool_version_gte
+            tool: git
+            min_version: "2.0"
+        context:
+          files: {}
+        result: true
+
+      - title: Check python3 version 3.9+
+        yaml: |
+          - type: tool_version_gte
+            tool: python3
+            min_version: "3.9"
+        context:
+          files: {}
+        result: true
+
+      - title: Require newer version than installed
+        yaml: |
+          - type: tool_version_gte
+            tool: git
+            min_version: "99.0"
+        context:
+          files: {}
+        result: false
+
+    related:
+      - tool_available
+      - tool_authenticated
+    since: "2.0.0"
+
+  # --------------------------------------------------------------------------
+  # tool_authenticated
+  # --------------------------------------------------------------------------
+  - type: tool_authenticated
+    description:
+      brief: Check if tool requiring authentication is authenticated
+      detail: |
+        Evaluates to true if the specified tool that requires authentication
+        is both available AND properly authenticated. Returns true for tools
+        that don't require authentication.
+      notes:
+        - Checks tool availability first
+        - Runs tool-specific auth check command
+        - "Auth tools: gh, aws, gcloud, az"
+        - Returns true if tool doesn't require auth
+
+    parameters:
+      - name: tool
+        type: string
+        required: true
+        description: Tool name (command name)
+        pattern: "^[a-zA-Z0-9_-]+$"
+        interpolatable: false
+
+    evaluation:
+      effect: |
+        if not tool_available(tool):
+          return false
+        auth_check = get_auth_check(tool)  # From registry
+        if auth_check == null:
+          return true  # No auth required
+        exit_code = shell(auth_check + " >/dev/null 2>&1")
+        return exit_code == 0
+      reads: []
+      functions:
+        - shell
+        - tool_available
+        - get_auth_check
+
+    examples:
+      - title: Check gh is authenticated
+        yaml: |
+          - type: tool_authenticated
+            tool: gh
+        context:
+          files: {}
+        result: true
+
+      - title: Check aws is authenticated
+        yaml: |
+          - type: tool_authenticated
+            tool: aws
+        context:
+          files: {}
+        result: true
+
+      - title: Tool without auth requirement
+        yaml: |
+          - type: tool_authenticated
+            tool: git
+        context:
+          files: {}
+        result: true
+
+    related:
+      - tool_available
+      - tool_daemon_ready
+    since: "2.0.0"
+
+  # --------------------------------------------------------------------------
+  # tool_daemon_ready
+  # --------------------------------------------------------------------------
+  - type: tool_daemon_ready
+    description:
+      brief: Check if tool's required daemon is running
+      detail: |
+        Evaluates to true if the specified daemon-based tool is available
+        AND its required daemon is running and accessible. Returns true for
+        tools that don't require a daemon.
+      notes:
+        - Checks tool availability first
+        - Runs tool-specific daemon check
+        - "Daemon tools: docker, podman"
+        - Returns true if tool doesn't require daemon
+
+    parameters:
+      - name: tool
+        type: string
+        required: true
+        description: Tool name (command name)
+        pattern: "^[a-zA-Z0-9_-]+$"
+        interpolatable: false
+
+    evaluation:
+      effect: |
+        if not tool_available(tool):
+          return false
+        daemon_check = get_daemon_check(tool)  # From registry
+        if daemon_check == null:
+          return true  # No daemon required
+        exit_code = shell(daemon_check)
+        return exit_code == 0
+      reads: []
+      functions:
+        - shell
+        - tool_available
+        - get_daemon_check
+
+    examples:
+      - title: Check docker daemon is running
+        yaml: |
+          - type: tool_daemon_ready
+            tool: docker
+        context:
+          files: {}
+        result: true
+
+      - title: Tool without daemon requirement
+        yaml: |
+          - type: tool_daemon_ready
+            tool: git
+        context:
+          files: {}
+        result: true
+
+      - title: Docker not running
+        yaml: |
+          - type: tool_daemon_ready
+            tool: docker
+        context:
+          description: Docker installed but daemon stopped
+        result: false
+
+    related:
+      - tool_available
+      - tool_authenticated
+    since: "2.0.0"

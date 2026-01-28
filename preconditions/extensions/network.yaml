@@ -1,0 +1,79 @@
+# Extension: Network Preconditions
+# Network connectivity checks
+
+schema_version: "1.0"
+category: extensions/network
+description: Network connectivity preconditions
+
+preconditions:
+  # --------------------------------------------------------------------------
+  # network_available
+  # --------------------------------------------------------------------------
+  - type: network_available
+    description:
+      brief: Check if network access is available
+      detail: |
+        Evaluates to true if network connectivity is available. Can check
+        general connectivity (default github.com) or a specific target URL.
+        Uses curl with a short timeout to avoid blocking.
+      notes:
+        - Uses curl with 5 second timeout
+        - Defaults to checking github.com
+        - Can specify custom target URL
+        - Returns false on timeout or connection failure
+
+    parameters:
+      - name: target
+        type: string
+        required: false
+        description: URL to check (defaults to https://github.com)
+        interpolatable: true
+        default: "https://github.com"
+
+    evaluation:
+      effect: |
+        url = target or "https://github.com"
+        exit_code = shell("curl -s --max-time 5 -o /dev/null -w '%{http_code}' " + url + " >/dev/null")
+        return exit_code == 0
+      reads: []
+      functions:
+        - shell
+
+    examples:
+      - title: Check general network connectivity
+        yaml: |
+          - type: network_available
+        context:
+          files: {}
+        result: true
+
+      - title: Check specific API endpoint
+        yaml: |
+          - type: network_available
+            target: "https://api.github.com"
+        context:
+          files: {}
+        result: true
+
+      - title: Check custom service
+        yaml: |
+          - type: network_available
+            target: "${config.api_endpoint}"
+        context:
+          state:
+            config:
+              api_endpoint: "https://api.example.com/health"
+        result: true
+
+      - title: Network unavailable
+        yaml: |
+          - type: network_available
+            target: "https://unreachable.invalid"
+        context:
+          description: Target host does not exist
+        result: false
+
+    related:
+      - fetch_succeeded
+      - tool_available
+    since: "2.0.0"

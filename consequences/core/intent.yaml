@@ -116,7 +116,6 @@ consequences:
         - "3VL values: T (True), F (False), U (Unknown)"
         - Negative keywords checked first (more specific)
         - Unknown is the default when no keywords match
-        - "See also: lib/intent_detection/framework.md"
 
     parameters:
       - name: input
@@ -218,7 +217,6 @@ consequences:
         - "Soft match: one is U, other is T/F (+1)"
         - "Exclusion: T vs F or F vs T (candidate removed)"
         - Clear winner requires 2+ point lead
-        - "See also: lib/intent_detection/framework.md"
 
     parameters:
       - name: flags

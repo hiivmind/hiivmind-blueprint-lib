@@ -110,6 +110,12 @@ sources:
       - run_python
       - run_bash
 
+  - path: extensions/package.yaml
+    category: extensions/package
+    description: Tool and package installation
+    types:
+      - install_tool
+
 # Remote extension definitions (public URLs)
 # Users can add custom consequences from external sources
 remote_sources:
@@ -191,9 +197,12 @@ type_lookup:
   run_python: extensions/scripting.yaml
   run_bash: extensions/scripting.yaml
 
+  # Extensions - Package (1)
+  install_tool: extensions/package.yaml
+
 # Statistics
 stats:
-  total_types: 43
+  total_types: 44
   core_types: 30
-  extension_types: 13
-  definition_files: 12
+  extension_types: 14
+  definition_files: 13

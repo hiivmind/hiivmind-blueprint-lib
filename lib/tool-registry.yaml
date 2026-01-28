@@ -1,0 +1,325 @@
+# Tool Capability Registry
+# Known CLI tools with detection patterns and installation hints
+#
+# Used by preconditions:
+#   - tool_version_gte: uses version_pattern to extract and compare versions
+#   - tool_authenticated: uses auth_check to verify authentication
+#   - tool_daemon_ready: uses daemon_check to verify daemon status
+#
+# Used by consequences:
+#   - install_tool: uses install_hint to determine installation command
+
+schema_version: "1.0"
+description: Catalog of known CLI tools with availability checks and version detection
+
+# Tool categories and their entries
+categories:
+  # ============================================================================
+  # Core tools (typically always available on Unix systems)
+  # ============================================================================
+  core:
+    bash:
+      name: bash
+      description: Bourne Again Shell
+      check: "bash --version"
+      version_pattern: "version (\\d+\\.\\d+)"
+      common: true
+      platforms: [linux, darwin]
+
+    sh:
+      name: sh
+      description: POSIX shell
+      check: "sh --version 2>/dev/null || echo 'sh available'"
+      common: true
+      platforms: [linux, darwin]
+
+    mkdir:
+      name: mkdir
+      description: Create directories
+      check: "mkdir --version 2>/dev/null || echo 'mkdir available'"
+      common: true
+      platforms: [linux, darwin]
+
+    rm:
+      name: rm
+      description: Remove files
+      check: "rm --version 2>/dev/null || echo 'rm available'"
+      common: true
+      platforms: [linux, darwin]
+
+    cat:
+      name: cat
+      description: Concatenate and display files
+      check: "cat --version 2>/dev/null || echo 'cat available'"
+      common: true
+      platforms: [linux, darwin]
+
+  # ============================================================================
+  # Version control
+  # ============================================================================
+  vcs:
+    git:
+      name: git
+      description: Distributed version control
+      check: "git --version"
+      version_pattern: "git version (\\d+\\.\\d+)"
+      install_hint: "apt install git / brew install git"
+      platforms: [linux, darwin, windows]
+
+    gh:
+      name: gh
+      description: GitHub CLI
+      check: "gh --version"
+      version_pattern: "gh version (\\d+\\.\\d+)"
+      install_hint: "apt install gh / brew install gh"
+      requires_auth: true
+      auth_check: "gh auth status"
+      platforms: [linux, darwin, windows]
+
+  # ============================================================================
+  # Programming languages
+  # ============================================================================
+  languages:
+    python3:
+      name: python3
+      description: Python 3 interpreter
+      check: "python3 --version"
+      version_pattern: "Python (\\d+\\.\\d+)"
+      install_hint: "apt install python3 / brew install python3"
+      platforms: [linux, darwin, windows]
+
+    node:
+      name: node
+      description: Node.js runtime
+      check: "node --version"
+      version_pattern: "v(\\d+\\.\\d+)"
+      install_hint: "nvm install --lts / brew install node"
+      platforms: [linux, darwin, windows]
+
+    ruby:
+      name: ruby
+      description: Ruby interpreter
+      check: "ruby --version"
+      version_pattern: "ruby (\\d+\\.\\d+)"
+      install_hint: "apt install ruby / brew install ruby"
+      platforms: [linux, darwin, windows]
+
+  # ============================================================================
+  # Package managers
+  # ============================================================================
+  package_managers:
+    pip:
+      name: pip
+      description: Python package manager
+      check: "pip3 --version"
+      version_pattern: "pip (\\d+\\.\\d+)"
+      depends_on: python3
+      platforms: [linux, darwin, windows]
+
+    npm:
+      name: npm
+      description: Node package manager
+      check: "npm --version"
+      version_pattern: "(\\d+\\.\\d+)"
+      depends_on: node
+      platforms: [linux, darwin, windows]
+
+    uv:
+      name: uv
+      description: Fast Python package manager
+      check: "uv --version"
+      version_pattern: "uv (\\d+\\.\\d+)"
+      install_hint: "curl -LsSf https://astral.sh/uv/install.sh | sh"
+      platforms: [linux, darwin, windows]
+
+    rye:
+      name: rye
+      description: Python project manager
+      check: "rye --version"
+      version_pattern: "rye (\\d+\\.\\d+)"
+      install_hint: "curl -sSf https://rye.astral.sh/get | bash"
+      platforms: [linux, darwin]
+
+  # ============================================================================
+  # Data processing tools
+  # ============================================================================
+  data:
+    jq:
+      name: jq
+      description: JSON processor
+      check: "jq --version"
+      version_pattern: "jq-(\\d+\\.\\d+)"
+      install_hint: "apt install jq / brew install jq"
+      platforms: [linux, darwin, windows]
+
+    yq:
+      name: yq
+      description: YAML processor
+      check: "yq --version"
+      version_pattern: "yq.*version v?(\\d+\\.\\d+)"
+      install_hint: "snap install yq / brew install yq"
+      platforms: [linux, darwin, windows]
+
+  # ============================================================================
+  # Container tools
+  # ============================================================================
+  containers:
+    docker:
+      name: docker
+      description: Container runtime
+      check: "docker version --format '{{.Client.Version}}'"
+      version_pattern: "(\\d+\\.\\d+)"
+      requires_daemon: true
+      daemon_check: "docker info >/dev/null 2>&1"
+      install_hint: "See https://docs.docker.com/get-docker/"
+      platforms: [linux, darwin, windows]
+
+    podman:
+      name: podman
+      description: Daemonless container runtime
+      check: "podman --version"
+      version_pattern: "podman version (\\d+\\.\\d+)"
+      install_hint: "apt install podman / brew install podman"
+      platforms: [linux, darwin]
+
+  # ============================================================================
+  # Task runners
+  # ============================================================================
+  task_runners:
+    just:
+      name: just
+      description: Command runner
+      check: "just --version"
+      version_pattern: "just (\\d+\\.\\d+)"
+      install_hint: "cargo install just / brew install just"
+      platforms: [linux, darwin, windows]
+
+    make:
+      name: make
+      description: Build automation
+      check: "make --version"
+      version_pattern: "GNU Make (\\d+\\.\\d+)"
+      common: true
+      platforms: [linux, darwin]
+
+  # ============================================================================
+  # Cloud CLIs
+  # ============================================================================
+  cloud:
+    aws:
+      name: aws
+      description: AWS CLI
+      check: "aws --version"
+      version_pattern: "aws-cli/(\\d+\\.\\d+)"
+      requires_auth: true
+      auth_check: "aws sts get-caller-identity"
+      install_hint: "pip install awscli"
+      platforms: [linux, darwin, windows]
+
+    gcloud:
+      name: gcloud
+      description: Google Cloud CLI
+      check: "gcloud --version"
+      version_pattern: "Google Cloud SDK (\\d+\\.\\d+)"
+      requires_auth: true
+      auth_check: "gcloud auth list"
+      install_hint: "See https://cloud.google.com/sdk/docs/install"
+      platforms: [linux, darwin, windows]
+
+    az:
+      name: az
+      description: Azure CLI
+      check: "az --version"
+      version_pattern: "azure-cli\\s+(\\d+\\.\\d+)"
+      requires_auth: true
+      auth_check: "az account show"
+      install_hint: "pip install azure-cli"
+      platforms: [linux, darwin, windows]
+
+  # ============================================================================
+  # Kubernetes tools
+  # ============================================================================
+  kubernetes:
+    kubectl:
+      name: kubectl
+      description: Kubernetes CLI
+      check: "kubectl version --client --output=yaml"
+      version_pattern: "gitVersion: v(\\d+\\.\\d+)"
+      install_hint: "See https://kubernetes.io/docs/tasks/tools/"
+      platforms: [linux, darwin, windows]
+
+    helm:
+      name: helm
+      description: Kubernetes package manager
+      check: "helm version --short"
+      version_pattern: "v(\\d+\\.\\d+)"
+      install_hint: "curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"
+      platforms: [linux, darwin, windows]
+
+  # ============================================================================
+  # Network tools
+  # ============================================================================
+  network:
+    curl:
+      name: curl
+      description: URL transfer tool
+      check: "curl --version"
+      version_pattern: "curl (\\d+\\.\\d+)"
+      common: true
+      platforms: [linux, darwin, windows]
+
+    wget:
+      name: wget
+      description: Network downloader
+      check: "wget --version"
+      version_pattern: "Wget (\\d+\\.\\d+)"
+      install_hint: "apt install wget / brew install wget"
+      platforms: [linux, darwin]
+
+# Quick lookup by tool name (flattened view)
+# Maps tool name to category for quick access
+tool_index:
+  # Core
+  bash: core
+  sh: core
+  mkdir: core
+  rm: core
+  cat: core
+  # VCS
+  git: vcs
+  gh: vcs
+  # Languages
+  python3: languages
+  node: languages
+  ruby: languages
+  # Package managers
+  pip: package_managers
+  npm: package_managers
+  uv: package_managers
+  rye: package_managers
+  # Data
+  jq: data
+  yq: data
+  # Containers
+  docker: containers
+  podman: containers
+  # Task runners
+  just: task_runners
+  make: task_runners
+  # Cloud
+  aws: cloud
+  gcloud: cloud
+  az: cloud
+  # Kubernetes
+  kubectl: kubernetes
+  helm: kubernetes
+  # Network
+  curl: network
+  wget: network
+
+# Statistics
+stats:
+  total_tools: 27
+  categories: 9
+  tools_requiring_auth: 4
+  tools_requiring_daemon: 1

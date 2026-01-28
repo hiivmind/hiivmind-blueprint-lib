@@ -7,7 +7,6 @@
 #
 # Reference: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
 #
-# See: lib/intent_detection/framework.md for 3VL semantics
 # See: lib/workflow/engine.md for dynamic routing support
 
 name: intent-detection
