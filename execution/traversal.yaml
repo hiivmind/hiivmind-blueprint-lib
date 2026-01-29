@@ -4,7 +4,7 @@
 # This file defines the abstract execution engine that the LLM interprets
 # directly. It is the authoritative source for workflow execution semantics.
 
-schema_version: "2.0"
+schema_version: "2.3"
 category: execution
 
 execution:
@@ -43,19 +43,22 @@ execution:
               # 3. Load and resolve logging config (see execution/logging.yaml)
               logging_config = load_logging_config(workflow, plugin_root, runtime_flags)
 
-              # 4. Validate
+              # 4. Load and resolve display config (see execution/display.yaml)
+              display_config = load_display_config(workflow, plugin_root, runtime_flags)
+
+              # 5. Validate
               validate_schema(workflow)
               validate_types_exist(workflow, types)
               validate_graph_connectivity(workflow)
 
-              # 5. Check entry preconditions
+              # 6. Check entry preconditions
               FOR each precondition IN workflow.entry_preconditions:
                   result = evaluate_precondition(precondition, types)
                   IF result == false:
                       DISPLAY "Cannot start: {precondition.error_message or 'precondition failed'}"
                       STOP
 
-              # 6. Initialize state (see execution/state.yaml for structure)
+              # 7. Initialize state (see execution/state.yaml for structure)
               state = {
                   workflow_name: workflow.name,
                   workflow_version: workflow.version,
@@ -68,11 +71,13 @@ execution:
                   flags: copy(workflow.initial_state.flags or {}),
                   checkpoints: {},
                   logging: logging_config,
+                  display: display_config,
+                  batch_buffer: [],              # Buffer for batched nodes
                   log: null,
                   ...workflow.initial_state  # Copy custom fields
               }
 
-              # 7. Auto-inject init_log if enabled
+              # 8. Auto-inject init_log if enabled
               IF logging_config.enabled AND logging_config.auto.init:
                   execute_consequence({
                       type: "init_log",
@@ -86,18 +91,63 @@ execution:
         description: |
           Main execution loop. Processes nodes sequentially until an ending is reached.
           Each iteration: get node, check for ending, dispatch, record history, route.
+
+          Supports multi-turn conversation via awaiting_input state:
+          - If awaiting_input is set, resume the waiting node with user input
+          - If node returns { awaiting_input: true }, pause execution for user response
+
+          Display integration:
+          - Batches consecutive non-interactive nodes when batch.enabled
+          - Flushes batch on user_prompt nodes, visible output, or threshold
+          - Respects verbosity levels for output detail
         effect: |
           FUNCTION execute(workflow, types, state):
               LOOP:
-                  node = workflow.nodes[state.current_node]
+                  # Check for multi-turn resume (tabular mode user_prompt)
+                  IF state.awaiting_input:
+                      # Resume the waiting node with user's input
+                      state.awaiting_input.user_input = get_user_input()
+                      node = workflow.nodes[state.awaiting_input.node_id]
+                      state.current_node = state.awaiting_input.node_id
+                  ELSE:
+                      node = workflow.nodes[state.current_node]
 
                   # Check for ending
                   IF state.current_node IN workflow.endings:
+                      # Flush any remaining batched nodes before ending
+                      flush_batch(state.batch_buffer, state.display, state)
                       ending = workflow.endings[state.current_node]
                       GOTO Phase 3 (completion)
 
+                  # Check if this node should break the batch (user_prompt, visible output)
+                  IF should_flush_batch(node, state.display):
+                      flush_batch(state.batch_buffer, state.display, state)
+
                   # Execute node based on type (see nodes/core/*.yaml)
                   outcome = dispatch_node(node, types, state)
+
+                  # Handle awaiting_input (multi-turn pause)
+                  IF outcome.awaiting_input:
+                      # Node is waiting for user input - pause execution
+                      # state.awaiting_input already set by the node
+                      PAUSE execution
+                      RETURN  # Will resume on next conversation turn
+
+                  # Handle display output based on verbosity and batching
+                  IF should_batch_node(node, state.display):
+                      # Add to batch buffer
+                      state.batch_buffer.append({
+                          id: state.current_node,
+                          outcome: outcome,
+                          routing_target: outcome.next_node,
+                          phase: infer_phase_name(state)
+                      })
+                      # Check if batch threshold reached
+                      IF state.batch_buffer.length >= state.display.batch.threshold:
+                          flush_batch(state.batch_buffer, state.display, state)
+                  ELSE:
+                      # Display node transition immediately
+                      display_node_execution(state.current_node, node, outcome, state.display)
 
                   # Record in history
                   state.history.append({
@@ -224,5 +274,172 @@ execution:
         description: The LLM naturally handles interpolation, error recovery, tool calls
       - name: Zero deployment
         description: Updates to types or engine apply to all skills immediately
+
+    display_helpers:
+      description: |
+        Helper functions for display output during workflow execution.
+        These functions are called by the execute phase to render output.
+
+      should_batch_node:
+        description: Determine if a node should be added to the batch buffer
+        effect: |
+          FUNCTION should_batch_node(node, display_config):
+              # Never batch if batching disabled
+              IF NOT display_config.batch.enabled:
+                  RETURN false
+
+              # Never batch at verbose+ levels (show all details)
+              IF display_config.verbosity IN ["verbose", "debug"]:
+                  RETURN false
+
+              # Never batch in silent mode (no intermediate output)
+              IF display_config.verbosity == "silent":
+                  RETURN false
+
+              # Never batch user_prompt nodes
+              IF node.type == "user_prompt":
+                  RETURN false
+
+              # Batch action and conditional nodes in terse/normal modes
+              RETURN true
+
+      should_flush_batch:
+        description: Determine if the batch should be flushed before executing this node
+        effect: |
+          FUNCTION should_flush_batch(node, display_config):
+              # Always flush before user_prompt nodes
+              IF node.type == "user_prompt":
+                  RETURN true
+
+              # Flush if batch is at threshold
+              # (handled separately in execute loop)
+
+              RETURN false
+
+      flush_batch:
+        description: Render batched nodes and clear the buffer
+        effect: |
+          FUNCTION flush_batch(batch_buffer, display_config, state):
+              IF batch_buffer.length == 0:
+                  RETURN
+
+              # In silent mode, don't display batch summaries
+              IF display_config.verbosity == "silent":
+                  batch_buffer.clear()
+                  RETURN
+
+              # If below threshold, show individual transitions instead
+              IF batch_buffer.length < display_config.batch.threshold:
+                  FOR each entry IN batch_buffer:
+                      display_node_transition(entry.id, display_config)
+                  batch_buffer.clear()
+                  RETURN
+
+              # Display batch summary
+              last_entry = batch_buffer[batch_buffer.length - 1]
+              phase_name = last_entry.phase OR "Processing"
+
+              IF display_config.batch.show_node_list:
+                  node_ids = batch_buffer.map(e => e.id).join(", ")
+                  DISPLAY "{phase_name}... [{node_ids}] → {last_entry.routing_target}"
+              ELSE IF display_config.batch.show_summary:
+                  DISPLAY "{phase_name}... [{batch_buffer.length} nodes] → {last_entry.routing_target}"
+              ELSE:
+                  DISPLAY "{phase_name}... → {last_entry.routing_target}"
+
+              batch_buffer.clear()
+
+      display_node_execution:
+        description: Display a node execution based on verbosity
+        effect: |
+          FUNCTION display_node_execution(node_id, node, outcome, display_config):
+              # Silent mode: no output except prompts and final result
+              IF display_config.verbosity == "silent":
+                  RETURN
+
+              # Terse mode: handled by batching, individual nodes not shown
+              IF display_config.verbosity == "terse":
+                  RETURN
+
+              # Normal mode: show transitions
+              IF display_config.verbosity == "normal":
+                  display_node_transition(node_id, display_config)
+                  RETURN
+
+              # Verbose mode: show details
+              IF display_config.verbosity == "verbose":
+                  display_node_transition(node_id, display_config)
+                  IF node.type == "conditional":
+                      display_condition_details(node, outcome, display_config)
+                  RETURN
+
+              # Debug mode: show everything
+              IF display_config.verbosity == "debug":
+                  display_node_transition(node_id, display_config)
+                  display_node_debug(node_id, node, outcome, display_config)
+
+      display_node_transition:
+        description: Display a simple node transition arrow
+        effect: |
+          FUNCTION display_node_transition(node_id, display_config):
+              IF NOT display_config.show.node_transitions:
+                  RETURN
+
+              icon = display_config.format.use_icons ? "→ " : ""
+              timestamp = display_config.format.timestamp ? "[{now().format('HH:mm:ss.SSS')}] " : ""
+              DISPLAY "{timestamp}{icon}{node_id}"
+
+      display_condition_details:
+        description: Display condition evaluation details (verbose mode)
+        effect: |
+          FUNCTION display_condition_details(node, outcome, display_config):
+              indent = " ".repeat(display_config.format.indent)
+
+              IF display_config.show.condition_eval:
+                  DISPLAY "{indent}Condition: {node.condition.expression OR node.condition.type}"
+                  DISPLAY "{indent}Result: {outcome.condition_result}"
+
+              IF display_config.show.branch_result:
+                  branch = outcome.condition_result ? "on_true" : "on_false"
+                  DISPLAY "{indent}Branch: {branch} → {outcome.next_node}"
+
+      display_node_debug:
+        description: Display full node debug information (debug mode)
+        effect: |
+          FUNCTION display_node_debug(node_id, node, outcome, display_config):
+              indent = " ".repeat(display_config.format.indent)
+              DISPLAY "[DEBUG] Node: {node_id} (type: {node.type})"
+              DISPLAY "[DEBUG] {indent}Outcome: {JSON.stringify(outcome)}"
+
+      infer_phase_name:
+        description: Infer a human-readable phase name from state
+        effect: |
+          FUNCTION infer_phase_name(state):
+              # Use state.phase if available
+              IF state.phase:
+                  RETURN capitalize(state.phase)
+
+              # Otherwise infer from workflow position
+              IF state.history.length == 0:
+                  RETURN "Initializing"
+              ELSE:
+                  RETURN "Processing"
+
+      expand_batch_on_error:
+        description: Expand batch details when an error occurs
+        effect: |
+          FUNCTION expand_batch_on_error(batch_buffer, error_node_id, error, display_config):
+              IF NOT display_config.batch.expand_on_error:
+                  RETURN
+
+              DISPLAY "{batch_buffer[0].phase}... [{batch_buffer.length} nodes] ─ EXPANDED DUE TO ERROR:"
+              indent = " ".repeat(display_config.format.indent)
+
+              FOR each entry IN batch_buffer:
+                  IF entry.id == error_node_id:
+                      DISPLAY "{indent}→ {entry.id}: FAILED"
+                      DISPLAY "{indent}  Error: {error.message}"
+                  ELSE:
+                      DISPLAY "{indent}→ {entry.id}: {entry.outcome.status OR 'passed'}"
 
     since: "1.0.0"

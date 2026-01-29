@@ -4,7 +4,7 @@
 # This file defines the state model that workflows use during execution.
 # It is the authoritative source for state structure and interpolation semantics.
 
-schema_version: "2.0"
+schema_version: "2.1"
 category: execution
 
 execution:
@@ -94,6 +94,16 @@ execution:
               flags: { ... }
               computed: { ... }
 
+          # Prompts configuration (from initial_state or defaults)
+          prompts:
+            mode: "interactive"        # or "tabular"
+            tabular:
+              match_strategy: "prefix"
+              other_handler: "prompt"
+
+          # Multi-turn conversation state (for tabular mode)
+          awaiting_input: null         # or { node_id: "select_format", type: "tabular" }
+
           # Custom fields from initial_state
           phase: "setup"
           source_type: "git"
@@ -125,6 +135,28 @@ execution:
             enum: ["claude_code", "claude_ai"]
             description: Detected interface environment
             source: detect_interface() at initialization
+
+          - name: awaiting_input
+            type: object
+            description: |
+              Tracks multi-turn conversation state for tabular mode user prompts.
+              Set when a user_prompt node in tabular mode displays options and awaits
+              user text response. Cleared when the response is processed.
+            properties:
+              node_id: { type: string, description: "The user_prompt node awaiting input" }
+              type: { type: string, enum: ["tabular"], description: "The prompt type" }
+              user_input: { type: string, description: "User's text response (set on resume)" }
+            source: Set by user_prompt node in tabular mode
+
+          - name: prompts
+            type: object
+            description: |
+              Resolved prompts configuration for user_prompt node execution.
+              Configured via initial_state.prompts in workflow.yaml.
+            properties:
+              mode: { type: string, enum: ["interactive", "tabular"], default: "interactive" }
+              tabular: { type: object, description: "Tabular mode settings" }
+            source: workflow.initial_state.prompts (defaults applied if omitted)
 
         logging:
           - name: logging

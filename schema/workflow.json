@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/workflow.json",
-  "$comment": "Schema version 2.1 - Added definitions block for external type references. Uses $ref composition.",
+  "$comment": "Schema version 2.3 - Added display configuration for real-time output verbosity. Uses $ref composition.",
   "title": "Blueprint Workflow Schema",
   "description": "JSON Schema for hiivmind-blueprint workflow.yaml files",
   "type": "object",
@@ -32,14 +32,26 @@
     "initial_state": {
       "type": "object",
       "description": "Initial state values when workflow begins. Note: Some fields are computed at runtime and not declared here - see $comment for details.",
-      "$comment": "Runtime fields (computed at initialization, not declared): interface (string: 'claude_code' or 'claude_ai' based on AskUserQuestion tool availability), workflow_name, workflow_version, current_node, previous_node, history, user_responses, checkpoints",
+      "$comment": "Runtime fields (computed at initialization, not declared): interface (string: 'claude_code' or 'claude_ai' based on AskUserQuestion tool availability), workflow_name, workflow_version, current_node, previous_node, history, user_responses, checkpoints, awaiting_input",
       "properties": {
         "phase": { "type": "string" },
         "flags": {
           "type": "object",
           "additionalProperties": { "type": "boolean" }
         },
-        "computed": { "type": "object" }
+        "computed": { "type": "object" },
+        "logging": {
+          "$ref": "logging-config.json#/$defs/loggingConfig",
+          "description": "Skill-specific logging configuration (priority 2 in 4-tier hierarchy)"
+        },
+        "prompts": {
+          "$ref": "prompts-config.json#/$defs/promptsConfig",
+          "description": "User prompt execution mode configuration (interactive or tabular)"
+        },
+        "display": {
+          "$ref": "display-config.json#/$defs/displayConfig",
+          "description": "Skill-specific display configuration for real-time output (priority 2 in 4-tier hierarchy)"
+        }
       },
       "additionalProperties": true
     },
@@ -76,6 +88,10 @@
           "type": "string",
           "enum": ["success", "failure", "error", "cancelled"],
           "description": "Ending type (success, failure/error, or cancelled)"
+        },
+        "category": {
+          "type": "string",
+          "description": "Optional categorization for error endings (e.g., 'safety', 'validation', 'configuration', 'permission', 'external')"
         },
         "message": {
           "type": "string",

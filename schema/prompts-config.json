@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/prompts-config.json",
+  "$comment": "Schema version 1.0 - User prompt execution modes configuration",
+  "title": "Blueprint Prompts Configuration",
+  "description": "Schema for configuring user-prompt node execution modes. Can be used standalone (plugin-level prompts.yaml) or embedded in workflow.yaml initial_state.prompts.",
+  "type": "object",
+  "properties": {
+    "prompts": {
+      "$ref": "#/$defs/promptsConfig"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "promptsConfig": {
+      "type": "object",
+      "description": "Prompts configuration for user_prompt node execution",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "description": "Execution mode for user_prompt nodes",
+          "enum": ["interactive", "tabular"],
+          "default": "interactive"
+        },
+        "tabular": {
+          "$ref": "#/$defs/tabularConfig"
+        }
+      },
+      "additionalProperties": false
+    },
+    "tabularConfig": {
+      "type": "object",
+      "description": "Configuration for tabular mode user prompts",
+      "properties": {
+        "match_strategy": {
+          "type": "string",
+          "description": "How to match user text input to option IDs",
+          "enum": ["exact", "prefix", "fuzzy"],
+          "default": "prefix"
+        },
+        "other_handler": {
+          "type": "string",
+          "description": "What to do when user input doesn't match any option ID",
+          "enum": ["prompt", "route", "fail"],
+          "default": "prompt"
+        },
+        "fuzzy_threshold": {
+          "type": "number",
+          "description": "Similarity threshold for fuzzy matching (0.0-1.0). Only used when match_strategy is 'fuzzy'.",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.7
+        },
+        "case_sensitive": {
+          "type": "boolean",
+          "description": "Whether matching is case-sensitive. Defaults to false (case-insensitive).",
+          "default": false
+        },
+        "show_option_ids": {
+          "type": "boolean",
+          "description": "Whether to show the Option ID column in the table. Defaults to true.",
+          "default": true
+        },
+        "instruction_text": {
+          "type": "string",
+          "description": "Custom instruction text shown below the table. Use {default} to include default text.",
+          "default": "**Please type the Option ID of your choice.**"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "prompts": {
+        "mode": "interactive"
+      }
+    },
+    {
+      "prompts": {
+        "mode": "tabular",
+        "tabular": {
+          "match_strategy": "prefix",
+          "other_handler": "prompt"
+        }
+      }
+    },
+    {
+      "prompts": {
+        "mode": "tabular",
+        "tabular": {
+          "match_strategy": "fuzzy",
+          "fuzzy_threshold": 0.7,
+          "other_handler": "route",
+          "case_sensitive": false
+        }
+      }
+    },
+    {
+      "prompts": {
+        "mode": "tabular",
+        "tabular": {
+          "match_strategy": "exact",
+          "other_handler": "fail",
+          "instruction_text": "**Enter your choice exactly as shown in the Option ID column.**"
+        }
+      }
+    }
+  ]
+}

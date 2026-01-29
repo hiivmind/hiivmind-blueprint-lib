@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/display-config.json",
+  "title": "Blueprint Display Configuration",
+  "description": "Schema for .hiivmind/blueprint/display.yaml plugin-level display configuration",
+  "type": "object",
+  "properties": {
+    "display": {
+      "$ref": "#/$defs/displayConfig"
+    }
+  },
+  "required": ["display"],
+  "additionalProperties": false,
+  "$defs": {
+    "displayConfig": {
+      "type": "object",
+      "description": "Display configuration for Blueprint workflow execution output",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Master switch to enable/disable all display output",
+          "default": true
+        },
+        "verbosity": {
+          "type": "string",
+          "description": "Verbosity level for real-time output",
+          "enum": ["silent", "terse", "normal", "verbose", "debug"],
+          "default": "normal"
+        },
+        "batch": {
+          "$ref": "#/$defs/batchConfig"
+        },
+        "show": {
+          "$ref": "#/$defs/showConfig"
+        },
+        "format": {
+          "$ref": "#/$defs/formatConfig"
+        }
+      },
+      "additionalProperties": false
+    },
+    "batchConfig": {
+      "type": "object",
+      "description": "Configuration for batching consecutive non-interactive nodes",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable batching of non-interactive node segments",
+          "default": true
+        },
+        "threshold": {
+          "type": "integer",
+          "description": "Minimum consecutive nodes to trigger batching",
+          "minimum": 2,
+          "maximum": 100,
+          "default": 3
+        },
+        "show_summary": {
+          "type": "boolean",
+          "description": "Show 'N nodes executed' in batch summary",
+          "default": true
+        },
+        "show_node_list": {
+          "type": "boolean",
+          "description": "Include node IDs in batch summary: '[a, b, c]'",
+          "default": false
+        },
+        "expand_on_error": {
+          "type": "boolean",
+          "description": "Expand batch details if any node fails",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "showConfig": {
+      "type": "object",
+      "description": "Fine-grained control over what content is displayed",
+      "properties": {
+        "workflow_state": {
+          "type": "boolean",
+          "description": "Show state dumps at verbose+ level",
+          "default": true
+        },
+        "node_transitions": {
+          "type": "boolean",
+          "description": "Show node transition arrows (→ node_name)",
+          "default": true
+        },
+        "condition_eval": {
+          "type": "boolean",
+          "description": "Show condition evaluation expressions",
+          "default": false
+        },
+        "branch_result": {
+          "type": "boolean",
+          "description": "Show branch decisions (true/false → target)",
+          "default": true
+        },
+        "user_prompts": {
+          "type": "boolean",
+          "description": "Show user prompts (cannot be disabled - always true)",
+          "default": true,
+          "const": true
+        },
+        "tool_output": {
+          "type": "boolean",
+          "description": "Show tool execution output",
+          "default": true
+        },
+        "final_result": {
+          "type": "boolean",
+          "description": "Show final result (cannot be disabled - always true)",
+          "default": true,
+          "const": true
+        },
+        "phase_markers": {
+          "type": "boolean",
+          "description": "Show phase boundaries (Initialize/Execute/Complete)",
+          "default": false
+        },
+        "spinner_text": {
+          "type": "boolean",
+          "description": "Show activeForm text in spinner during operations",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "formatConfig": {
+      "type": "object",
+      "description": "Output formatting options",
+      "properties": {
+        "style": {
+          "type": "string",
+          "description": "Output style",
+          "enum": ["structured", "minimal", "inline"],
+          "default": "structured"
+        },
+        "indent": {
+          "type": "integer",
+          "description": "Indentation level for nested output",
+          "minimum": 0,
+          "maximum": 8,
+          "default": 2
+        },
+        "use_icons": {
+          "type": "boolean",
+          "description": "Use icons in output (✓ → ? ✗)",
+          "default": true
+        },
+        "timestamp": {
+          "type": "boolean",
+          "description": "Show timestamps in output",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "examples": [
+    {
+      "display": {
+        "enabled": true,
+        "verbosity": "normal",
+        "batch": {
+          "enabled": true,
+          "threshold": 3,
+          "show_summary": true,
+          "show_node_list": false,
+          "expand_on_error": true
+        },
+        "show": {
+          "workflow_state": true,
+          "node_transitions": true,
+          "condition_eval": false,
+          "branch_result": true,
+          "user_prompts": true,
+          "tool_output": true,
+          "final_result": true,
+          "phase_markers": false,
+          "spinner_text": true
+        },
+        "format": {
+          "style": "structured",
+          "indent": 2,
+          "use_icons": true,
+          "timestamp": false
+        }
+      }
+    },
+    {
+      "display": {
+        "verbosity": "terse",
+        "batch": {
+          "enabled": true,
+          "threshold": 3
+        }
+      }
+    },
+    {
+      "display": {
+        "verbosity": "silent"
+      }
+    }
+  ]
+}

@@ -1,26 +1,35 @@
 # User Prompt Node Type Definition
-# Presents an AskUserQuestion and routes based on response
+# Presents a question and routes based on response
+# Supports interactive (AskUserQuestion) and tabular (markdown table) modes
 
-schema_version: "1.0"
+schema_version: "2.0"
 category: core
 
 nodes:
   - type: user_prompt
     description:
-      brief: Presents an AskUserQuestion and routes based on response
+      brief: Presents a question and routes based on user response
       detail: |
-        A user_prompt node presents a question to the user via the AskUserQuestion tool
-        and routes based on their response. Each response option can optionally execute
-        consequences before routing to the next node.
+        A user_prompt node presents a question to the user and routes based on their
+        response. Each response option can optionally execute consequences before
+        routing to the next node.
+
+        Execution mode is configured via initial_state.prompts:
+        - interactive (default) - Uses AskUserQuestion tool for structured prompts
+        - tabular - Renders markdown table, parses user text response
 
         This enables user-driven branching in workflows while maintaining deterministic
         behavior once a choice is made.
       notes:
-        - Maps to Claude Code's AskUserQuestion tool
-        - Header must be 12 characters or less
-        - Options array should have 2-4 items
-        - User responses are stored in state.user_responses
-        - Each response handler can execute consequences before routing
+        - "Mode configured in initial_state.prompts (default: interactive)"
+        - "Interactive mode maps to Claude Code's AskUserQuestion tool"
+        - "Tabular mode renders markdown table and matches user text to option IDs"
+        - "Header must be 12 characters or less"
+        - "Options array should have 2-4 items"
+        - "User responses are stored in state.user_responses"
+        - "Each response handler can execute consequences before routing"
+        - "Tabular mode supports match strategies: exact, prefix, fuzzy"
+        - "When using tabular mode with other_handler: route, on_response.other is required"
 
     fields:
       - name: type
@@ -136,74 +145,224 @@ nodes:
 
     execution:
       effect: |
+        # Get prompts configuration (defaults to interactive mode)
+        prompts_config = state.prompts or { mode: "interactive" }
+        mode = prompts_config.mode or "interactive"
+
         # Determine options source (static vs dynamic)
-        if node.prompt.options_from_state:
-          # Dynamic options: resolve from state and transform via mapping
-          source_items = get_state_value(node.prompt.options_from_state)
-          if source_items == null or source_items.length == 0:
-            throw Error("options_from_state resolved to empty array")
+        options = resolve_options(node, state)
 
-          mapping = node.prompt.option_mapping
-          options = source_items.map((item, index) => ({
-            id: "dynamic_" + index,  # Internal ID for tracking
-            label: evaluate_expression(mapping.label, item),
-            description: evaluate_expression(mapping.description, item),
-            _source_item: item  # Preserve original item for handler
-          }))
+        # Execute based on mode
+        if mode == "interactive":
+          return execute_interactive_mode(node, options, state)
+        else if mode == "tabular":
+          return execute_tabular_mode(node, options, state, prompts_config.tabular or {})
         else:
-          # Static options: use as-is
-          options = node.prompt.options
+          throw Error("Unknown prompt mode: " + mode)
 
-        # Build AskUserQuestion payload
-        question_payload = {
-          questions: [{
-            question: node.prompt.question,
-            header: node.prompt.header,
-            options: options.map(opt => ({
-              label: opt.label,
-              description: opt.description
-            })),
-            multiSelect: false
-          }]
-        }
+      helpers:
+        resolve_options: |
+          FUNCTION resolve_options(node, state):
+            if node.prompt.options_from_state:
+              # Dynamic options: resolve from state and transform via mapping
+              source_items = get_state_value(node.prompt.options_from_state)
+              if source_items == null or source_items.length == 0:
+                throw Error("options_from_state resolved to empty array")
 
-        # Present question and await response
-        response = call_tool("AskUserQuestion", question_payload)
+              mapping = node.prompt.option_mapping
+              return source_items.map((item, index) => ({
+                id: evaluate_expression(mapping.id, item) or ("dynamic_" + index),
+                label: evaluate_expression(mapping.label, item),
+                description: evaluate_expression(mapping.description, item),
+                _source_item: item  # Preserve original item for handler
+              }))
+            else:
+              # Static options: use as-is
+              return node.prompt.options
 
-        # Handle response based on options type
-        if node.prompt.options_from_state:
-          # Dynamic options handling
-          if response.is_other:
-            # User entered custom text
-            state.user_responses[node_id] = { text: response.text }
-            handler = node.on_response["other"]
-          else:
-            # User selected an option
-            selected_index = find_selected_index(response, options)
-            selected_item = options[selected_index]._source_item
-            state.user_responses[node_id] = { selected: selected_item }
-            handler = node.on_response["selected"]
-        else:
-          # Static options handling
-          selected_id = find_selected_option_id(response, options)
-          state.user_responses[node_id] = selected_id
-          handler = node.on_response[selected_id]
+        execute_interactive_mode: |
+          FUNCTION execute_interactive_mode(node, options, state):
+            # Build AskUserQuestion payload
+            question_payload = {
+              questions: [{
+                question: node.prompt.question,
+                header: node.prompt.header,
+                options: options.map(opt => ({
+                  label: opt.label,
+                  description: opt.description
+                })),
+                multiSelect: false
+              }]
+            }
 
-        # Execute consequences if present
-        if handler.consequence:
-          for consequence in handler.consequence:
-            result = dispatch_consequence(consequence, state)
-            if result.failed:
-              return route_to_error(result.error)
+            # Present question and await response
+            response = call_tool("AskUserQuestion", question_payload)
 
-        # Route to next node
-        return route_to(handler.next_node)
+            # Handle response and route
+            return handle_response(node, options, response, state, "interactive")
+
+        execute_tabular_mode: |
+          FUNCTION execute_tabular_mode(node, options, state, tabular_config):
+            # Check if resuming from awaiting_input
+            if state.awaiting_input and state.awaiting_input.node_id == node_id:
+              # Resuming - user_input contains their text response
+              user_input = state.awaiting_input.user_input
+              state.awaiting_input = null  # Clear awaiting state
+
+              # Match user input to options
+              match_result = match_user_input_to_option(user_input, options, tabular_config)
+
+              if match_result.matched:
+                # Found a match
+                response = { selected_id: match_result.option_id, text: user_input }
+                return handle_response(node, options, response, state, "tabular", match_result)
+              else:
+                # No match - handle based on other_handler config
+                other_handler = tabular_config.other_handler or "prompt"
+
+                if other_handler == "prompt":
+                  # Re-display table and re-prompt
+                  render_no_match_message(user_input)
+                  render_options_table(node.prompt.question, options, tabular_config)
+                  state.awaiting_input = { node_id: node_id, type: "tabular" }
+                  return { awaiting_input: true }
+
+                else if other_handler == "route":
+                  # Route to "other" handler
+                  if not node.on_response["other"]:
+                    throw Error("other_handler is 'route' but on_response.other not defined")
+                  state.user_responses[node_id] = { handler_id: "other", text: user_input }
+                  handler = node.on_response["other"]
+                  return execute_handler_and_route(handler, state)
+
+                else if other_handler == "fail":
+                  throw Error("No matching option for input: " + user_input)
+
+            else:
+              # First execution - render table and await input
+              render_options_table(node.prompt.question, options, tabular_config)
+              state.awaiting_input = { node_id: node_id, type: "tabular" }
+              return { awaiting_input: true }
+
+        render_options_table: |
+          FUNCTION render_options_table(question, options, tabular_config):
+            show_ids = tabular_config.show_option_ids != false
+            instruction = tabular_config.instruction_text or "**Please type the Option ID of your choice.**"
+
+            # Render question as heading
+            DISPLAY "## " + question
+            DISPLAY ""
+
+            # Render table header
+            if show_ids:
+              DISPLAY "| Option ID | Label | Description |"
+              DISPLAY "|-----------|-------|-------------|"
+            else:
+              DISPLAY "| Label | Description |"
+              DISPLAY "|-------|-------------|"
+
+            # Render options
+            for opt in options:
+              if show_ids:
+                DISPLAY "| " + opt.id + " | " + opt.label + " | " + opt.description + " |"
+              else:
+                DISPLAY "| " + opt.label + " | " + opt.description + " |"
+
+            DISPLAY ""
+            DISPLAY instruction
+
+        render_no_match_message: |
+          FUNCTION render_no_match_message(user_input):
+            DISPLAY "I didn't recognize \"" + user_input + "\" as a valid option."
+            DISPLAY ""
+
+        match_user_input_to_option: |
+          FUNCTION match_user_input_to_option(user_input, options, tabular_config):
+            strategy = tabular_config.match_strategy or "prefix"
+            case_sensitive = tabular_config.case_sensitive or false
+
+            # Normalize input
+            input = case_sensitive ? user_input : user_input.toLowerCase()
+            input = input.trim()
+
+            for opt in options:
+              opt_id = case_sensitive ? opt.id : opt.id.toLowerCase()
+
+              if strategy == "exact":
+                if input == opt_id:
+                  return { matched: true, option_id: opt.id, strategy: "exact" }
+
+              else if strategy == "prefix":
+                if opt_id.startsWith(input) or input.startsWith(opt_id):
+                  return { matched: true, option_id: opt.id, strategy: "prefix" }
+
+              else if strategy == "fuzzy":
+                threshold = tabular_config.fuzzy_threshold or 0.7
+                similarity = calculate_similarity(input, opt_id)
+                if similarity >= threshold:
+                  return { matched: true, option_id: opt.id, strategy: "fuzzy", similarity: similarity }
+
+            return { matched: false }
+
+        calculate_similarity: |
+          FUNCTION calculate_similarity(str1, str2):
+            # Levenshtein distance normalized to similarity score
+            # Returns value between 0.0 and 1.0
+            max_len = max(str1.length, str2.length)
+            if max_len == 0:
+              return 1.0
+            distance = levenshtein_distance(str1, str2)
+            return 1.0 - (distance / max_len)
+
+        handle_response: |
+          FUNCTION handle_response(node, options, response, state, mode, match_result = null):
+            # Determine handler based on response and options type
+            if node.prompt.options_from_state:
+              # Dynamic options handling
+              if response.is_other or (mode == "tabular" and not match_result):
+                state.user_responses[node_id] = { handler_id: "other", text: response.text }
+                handler = node.on_response["other"]
+              else:
+                selected_id = response.selected_id or find_selected_option_id(response, options)
+                selected_opt = options.find(opt => opt.id == selected_id)
+                state.user_responses[node_id] = {
+                  handler_id: "selected",
+                  selected: selected_opt._source_item,
+                  raw: { text: response.text, matched_by: match_result?.strategy }
+                }
+                handler = node.on_response["selected"]
+            else:
+              # Static options handling
+              selected_id = response.selected_id or find_selected_option_id(response, options)
+              state.user_responses[node_id] = {
+                handler_id: selected_id,
+                raw: { text: response.text, matched_by: match_result?.strategy }
+              }
+              handler = node.on_response[selected_id]
+
+            return execute_handler_and_route(handler, state)
+
+        execute_handler_and_route: |
+          FUNCTION execute_handler_and_route(handler, state):
+            # Execute consequences if present
+            if handler.consequence:
+              for consequence in handler.consequence:
+                result = dispatch_consequence(consequence, state)
+                if result.failed:
+                  return route_to_error(result.error)
+
+            # Route to next node
+            return route_to(handler.next_node)
+
       state_reads:
-        - Any fields referenced via ${} in consequence parameters
-        - options_from_state path (if using dynamic options)
+        - "state.prompts (for mode configuration)"
+        - "state.awaiting_input (for tabular mode resumption)"
+        - "Any fields referenced via ${} in consequence parameters"
+        - "options_from_state path (if using dynamic options)"
       state_writes:
         - "user_responses.${node_id}"
-        - Additional writes from consequence execution
+        - "awaiting_input (set when awaiting tabular input, cleared when received)"
+        - "Additional writes from consequence execution"
 
     examples:
       - title: Basic source type selection
@@ -320,7 +479,99 @@ nodes:
           at user_responses.{node_id}.selected. When user types custom text, it's
           available at user_responses.{node_id}.text.
 
+      - title: Tabular mode with prefix matching
+        yaml: |
+          # Workflow-level configuration in initial_state
+          initial_state:
+            prompts:
+              mode: "tabular"
+              tabular:
+                match_strategy: "prefix"
+                other_handler: "prompt"
+
+          # Node definition (same structure as interactive mode)
+          select_output_format:
+            type: user_prompt
+            prompt:
+              question: "Which output format do you prefer?"
+              header: "Format"
+              options:
+                - id: markdown
+                  label: "Markdown"
+                  description: "Portable, readable in any editor"
+                - id: json
+                  label: "JSON"
+                  description: "Machine-readable, for automation"
+                - id: yaml
+                  label: "YAML"
+                  description: "Structured and human-readable"
+            on_response:
+              markdown:
+                next_node: generate_markdown
+              json:
+                next_node: generate_json
+              yaml:
+                next_node: generate_yaml
+        explanation: |
+          Tabular mode renders options as a markdown table:
+
+          ## Which output format do you prefer?
+
+          | Option ID | Label | Description |
+          |-----------|-------|-------------|
+          | markdown | Markdown | Portable, readable in any editor |
+          | json | JSON | Machine-readable, for automation |
+          | yaml | YAML | Structured and human-readable |
+
+          **Please type the Option ID of your choice.**
+
+          User types "mark" → matches "markdown" (prefix match)
+          User types "json" → matches "json" (exact)
+          User types "xyz" → re-prompts (no match)
+
+      - title: Tabular mode with route to other handler
+        yaml: |
+          initial_state:
+            prompts:
+              mode: "tabular"
+              tabular:
+                match_strategy: "exact"
+                other_handler: "route"
+
+          select_or_custom:
+            type: user_prompt
+            prompt:
+              question: "Select a preset or enter a custom value"
+              header: "Choice"
+              options:
+                - id: preset1
+                  label: "Preset 1"
+                  description: "Common configuration"
+                - id: preset2
+                  label: "Preset 2"
+                  description: "Alternative configuration"
+            on_response:
+              preset1:
+                next_node: apply_preset1
+              preset2:
+                next_node: apply_preset2
+              other:
+                # Required when other_handler: "route"
+                consequence:
+                  - type: set_state
+                    field: custom_value
+                    value: "${user_responses.select_or_custom.text}"
+                next_node: apply_custom
+        explanation: |
+          When other_handler is "route", unrecognized input routes to the "other"
+          handler instead of re-prompting. The user's text is available at
+          user_responses.{node_id}.text.
+
+          User types "preset1" → matches, routes to apply_preset1
+          User types "custom config" → no match, routes to other handler
+
     related:
       - conditional
       - action
     since: "1.0.0"
+    updated: "2.0.0"
