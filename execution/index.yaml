@@ -1,0 +1,39 @@
+# Execution Definitions Index
+# Registry of execution modules with metadata for quick reference
+
+schema_version: "2.0"
+definition_file: engine_execution.yaml
+
+types:
+  # ==========================================================================
+  # Core - Execution (6 types)
+  # ==========================================================================
+  traversal:
+    category: core/execution
+    brief: Core workflow execution loop
+
+  precondition_dispatch:
+    category: core/execution
+    brief: Dispatch logic for precondition evaluation
+
+  consequence_dispatch:
+    category: core/execution
+    brief: Dispatch logic for consequence execution
+
+  state:
+    category: core/execution
+    brief: State structure and management
+
+  display:
+    category: core/execution
+    brief: Display configuration and output control
+
+  logging:
+    category: core/execution
+    brief: Logging configuration
+
+# Statistics
+stats:
+  total_types: 6
+  core_types: 6
+  extension_types: 0

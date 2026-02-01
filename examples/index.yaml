@@ -1,0 +1,74 @@
+# Examples Index
+# Documentary reference for hiivmind-blueprint type usage patterns
+#
+# These examples are for human reference, not for automated testing.
+# They show how to use the various type definitions in workflows.
+
+schema_version: "1.0"
+description: |
+  Example usage patterns for hiivmind-blueprint types.
+  Documentary reference for workflow authors.
+
+  Examples are organized by domain, mirroring the type definition structure.
+  Each example includes a title, YAML snippet, and explanation.
+
+files:
+  consequences:
+    description: Examples for consequence types (actions/effects)
+    categories:
+      - core/control
+      - core/evaluation
+      - core/intent
+      - core/interaction
+      - core/logging
+      - core/skill
+      - core/state
+      - core/utility
+      - extensions/file-system
+      - extensions/git
+      - extensions/package
+      - extensions/scripting
+      - extensions/web
+
+  preconditions:
+    description: Examples for precondition types (conditions)
+    categories:
+      - core/composite
+      - core/expression
+      - core/filesystem
+      - core/logging
+      - core/state
+      - core/tool
+      - extensions/network
+      - extensions/source
+      - extensions/web
+
+  nodes:
+    description: Examples for node types (workflow elements)
+    categories:
+      - action
+      - conditional
+      - reference
+      - user_prompt
+      - validation_gate (deprecated)
+
+  execution:
+    description: Examples for execution patterns
+    categories:
+      - consequence-dispatch
+      - precondition-dispatch
+      - logging
+      - display
+      - state
+      - traversal
+
+usage: |
+  These examples are documentary only - they are snippets and fragments
+  intended to illustrate usage patterns. They are not validated against
+  JSON schemas and may be incomplete on their own.
+
+  To use a pattern:
+  1. Find the relevant example in the appropriate file
+  2. Adapt the YAML to your workflow context
+  3. Ensure all required parameters are provided
+  4. Validate your complete workflow against the schema

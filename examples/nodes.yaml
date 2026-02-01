@@ -1,0 +1,556 @@
+# Node Examples
+# Documentary usage patterns for node types
+#
+# These examples are for human reference, not automated testing.
+
+schema_version: "1.0"
+description: |
+  Example usage patterns for node types.
+  These are documentary snippets for workflow authors.
+
+examples:
+  # ==========================================================================
+  # action - Execute operations and route based on success/failure
+  # ==========================================================================
+  action:
+    - title: "Basic action chain"
+      yaml: |
+        read_config:
+          type: action
+          description: Load and validate configuration
+          actions:
+            - type: read_file
+              path: "config.yaml"
+              store_as: config
+            - type: set_flag
+              flag: config_loaded
+              value: true
+          on_success: process_config
+          on_failure: error_no_config
+      explanation: |
+        Reads config.yaml and stores result in state.computed.config, then sets
+        the config_loaded flag. If file read fails, routes to error_no_config.
+
+    - title: "Action with evaluation"
+      yaml: |
+        check_sources:
+          type: action
+          actions:
+            - type: evaluate
+              expression: "len(config.sources) == 0"
+              set_flag: is_first_source
+            - type: set_state
+              field: source_count
+              value: "${computed.config.sources.length}"
+          on_success: route_by_source_count
+          on_failure: error_evaluation
+      explanation: |
+        Evaluates an expression to set a flag, then stores a computed value.
+
+    - title: "Git clone action"
+      yaml: |
+        clone_repository:
+          type: action
+          description: Clone the source repository
+          actions:
+            - type: clone_repo
+              url: "${computed.repo_url}"
+              dest: "${computed.clone_path}"
+              branch: "${user_responses.branch}"
+              store_as: clone_result
+            - type: set_flag
+              flag: repo_cloned
+              value: true
+          on_success: scan_docs
+          on_failure: error_clone_failed
+      explanation: |
+        Clones a git repository using interpolated values from state
+        and user responses. On success, sets a flag and continues.
+
+  # ==========================================================================
+  # conditional - Branch based on precondition evaluation
+  # ==========================================================================
+  conditional:
+    - title: "Branch on flag"
+      yaml: |
+        check_manifest:
+          type: conditional
+          description: Route based on whether manifest was detected
+          condition:
+            type: flag_set
+            flag: manifest_detected
+          branches:
+            on_true: present_manifest_option
+            on_false: ask_source_type
+      explanation: |
+        Checks if the manifest_detected flag is true. If so, routes to
+        present_manifest_option; otherwise routes to ask_source_type.
+
+    - title: "Branch on state value"
+      yaml: |
+        check_source_type:
+          type: conditional
+          description: Route based on detected source type
+          condition:
+            type: state_equals
+            field: source_type
+            value: git
+          branches:
+            on_true: configure_git_source
+            on_false: configure_other_source
+      explanation: |
+        Routes based on the source_type field value.
+
+    - title: "Branch on file existence"
+      yaml: |
+        check_existing_corpus:
+          type: conditional
+          condition:
+            type: file_exists
+            path: "data/config.yaml"
+          branches:
+            on_true: load_existing_config
+            on_false: initialize_new_corpus
+      explanation: |
+        Checks if config file exists to determine workflow path.
+
+    - title: "Branch on expression evaluation"
+      yaml: |
+        check_first_source:
+          type: conditional
+          description: Check if this is the first source being added
+          condition:
+            type: evaluate_expression
+            expression: "len(computed.config.sources) == 0"
+          branches:
+            on_true: show_first_source_guidance
+            on_false: proceed_to_add_source
+      explanation: |
+        Uses expression evaluation for complex condition.
+
+    - title: "Validation with audit mode (replaces validation_gate)"
+      yaml: |
+        check_environment:
+          type: conditional
+          description: Validate environment before proceeding
+          condition:
+            type: all_of
+            conditions:
+              - type: file_exists
+                path: "config.yaml"
+              - type: tool_available
+                tool: git
+              - type: tool_available
+                tool: yq
+          audit:
+            enabled: true
+            output: computed.audit_results
+            messages:
+              file_exists: "Config missing - run init first"
+              tool_available: "Required tool not installed"
+          branches:
+            on_true: proceed
+            on_false: show_errors
+      explanation: |
+        With audit.enabled, evaluates ALL conditions (no short-circuit) and
+        collects results. On failure, computed.audit_results contains:
+        {
+          passed: false,
+          total: 3,
+          passed_count: 1,
+          failed_count: 2,
+          results: [
+            { index: 0, condition: {...}, passed: true },
+            { index: 1, condition: {...}, passed: false, message: "Required tool..." },
+            { index: 2, condition: {...}, passed: false, message: "Required tool..." }
+          ]
+        }
+
+    - title: "Audit with custom output path"
+      yaml: |
+        validate_source_config:
+          type: conditional
+          description: Validate source configuration
+          condition:
+            type: all_of
+            conditions:
+              - type: state_not_null
+                field: source_type
+              - type: state_not_null
+                field: computed.source_id
+              - type: flag_set
+                flag: url_validated
+          audit:
+            enabled: true
+            output: computed.source_validation
+            messages:
+              state_not_null: "Required field is missing"
+              flag_set: "Validation step incomplete"
+          branches:
+            on_true: add_source
+            on_false: show_validation_errors
+      explanation: |
+        Stores audit results at computed.source_validation instead of
+        the default computed.audit_results.
+
+    - title: "Audit with any_of (flexible requirements)"
+      yaml: |
+        check_yaml_processor:
+          type: conditional
+          description: Check for any available YAML processor
+          condition:
+            type: any_of
+            conditions:
+              - type: tool_available
+                tool: yq
+              - type: python_module_available
+                module: yaml
+          audit:
+            enabled: true
+            messages:
+              tool_available: "yq not found"
+              python_module_available: "PyYAML not installed"
+          branches:
+            on_true: process_yaml
+            on_false: suggest_install
+      explanation: |
+        For any_of with audit, all conditions are still evaluated to collect
+        complete results, but passed is true if ANY condition passed.
+
+    - title: "Audit with xor_of (exactly one)"
+      yaml: |
+        check_single_source_type:
+          type: conditional
+          description: Exactly one source type must be selected
+          condition:
+            type: xor_of
+            conditions:
+              - type: flag_set
+                flag: is_git_source
+              - type: flag_set
+                flag: is_local_source
+              - type: flag_set
+                flag: is_web_source
+          audit:
+            enabled: true
+            messages:
+              flag_set: "Source type flag"
+          branches:
+            on_true: configure_source
+            on_false: ask_source_type
+      explanation: |
+        For xor_of with audit, passed is true only if exactly one condition
+        is true. If zero or multiple are true, routes to on_false.
+
+  # ==========================================================================
+  # reference - Load and execute reference document or remote workflow
+  # ==========================================================================
+  reference:
+    - title: "Execute git clone procedure (local doc)"
+      yaml: |
+        clone_repository:
+          type: reference
+          doc: "lib/corpus/patterns/sources/git.md"
+          section: "Clone Repository"
+          context:
+            repo_url: "${computed.repo_url}"
+            clone_path: "${computed.clone_path}"
+            branch: "${user_responses.branch}"
+          next_node: verify_clone
+      explanation: |
+        Loads the git.md document, extracts the "Clone Repository" section,
+        and executes it with the provided context variables.
+
+    - title: "Full document execution (local doc)"
+      yaml: |
+        run_build_process:
+          type: reference
+          doc: "references/build-index.md"
+          context:
+            source_paths: "${computed.source_paths}"
+            output_path: "${computed.output_path}"
+          next_node: finalize_build
+      explanation: |
+        Executes the entire build-index.md document.
+
+    - title: "Remote workflow for intent detection"
+      yaml: |
+        detect_intent:
+          type: reference
+          workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+          context:
+            arguments: "${arguments}"
+            intent_flags: "${intent_flags}"
+            intent_rules: "${intent_rules}"
+            fallback_action: "show_main_menu"
+          next_node: execute_dynamic_route
+      explanation: |
+        Fetches the intent-detection workflow from hiivmind-blueprint-lib
+        and executes it. State is shared with parent workflow.
+
+    - title: "Remote workflow with dynamic routing"
+      yaml: |
+        detect_intent:
+          type: reference
+          workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+          context:
+            arguments: "${arguments}"
+            intent_flags: "${intent_flags}"
+            intent_rules: "${intent_rules}"
+          next_node: "${computed.dynamic_target}"
+      explanation: |
+        The next_node uses variable interpolation to route dynamically
+        based on the workflow output.
+
+    - title: "Override logging for sub-workflow"
+      yaml: |
+        detect_intent:
+          type: reference
+          workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+          context:
+            arguments: "${arguments}"
+            logging:
+              level: "debug"
+              auto:
+                node_tracking: true
+          next_node: execute_dynamic_route
+      explanation: |
+        Pass logging config in context to override for sub-workflow.
+
+  # ==========================================================================
+  # user_prompt - Present question and route based on response
+  # ==========================================================================
+  user_prompt:
+    - title: "Basic source type selection"
+      yaml: |
+        ask_source_type:
+          type: user_prompt
+          prompt:
+            question: "What type of source would you like to add?"
+            header: "Source"
+            options:
+              - id: git
+                label: "Git repository"
+                description: "Clone a repository with docs folder"
+              - id: local
+                label: "Local files"
+                description: "Files on your machine"
+              - id: web
+                label: "Web pages"
+                description: "Cache blog posts or articles"
+          on_response:
+            git:
+              consequence:
+                - type: set_state
+                  field: source_type
+                  value: git
+              next_node: collect_git_url
+            local:
+              consequence:
+                - type: set_state
+                  field: source_type
+                  value: local
+              next_node: collect_local_info
+            web:
+              consequence:
+                - type: set_state
+                  field: source_type
+                  value: web
+              next_node: collect_web_urls
+      explanation: |
+        Presents three options to the user. Based on selection, sets the
+        source_type state field and routes to the appropriate node.
+
+    - title: "Confirmation prompt"
+      yaml: |
+        confirm_delete:
+          type: user_prompt
+          prompt:
+            question: "Are you sure you want to delete this source?"
+            header: "Confirm"
+            options:
+              - id: yes
+                label: "Yes, delete"
+                description: "Permanently remove the source"
+              - id: no
+                label: "Cancel"
+                description: "Keep the source unchanged"
+          on_response:
+            yes:
+              next_node: execute_delete
+            no:
+              next_node: cancelled
+      explanation: |
+        Simple yes/no confirmation without consequences.
+
+    - title: "Dynamic options from state (disambiguation)"
+      yaml: |
+        show_disambiguation:
+          type: user_prompt
+          description: Present top candidates for user selection
+          prompt:
+            question: "Multiple intents detected. Which did you mean?"
+            header: "Clarify"
+            options_from_state: computed.intent_matches.top_candidates
+            option_mapping:
+              id: rule.name
+              label: rule.name
+              description: rule.description
+          on_response:
+            selected:
+              consequence:
+                - type: set_state
+                  field: computed.matched_action
+                  value: "${user_responses.show_disambiguation.selected.rule.action}"
+              next_node: success_resolved
+            other:
+              consequence:
+                - type: set_state
+                  field: arguments
+                  value: "${user_responses.show_disambiguation.text}"
+              next_node: parse_intent_flags
+      explanation: |
+        Uses dynamic options from state array. When user selects, the original
+        item is available at user_responses.{node_id}.selected. When user types
+        custom text, it's at user_responses.{node_id}.text.
+
+    - title: "Tabular mode with prefix matching"
+      yaml: |
+        # Workflow-level configuration
+        initial_state:
+          prompts:
+            mode: "tabular"
+            tabular:
+              match_strategy: "prefix"
+              other_handler: "prompt"
+
+        # Node definition
+        select_output_format:
+          type: user_prompt
+          prompt:
+            question: "Which output format do you prefer?"
+            header: "Format"
+            options:
+              - id: markdown
+                label: "Markdown"
+                description: "Portable, readable in any editor"
+              - id: json
+                label: "JSON"
+                description: "Machine-readable, for automation"
+              - id: yaml
+                label: "YAML"
+                description: "Structured and human-readable"
+          on_response:
+            markdown:
+              next_node: generate_markdown
+            json:
+              next_node: generate_json
+            yaml:
+              next_node: generate_yaml
+      explanation: |
+        Tabular mode renders options as a markdown table.
+        User types "mark" -> matches "markdown" (prefix match).
+
+    - title: "Tabular mode with route to other handler"
+      yaml: |
+        initial_state:
+          prompts:
+            mode: "tabular"
+            tabular:
+              match_strategy: "exact"
+              other_handler: "route"
+
+        select_or_custom:
+          type: user_prompt
+          prompt:
+            question: "Select a preset or enter a custom value"
+            header: "Choice"
+            options:
+              - id: preset1
+                label: "Preset 1"
+                description: "Common configuration"
+              - id: preset2
+                label: "Preset 2"
+                description: "Alternative configuration"
+          on_response:
+            preset1:
+              next_node: apply_preset1
+            preset2:
+              next_node: apply_preset2
+            other:
+              consequence:
+                - type: set_state
+                  field: custom_value
+                  value: "${user_responses.select_or_custom.text}"
+              next_node: apply_custom
+      explanation: |
+        When other_handler is "route", unrecognized input routes to the
+        "other" handler instead of re-prompting.
+
+  # ==========================================================================
+  # validation_gate (DEPRECATED) - Use conditional with audit instead
+  # ==========================================================================
+  validation_gate:
+    - title: "Pre-operation validation (DEPRECATED)"
+      yaml: |
+        # DEPRECATED: Use conditional with audit.enabled instead
+        validate_environment:
+          type: validation_gate
+          description: Ensure environment is ready before proceeding
+          validations:
+            - type: file_exists
+              path: "data/config.yaml"
+              error_message: "Config file missing - run init first"
+            - type: tool_available
+              tool: git
+              error_message: "Git is not installed"
+            - type: tool_available
+              tool: yq
+              error_message: "yq is not installed"
+          on_valid: start_processing
+          on_invalid: show_validation_errors
+      explanation: |
+        DEPRECATED in v2.0.0. This node type has been replaced by
+        conditional with audit.enabled. See conditional examples for
+        the recommended approach.
+
+    - title: "Migration example"
+      yaml: |
+        # OLD (deprecated)
+        validate_env:
+          type: validation_gate
+          validations:
+            - type: file_exists
+              path: "config.yaml"
+              error_message: "Config missing"
+            - type: tool_available
+              tool: git
+              error_message: "Git not installed"
+          on_valid: proceed
+          on_invalid: show_errors
+
+        # NEW (recommended)
+        validate_env:
+          type: conditional
+          condition:
+            type: all_of
+            conditions:
+              - type: file_exists
+                path: "config.yaml"
+              - type: tool_available
+                tool: git
+          audit:
+            enabled: true
+            messages:
+              file_exists: "Config missing"
+              tool_available: "Git not installed"
+          branches:
+            on_true: proceed
+            on_false: show_errors
+      explanation: |
+        Migration steps:
+        1. Change type from validation_gate to conditional
+        2. Wrap validations in condition.type: all_of
+        3. Move error_message to audit.messages keyed by type
+        4. Add audit.enabled: true
+        5. Rename on_valid/on_invalid to branches.on_true/on_false

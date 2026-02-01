@@ -1,0 +1,654 @@
+# Consequence Examples
+# Documentary usage patterns for consequence types
+#
+# These examples are for human reference, not automated testing.
+
+schema_version: "1.0"
+description: |
+  Example usage patterns for consequence types.
+  These are documentary snippets for workflow authors.
+
+examples:
+  # ==========================================================================
+  # core/control - Control flow, checkpoints, and agent spawning
+  # ==========================================================================
+  core/control:
+    create_checkpoint:
+      - title: "Basic checkpoint before risky operation"
+        yaml: |
+          - type: create_checkpoint
+            name: before_deploy
+        explanation: |
+          Creates a named snapshot of current state.
+          Use before operations that might need rollback.
+
+      - title: "Checkpoint with conditional rollback"
+        yaml: |
+          nodes:
+            deploy:
+              type: action
+              actions:
+                - type: create_checkpoint
+                  name: pre_deploy
+                - type: run_command
+                  command: "./deploy.sh"
+              on_success: verify
+              on_failure: rollback
+
+            rollback:
+              type: action
+              actions:
+                - type: rollback_checkpoint
+                  name: pre_deploy
+              on_success: notify_failure
+              on_failure: end_error
+        explanation: |
+          Pattern showing checkpoint/rollback for deployments.
+          Creates checkpoint before deploy, restores on failure.
+
+    rollback_checkpoint:
+      - title: "Restore state from named checkpoint"
+        yaml: |
+          - type: rollback_checkpoint
+            name: before_clone
+        explanation: |
+          Restores the entire state from a previously created checkpoint.
+          Used in error handling to reset state after a failed operation.
+
+    spawn_agent:
+      - title: "Spawn background agent for parallel work"
+        yaml: |
+          - type: spawn_agent
+            subagent_type: Explore
+            prompt: "Find all Python files that import requests"
+            store_as: search_results
+            run_in_background: true
+        explanation: |
+          Spawns an Explore agent to search the codebase while the
+          main workflow continues. Results stored when agent completes.
+
+      - title: "Spawn synchronous agent for focused task"
+        yaml: |
+          - type: spawn_agent
+            subagent_type: Bash
+            prompt: "Run the test suite and capture output"
+            store_as: test_output
+            run_in_background: false
+        explanation: |
+          Spawns a Bash agent synchronously. Workflow waits for
+          agent to complete before continuing.
+
+    inline:
+      - title: "Custom transformation logic"
+        yaml: |
+          - type: inline
+            description: Extract unique values from array
+            pseudocode: |
+              items = get_state_value("computed.raw_items")
+              unique = deduplicate(items, key="id")
+              return unique
+            store_as: computed.unique_items
+            state_reads:
+              - computed.raw_items
+            state_writes:
+              - computed.unique_items
+        explanation: |
+          Inline pseudocode for one-off transformations that don't
+          warrant a reusable consequence type.
+
+  # ==========================================================================
+  # core/evaluation - Expression evaluation and computation
+  # ==========================================================================
+  core/evaluation:
+    evaluate:
+      - title: "Evaluate expression to flag"
+        yaml: |
+          - type: evaluate
+            expression: "${computed.file_count} > 0"
+            set_flag: has_files
+        explanation: |
+          Evaluates boolean expression, stores result as flag.
+          Use for deriving conditions from computed state.
+
+      - title: "Check for empty array"
+        yaml: |
+          - type: evaluate
+            expression: "len(computed.config.sources) == 0"
+            set_flag: is_first_source
+        explanation: |
+          Checks if sources array is empty using len() function.
+
+    compute:
+      - title: "Compute derived value"
+        yaml: |
+          - type: compute
+            expression: "computed.config.sources.length"
+            store_as: computed.source_count
+        explanation: |
+          Computes a value and stores it in state.
+          Unlike evaluate, can return any type (not just boolean).
+
+      - title: "String concatenation"
+        yaml: |
+          - type: compute
+            expression: "computed.base_path + '/' + computed.filename"
+            store_as: computed.full_path
+        explanation: |
+          Build a path from components using string concatenation.
+
+  # ==========================================================================
+  # core/intent - Intent detection and dynamic routing
+  # ==========================================================================
+  core/intent:
+    evaluate_keywords:
+      - title: "Simple keyword-based intent detection"
+        yaml: |
+          - type: evaluate_keywords
+            input: "${arguments}"
+            keyword_sets:
+              add: ["add", "create", "new"]
+              remove: ["remove", "delete", "drop"]
+              update: ["update", "modify", "change"]
+            store_as: computed.matched_intent
+        explanation: |
+          Matches user input against keyword sets.
+          Returns the first matching intent name.
+
+    parse_intent_flags:
+      - title: "Parse 3VL flags for compound intent"
+        yaml: |
+          - type: parse_intent_flags
+            input: "${arguments}"
+            flag_definitions:
+              wants_help:
+                keywords: ["help", "how", "what"]
+                negative_keywords: []
+              wants_add:
+                keywords: ["add", "create", "new"]
+                negative_keywords: ["don't add", "not new"]
+              is_git:
+                keywords: ["git", "repo", "clone"]
+                negative_keywords: ["not git"]
+            store_as: computed.intent_flags
+        explanation: |
+          Parses input into 3-valued logic flags (T/F/U).
+          Negative keywords are checked first for exclusions.
+
+    match_3vl_rules:
+      - title: "Match intent flags against rule table"
+        yaml: |
+          - type: match_3vl_rules
+            flags: "${computed.intent_flags}"
+            rules:
+              - name: add_git_source
+                action: add_git
+                description: Add a git repository source
+                conditions:
+                  wants_add: T
+                  is_git: T
+              - name: add_any_source
+                action: add_source
+                description: Add any type of source
+                conditions:
+                  wants_add: T
+              - name: show_help
+                action: help
+                description: Show help information
+                conditions:
+                  wants_help: T
+            store_as: computed.intent_matches
+        explanation: |
+          Matches 3VL flags against rules and ranks candidates.
+          Returns clear_winner flag and ranked candidates.
+
+    dynamic_route:
+      - title: "Route based on matched intent"
+        yaml: |
+          - type: dynamic_route
+            action: "${computed.intent_matches.winner.action}"
+        explanation: |
+          Sets computed.dynamic_target for workflow routing.
+          Use with on_success: "${computed.dynamic_target}".
+
+  # ==========================================================================
+  # core/interaction - User display and feedback
+  # ==========================================================================
+  core/interaction:
+    display_message:
+      - title: "Show progress update"
+        yaml: |
+          - type: display_message
+            message: "Processing source: ${computed.source_id}"
+        explanation: |
+          Displays interpolated message to user.
+          Supports markdown formatting.
+
+      - title: "Multi-line status message"
+        yaml: |
+          - type: display_message
+            message: |
+              ## Source Added Successfully
+
+              - **ID**: ${computed.source_id}
+              - **Type**: ${source_type}
+              - **Files**: ${computed.file_count}
+        explanation: |
+          Multi-line markdown message with YAML pipe syntax.
+
+    display_table:
+      - title: "Show tabular data"
+        yaml: |
+          - type: display_table
+            title: "Configured Sources"
+            headers:
+              - ID
+              - Type
+              - Path
+            rows: "${computed.sources_table}"
+        explanation: |
+          Renders data as a markdown table.
+          Rows reference computed array from state.
+
+  # ==========================================================================
+  # core/logging - Workflow execution logging
+  # ==========================================================================
+  core/logging:
+    init_log:
+      - title: "Initialize logging at workflow start"
+        yaml: |
+          - type: init_log
+            workflow_name: add-source
+            workflow_version: "1.0"
+            skill_name: hiivmind-corpus-add-source
+            plugin_name: hiivmind-corpus
+        explanation: |
+          Initializes logging structure. Call once at workflow start.
+          Sets flags.log_initialized to true.
+
+    log_node:
+      - title: "Record node execution"
+        yaml: |
+          - type: log_node
+            node: clone_repository
+            outcome: success
+            details:
+              repo_url: "${computed.repo_url}"
+              duration_ms: "${computed.clone_duration}"
+        explanation: |
+          Records node execution in log history.
+          Typically auto-injected by engine.
+
+    log_event:
+      - title: "Log domain-specific event"
+        yaml: |
+          - type: log_event
+            event_type: source_added
+            data:
+              source_id: "${computed.source_id}"
+              source_type: "${source_type}"
+              file_count: "${computed.file_count}"
+            level: info
+        explanation: |
+          Logs structured event for auditing.
+          Data can be any structured object.
+
+    log_warning:
+      - title: "Log potential issue"
+        yaml: |
+          - type: log_warning
+            message: "Large repository may slow indexing"
+            context:
+              file_count: "${computed.file_count}"
+              threshold: 1000
+        explanation: |
+          Logs warning without stopping workflow.
+
+    log_error:
+      - title: "Log error with context"
+        yaml: |
+          - type: log_error
+            message: "Clone failed"
+            error_type: git_error
+            context:
+              repo_url: "${computed.repo_url}"
+              exit_code: "${computed.exit_code}"
+            recoverable: true
+        explanation: |
+          Logs error with classification and recovery flag.
+
+    log_session_snapshot:
+      - title: "Checkpoint logging state"
+        yaml: |
+          - type: log_session_snapshot
+            description: "Before destructive operation"
+            write_intermediate: true
+        explanation: |
+          Creates snapshot at critical decision point.
+          Can write intermediate log file.
+
+    finalize_log:
+      - title: "Complete log at workflow end"
+        yaml: |
+          - type: finalize_log
+            outcome: success
+            summary: "Added ${computed.file_count} files from ${source_type} source"
+        explanation: |
+          Completes log with timing and outcome.
+          Call at workflow end.
+
+    write_log:
+      - title: "Write log to file"
+        yaml: |
+          - type: write_log
+            format: yaml
+            path: ".logs/${computed.log_filename}"
+        explanation: |
+          Writes finalized log to file.
+          Supports yaml, json, markdown formats.
+
+    apply_log_retention:
+      - title: "Clean up old logs (count-based)"
+        yaml: |
+          - type: apply_log_retention
+            path: ".logs/"
+            strategy: count
+            count: 10
+            pattern: "*.yaml"
+        explanation: |
+          Keeps only the 10 newest log files.
+
+      - title: "Clean up old logs (time-based)"
+        yaml: |
+          - type: apply_log_retention
+            path: ".logs/"
+            strategy: days
+            days: 30
+        explanation: |
+          Removes logs older than 30 days.
+
+    output_ci_summary:
+      - title: "GitHub Actions summary"
+        yaml: |
+          - type: output_ci_summary
+            format: github
+            annotations: true
+        explanation: |
+          Outputs summary to GITHUB_STEP_SUMMARY.
+          Emits annotations for errors/warnings.
+
+  # ==========================================================================
+  # core/skill - Skill invocation
+  # ==========================================================================
+  core/skill:
+    invoke_skill:
+      - title: "Invoke another skill"
+        yaml: |
+          - type: invoke_skill
+            skill: hiivmind-corpus-build
+            args: "--force"
+        explanation: |
+          Delegates to another skill using Claude's Skill tool.
+          Typically used as last action before ending.
+
+  # ==========================================================================
+  # core/state - State mutation
+  # ==========================================================================
+  core/state:
+    set_flag:
+      - title: "Set boolean flag"
+        yaml: |
+          - type: set_flag
+            flag: config_loaded
+            value: true
+        explanation: |
+          Sets a boolean flag in state.flags namespace.
+
+    set_state:
+      - title: "Set state field"
+        yaml: |
+          - type: set_state
+            field: source_type
+            value: git
+        explanation: |
+          Sets a top-level state field.
+
+      - title: "Set nested state with interpolation"
+        yaml: |
+          - type: set_state
+            field: computed.full_url
+            value: "https://github.com/${computed.owner}/${computed.repo}"
+        explanation: |
+          Sets nested field using interpolated value.
+
+    append_state:
+      - title: "Append to array"
+        yaml: |
+          - type: append_state
+            field: computed.processed_files
+            value: "${computed.current_file}"
+        explanation: |
+          Appends value to array field.
+          Creates array if it doesn't exist.
+
+    clear_state:
+      - title: "Reset field"
+        yaml: |
+          - type: clear_state
+            field: computed.temp_data
+        explanation: |
+          Resets field to null.
+          Useful for clearing computed values between iterations.
+
+    merge_state:
+      - title: "Merge object into state"
+        yaml: |
+          - type: merge_state
+            field: computed.config
+            value:
+              updated_at: "${computed.timestamp}"
+              version: 2
+        explanation: |
+          Shallow merge into existing object.
+          Creates target if it doesn't exist.
+
+  # ==========================================================================
+  # core/utility - Timestamps and hashing
+  # ==========================================================================
+  core/utility:
+    set_timestamp:
+      - title: "Record current time"
+        yaml: |
+          - type: set_timestamp
+            store_as: computed.indexed_at
+        explanation: |
+          Stores current ISO 8601 timestamp in state.
+
+    compute_hash:
+      - title: "Hash content for change detection"
+        yaml: |
+          - type: compute_hash
+            from: computed.file_content
+            store_as: computed.content_hash
+        explanation: |
+          Computes SHA-256 hash of content.
+          Output format: sha256:abc123...
+
+  # ==========================================================================
+  # extensions/file-system - File operations
+  # ==========================================================================
+  extensions/file-system:
+    read_file:
+      - title: "Read configuration file"
+        yaml: |
+          - type: read_file
+            path: "data/config.yaml"
+            store_as: computed.config_content
+        explanation: |
+          Reads file content into state.
+          Uses Claude's Read tool.
+
+    write_file:
+      - title: "Write processed output"
+        yaml: |
+          - type: write_file
+            path: "${computed.output_path}"
+            content: "${computed.processed_content}"
+        explanation: |
+          Writes content to file.
+          Creates parent directories if needed.
+
+    create_directory:
+      - title: "Create output directory"
+        yaml: |
+          - type: create_directory
+            path: "${computed.output_dir}"
+        explanation: |
+          Creates directory with mkdir -p behavior.
+
+    delete_file:
+      - title: "Remove temporary file"
+        yaml: |
+          - type: delete_file
+            path: "${computed.temp_file}"
+        explanation: |
+          Deletes file if it exists.
+          No error if file doesn't exist.
+
+  # ==========================================================================
+  # extensions/git - Git operations
+  # ==========================================================================
+  extensions/git:
+    clone_repo:
+      - title: "Clone with branch selection"
+        yaml: |
+          - type: clone_repo
+            url: "${computed.repo_url}"
+            dest: ".source/${computed.source_id}"
+            branch: "${user_responses.branch}"
+            depth: 1
+        explanation: |
+          Clones repository using interpolated values.
+          Shallow clone (depth 1) recommended for documentation.
+
+    get_sha:
+      - title: "Get commit SHA for tracking"
+        yaml: |
+          - type: get_sha
+            repo_path: ".source/${computed.source_id}"
+            store_as: computed.commit_sha
+        explanation: |
+          Gets HEAD commit SHA for version tracking.
+
+    git_pull:
+      - title: "Update existing clone"
+        yaml: |
+          - type: git_pull
+            repo_path: ".source/${computed.source_id}"
+        explanation: |
+          Pulls latest changes using fast-forward only.
+
+    git_fetch:
+      - title: "Fetch to check for updates"
+        yaml: |
+          - type: git_fetch
+            repo_path: ".source/${computed.source_id}"
+        explanation: |
+          Fetches remote refs without modifying working directory.
+
+  # ==========================================================================
+  # extensions/package - Tool installation
+  # ==========================================================================
+  extensions/package:
+    install_tool:
+      - title: "Install missing tool"
+        yaml: |
+          - type: install_tool
+            tool: yq
+            skip_if_available: true
+        explanation: |
+          Installs tool if not already available.
+          Uses registry hints for install command.
+
+      - title: "Install with custom command"
+        yaml: |
+          - type: install_tool
+            tool: custom-tool
+            install_command: "pip install custom-tool"
+        explanation: |
+          Installs using explicit command.
+
+  # ==========================================================================
+  # extensions/scripting - Script execution
+  # ==========================================================================
+  extensions/scripting:
+    run_script:
+      - title: "Run script with auto-detected interpreter"
+        yaml: |
+          - type: run_script
+            script: "scripts/process.py"
+            args:
+              - "--input"
+              - "${computed.input_file}"
+            store_as: computed.script_output
+        explanation: |
+          Runs script, auto-detecting interpreter from extension.
+          .py -> python3, .sh -> bash, .js -> node
+
+    run_python:
+      - title: "Run Python script with venv"
+        yaml: |
+          - type: run_python
+            script: "scripts/process.py"
+            venv: ".venv"
+            args:
+              - "${computed.config_path}"
+            store_as: computed.processed_data
+        explanation: |
+          Runs Python script with virtual environment activation.
+
+    run_bash:
+      - title: "Run bash script with environment"
+        yaml: |
+          - type: run_bash
+            script: "scripts/build.sh"
+            env:
+              BUILD_DIR: "${computed.build_path}"
+              VERSION: "${computed.version}"
+            store_as: computed.build_output
+        explanation: |
+          Runs bash script with environment variables.
+
+  # ==========================================================================
+  # extensions/web - Web fetch and caching
+  # ==========================================================================
+  extensions/web:
+    web_fetch:
+      - title: "Fetch web page content"
+        yaml: |
+          - type: web_fetch
+            url: "${computed.doc_url}"
+            store_as: computed.page_content
+            prompt: "Extract the main documentation content"
+        explanation: |
+          Fetches URL content using WebFetch tool.
+          HTML is converted to markdown.
+
+      - title: "Fetch with error tolerance"
+        yaml: |
+          - type: web_fetch
+            url: "${computed.optional_url}"
+            store_as: computed.optional_content
+            allow_failure: true
+        explanation: |
+          Fetches URL but doesn't fail on HTTP errors.
+          Result still stored with status code.
+
+    cache_web_content:
+      - title: "Save fetched content to cache"
+        yaml: |
+          - type: cache_web_content
+            from: computed.page_content
+            dest: ".cache/${computed.cache_filename}"
+            store_path_as: computed.cached_path
+        explanation: |
+          Saves fetched content to local file cache.

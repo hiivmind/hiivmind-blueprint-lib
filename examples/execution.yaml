@@ -1,0 +1,520 @@
+# Execution Examples
+# Documentary usage patterns for execution concepts
+#
+# These examples are for human reference, not automated testing.
+
+schema_version: "1.0"
+description: |
+  Example usage patterns for execution concepts.
+  These are documentary snippets for workflow authors.
+
+examples:
+  # ==========================================================================
+  # consequence-dispatch - Type-based consequence execution
+  # ==========================================================================
+  consequence-dispatch:
+    payload_kinds:
+      - title: "state_mutation - Direct state modifications"
+        yaml: |
+          # Consequence types with payload.kind: state_mutation
+          - type: set_flag
+            flag: config_loaded
+            value: true
+
+          - type: set_state
+            field: source_type
+            value: git
+
+          - type: append_state
+            field: computed.items
+            value: "${computed.new_item}"
+        explanation: |
+          State mutations modify runtime state directly.
+          The engine applies the effect defined in the type definition.
+
+      - title: "computation - Expression evaluation"
+        yaml: |
+          # Consequence types with payload.kind: computation
+          - type: evaluate
+            expression: "len(computed.sources) == 0"
+            set_flag: is_first_source
+
+          - type: compute
+            expression: "computed.base_path + '/' + computed.filename"
+            store_as: computed.full_path
+        explanation: |
+          Computations evaluate expressions and store results.
+          No external tool calls involved.
+
+      - title: "tool_call - Claude tool invocation"
+        yaml: |
+          # Consequence types with payload.kind: tool_call
+          - type: clone_repo
+            url: "https://github.com/org/repo"
+            dest: ".source/repo"
+
+          - type: read_file
+            path: "config.yaml"
+            store_as: config_content
+
+          - type: web_fetch
+            url: "https://example.com/docs"
+            store_as: page_content
+        explanation: |
+          Tool calls invoke Claude Code tools (Bash, Read, Write, etc.).
+          Results are captured and stored in state.
+
+      - title: "composite - Multiple sub-consequences"
+        yaml: |
+          # Consequence types with payload.kind: composite
+          - type: init_log
+            workflow_name: add-source
+            skill_name: hiivmind-corpus-add-source
+        explanation: |
+          Composite consequences execute multiple sub-consequences.
+          Used for complex operations that combine multiple steps.
+
+      - title: "side_effect - Display without state mutation"
+        yaml: |
+          # Consequence types with payload.kind: side_effect
+          - type: display_message
+            message: "Processing ${computed.source_id}..."
+
+          - type: display_table
+            title: "Sources"
+            headers: [ID, Type]
+            rows: "${computed.sources_table}"
+        explanation: |
+          Side effects produce output but don't modify state.
+          Used for user feedback and debugging.
+
+    parameter_interpolation:
+      - title: "String interpolation"
+        yaml: |
+          - type: display_message
+            message: "Cloning ${computed.repo_url} to ${computed.clone_path}"
+        explanation: |
+          ${...} patterns are replaced with state values before execution.
+
+      - title: "Nested object interpolation"
+        yaml: |
+          - type: merge_state
+            field: computed.config
+            value:
+              url: "${computed.repo_url}"
+              name: "${user_responses.ask_name.text}"
+              version: "${computed.version}"
+        explanation: |
+          Interpolation works recursively in nested objects.
+
+  # ==========================================================================
+  # precondition-dispatch - Type-based precondition evaluation
+  # ==========================================================================
+  precondition-dispatch:
+    type_categories:
+      - title: "Filesystem preconditions"
+        yaml: |
+          condition:
+            type: file_exists
+            path: "data/config.yaml"
+        explanation: |
+          Check file and directory existence.
+          Types: file_exists, directory_exists, config_exists
+
+      - title: "State preconditions"
+        yaml: |
+          condition:
+            type: all_of
+            conditions:
+              - type: flag_set
+                flag: config_loaded
+              - type: state_not_null
+                field: computed.source_id
+        explanation: |
+          Check state values and flags.
+          Types: flag_set, state_equals, state_not_null, count_above
+
+      - title: "Composite preconditions"
+        yaml: |
+          condition:
+            type: any_of
+            conditions:
+              - type: tool_available
+                tool: yq
+              - type: python_module_available
+                module: yaml
+        explanation: |
+          Combine multiple preconditions with logical operators.
+          Types: all_of, any_of, none_of, xor_of
+
+    audit_mode:
+      - title: "Audit mode evaluation"
+        yaml: |
+          check_environment:
+            type: conditional
+            condition:
+              type: all_of
+              conditions:
+                - type: file_exists
+                  path: "config.yaml"
+                - type: tool_available
+                  tool: git
+            audit:
+              enabled: true
+              messages:
+                file_exists: "Config missing"
+                tool_available: "Tool not installed"
+            branches:
+              on_true: proceed
+              on_false: show_errors
+        explanation: |
+          With audit.enabled, all conditions are evaluated without
+          short-circuiting. Results collected with error messages.
+
+  # ==========================================================================
+  # logging - 4-tier priority hierarchy
+  # ==========================================================================
+  logging:
+    priority_tiers:
+      - title: "Framework defaults (Tier 4 - lowest)"
+        yaml: |
+          # Built-in defaults from blueprint-lib
+          enabled: true
+          level: "info"
+          auto:
+            init: true
+            finalize: true
+            write: true
+            node_tracking: true
+        explanation: |
+          Base defaults for all workflows.
+          Fetched from remote lib or hardcoded fallback.
+
+      - title: "Plugin config (Tier 3)"
+        yaml: |
+          # .hiivmind/blueprint/logging.yaml
+          level: "warn"
+          output:
+            location: "data/logs/"
+        explanation: |
+          Plugin-wide defaults.
+          Overrides framework defaults.
+
+      - title: "Skill config (Tier 2)"
+        yaml: |
+          # workflow.initial_state.logging
+          initial_state:
+            logging:
+              level: "debug"
+              auto:
+                node_tracking: true
+        explanation: |
+          Skill-specific overrides.
+          Defined in workflow YAML.
+
+      - title: "Runtime flags (Tier 1 - highest)"
+        yaml: |
+          # Command-line flags
+          /skill-name --verbose
+          /skill-name --log-level=debug
+          /skill-name --no-log
+        explanation: |
+          User runtime overrides.
+          --verbose, --quiet, --trace, --log-level=X
+
+    auto_injection:
+      - title: "Auto-injected logging consequences"
+        yaml: |
+          logging:
+            auto:
+              init: true       # Injects init_log at Phase 1
+              node_tracking: true  # Injects log_node after each node
+              finalize: true   # Injects finalize_log at Phase 3
+              write: true      # Injects write_log at Phase 3
+        explanation: |
+          The engine automatically injects logging consequences
+          based on auto.* flags. No explicit consequences needed.
+
+  # ==========================================================================
+  # display - Real-time terminal output
+  # ==========================================================================
+  display:
+    verbosity_levels:
+      - title: "Silent mode"
+        yaml: |
+          display:
+            verbosity: "silent"
+        explanation: |
+          Only user prompts and final result shown.
+          Use for production or embedded workflows.
+
+      - title: "Terse mode (default for users)"
+        yaml: |
+          display:
+            verbosity: "terse"
+        explanation: |
+          Batch summaries for non-interactive segments.
+          Reduces visual noise.
+
+      - title: "Normal mode (development)"
+        yaml: |
+          display:
+            verbosity: "normal"
+        explanation: |
+          Node transition arrows shown.
+          Batches when threshold met.
+
+      - title: "Verbose mode (debugging)"
+        yaml: |
+          display:
+            verbosity: "verbose"
+        explanation: |
+          All node details shown.
+          Condition evaluation and branch decisions visible.
+
+      - title: "Debug mode"
+        yaml: |
+          display:
+            verbosity: "debug"
+        explanation: |
+          Full state dumps at each node.
+          All internal details visible.
+
+    batch_mode:
+      - title: "Batch configuration"
+        yaml: |
+          display:
+            batch:
+              enabled: true
+              threshold: 3
+              show_summary: true
+              show_node_list: false
+              expand_on_error: true
+        explanation: |
+          Batch consecutive non-interactive nodes into summary lines.
+          Threshold sets minimum nodes before batching.
+
+      - title: "Batch output example"
+        yaml: |
+          # With batch.show_summary: true, batch.show_node_list: false
+          # Output: "Initializing... [3 nodes] -> ask_source_type"
+
+          # With batch.show_node_list: true
+          # Output: "Initializing... [load_config, validate, prepare] -> ask_source_type"
+        explanation: |
+          Batch summaries collapse multiple nodes into single line.
+
+  # ==========================================================================
+  # state - Runtime state structure
+  # ==========================================================================
+  state:
+    structure:
+      - title: "Complete state structure"
+        yaml: |
+          state:
+            # Identity
+            workflow_name: "add-source"
+            workflow_version: "1.0.0"
+
+            # Position
+            current_node: "ask_source_type"
+            previous_node: "check_url_provided"
+
+            # Runtime
+            interface: "claude_code"
+
+            # User responses
+            user_responses:
+              ask_source_type:
+                handler_id: "git"
+
+            # Computed values
+            computed:
+              repo_url: "https://github.com/org/repo"
+              source_id: "my-source"
+
+            # Flags
+            flags:
+              config_found: true
+              is_first_source: true
+
+            # Checkpoints
+            checkpoints:
+              before_clone: { ... }
+
+            # Logging config
+            logging:
+              level: "info"
+              auto:
+                init: true
+        explanation: |
+          Full state structure maintained during workflow execution.
+
+    interpolation:
+      - title: "Variable interpolation patterns"
+        yaml: |
+          # Top-level field
+          "${source_type}"
+
+          # Computed value
+          "${computed.repo_url}"
+
+          # Flag
+          "${flags.config_found}"
+
+          # User response
+          "${user_responses.ask_type.handler_id}"
+
+          # Nested computed
+          "${computed.config.corpus.name}"
+
+          # Array index
+          "${computed.sources[0].id}"
+
+          # Negative index (last element)
+          "${history[-1].node}"
+        explanation: |
+          ${...} patterns are replaced with values from state.
+          Supports dot notation and array access.
+
+    dynamic_routing:
+      - title: "Dynamic routing target"
+        yaml: |
+          execute_matched_intent:
+            type: action
+            actions:
+              - type: dynamic_route
+                action: "${computed.intent_matches.winner.action}"
+            on_success: "${computed.dynamic_target}"
+            on_failure: show_main_menu
+        explanation: |
+          Routing targets can use ${...} interpolation for
+          dynamic routing based on computed state.
+
+    checkpoints:
+      - title: "Checkpoint workflow"
+        yaml: |
+          prepare_clone:
+            type: action
+            actions:
+              - type: create_checkpoint
+                name: "before_clone"
+            on_success: execute_clone
+            on_failure: error_checkpoint
+
+          execute_clone:
+            type: action
+            actions:
+              - type: clone_repo
+                url: "${computed.repo_url}"
+                dest: ".source/${computed.source_id}"
+            on_success: verify_clone
+            on_failure: handle_clone_failure
+
+          handle_clone_failure:
+            type: action
+            actions:
+              - type: rollback_checkpoint
+                name: "before_clone"
+              - type: display_message
+                message: "Clone failed, state restored"
+            on_success: ask_retry
+            on_failure: error_rollback
+        explanation: |
+          Create checkpoint before risky operation.
+          Rollback on failure to restore state.
+
+  # ==========================================================================
+  # traversal - Core execution loop
+  # ==========================================================================
+  traversal:
+    phases:
+      - title: "Phase 1: Initialize"
+        yaml: |
+          # Pseudocode for initialization
+          workflow = parse_yaml(read_file(workflow_path))
+          types = load_types(workflow.definitions)
+          logging_config = load_logging_config(workflow, plugin_root)
+          display_config = load_display_config(workflow, plugin_root)
+          validate_schema(workflow)
+          check_entry_preconditions(workflow)
+          state = initialize_state(workflow)
+        explanation: |
+          Load workflow, resolve types, initialize state.
+          Check entry preconditions before execution.
+
+      - title: "Phase 2: Execute"
+        yaml: |
+          # Pseudocode for execution loop
+          LOOP:
+            node = workflow.nodes[state.current_node]
+
+            IF state.current_node IN workflow.endings:
+              GOTO Phase 3
+
+            outcome = dispatch_node(node, types, state)
+
+            IF outcome.awaiting_input:
+              PAUSE  # Multi-turn conversation
+
+            state.history.append({ node, outcome, timestamp })
+            state.previous_node = state.current_node
+            state.current_node = outcome.next_node
+          UNTIL ending
+        explanation: |
+          Main execution loop. Process nodes until ending reached.
+          Supports multi-turn conversation via awaiting_input.
+
+      - title: "Phase 3: Complete"
+        yaml: |
+          # Pseudocode for completion
+          IF logging_config.auto.finalize:
+            execute_consequence({ type: "finalize_log", ... })
+
+          IF logging_config.auto.write:
+            execute_consequence({ type: "write_log", ... })
+
+          message = interpolate(ending.message, state)
+          DISPLAY message
+
+          RETURN ending.type
+        explanation: |
+          Finalization phase. Generate logs, display results.
+          Auto-inject log finalization if enabled.
+
+    node_dispatch:
+      - title: "Node type dispatch"
+        yaml: |
+          SWITCH node.type:
+            CASE "action":
+              execute_action_node(node, types, state)
+            CASE "conditional":
+              execute_conditional_node(node, types, state)
+            CASE "user_prompt":
+              execute_user_prompt_node(node, types, state)
+            CASE "reference":
+              execute_reference_node(node, types, state)
+            CASE "validation_gate":  # DEPRECATED
+              execute_validation_gate_node(node, types, state)
+        explanation: |
+          Routes to appropriate executor based on node.type.
+          Each node type has its own execution semantics.
+
+    display_integration:
+      - title: "Batch buffer management"
+        yaml: |
+          # During execution
+          IF should_batch_node(node, display_config):
+            state.batch_buffer.append({
+              id: node_id,
+              outcome: outcome,
+              phase: infer_phase_name(state)
+            })
+            IF state.batch_buffer.length >= display_config.batch.threshold:
+              flush_batch(state.batch_buffer, display_config)
+          ELSE:
+            flush_batch(state.batch_buffer, display_config)
+            display_node_execution(node, outcome, display_config)
+        explanation: |
+          Batches consecutive non-interactive nodes.
+          Flushes batch before user prompts or on threshold.

@@ -1,120 +1,8 @@
 # Consequence Definitions Index
-# Provides a master registry of all consequence types with local and remote sources
+# Registry of all consequence types with metadata for quick reference
 
-schema_version: "1.1"
-
-# Built-in definitions (local paths relative to this file)
-sources:
-  # Core consequences (30 types)
-  - path: core/state.yaml
-    category: core/state
-    description: State mutation operations
-    types:
-      - set_flag
-      - set_state
-      - append_state
-      - clear_state
-      - merge_state
-
-  - path: core/evaluation.yaml
-    category: core/evaluation
-    description: Expression evaluation and computation
-    types:
-      - evaluate
-      - compute
-
-  - path: core/interaction.yaml
-    category: core/interaction
-    description: User interaction and display
-    types:
-      - display_message
-      - display_table
-
-  - path: core/control.yaml
-    category: core/control
-    description: Control flow and checkpoints
-    types:
-      - create_checkpoint
-      - rollback_checkpoint
-      - spawn_agent
-
-  - path: core/skill.yaml
-    category: core/skill
-    description: Skill and pattern invocation
-    types:
-      - invoke_pattern
-      - invoke_skill
-
-  - path: core/utility.yaml
-    category: core/utility
-    description: Utility operations
-    types:
-      - set_timestamp
-      - compute_hash
-
-  - path: core/intent.yaml
-    category: core/intent
-    description: 3VL intent detection and routing
-    types:
-      - evaluate_keywords
-      - parse_intent_flags
-      - match_3vl_rules
-      - dynamic_route
-
-  - path: core/logging.yaml
-    category: core/logging
-    description: Workflow execution logging
-    types:
-      - init_log
-      - log_node
-      - log_event
-      - log_warning
-      - log_error
-      - log_session_snapshot
-      - finalize_log
-      - write_log
-      - apply_log_retention
-      - output_ci_summary
-
-  # Extension consequences (10 types)
-  - path: extensions/file-system.yaml
-    category: extensions/file-system
-    description: File system operations
-    types:
-      - read_file
-      - write_file
-      - create_directory
-      - delete_file
-
-  - path: extensions/git.yaml
-    category: extensions/git
-    description: Git repository operations
-    types:
-      - clone_repo
-      - get_sha
-      - git_pull
-      - git_fetch
-
-  - path: extensions/web.yaml
-    category: extensions/web
-    description: Web fetch and caching
-    types:
-      - web_fetch
-      - cache_web_content
-
-  - path: extensions/scripting.yaml
-    category: extensions/scripting
-    description: Script execution with interpreter detection
-    types:
-      - run_script
-      - run_python
-      - run_bash
-
-  - path: extensions/package.yaml
-    category: extensions/package
-    description: Tool and package installation
-    types:
-      - install_tool
+schema_version: "2.0"
+definition_file: consequences.yaml
 
 # Remote extension definitions (public URLs)
 # Users can add custom consequences from external sources
@@ -122,87 +10,271 @@ remote_sources:
   # Example: Custom Docker consequences
   # - url: https://raw.githubusercontent.com/hiivmind/blueprint-docker/main/consequences.yaml
   #   types: [docker_build, docker_push, docker_run]
-  #
-  # Example: Kubernetes consequences
-  # - url: https://hiivmind.dev/consequences/kubernetes.yaml
-  #   types: [kubectl_apply, kubectl_get]
 
-# Quick lookup table (type -> source file)
-# Auto-maintained: maps each consequence type to its definition file
-type_lookup:
-  # Core - State (5)
-  set_flag: core/state.yaml
-  set_state: core/state.yaml
-  append_state: core/state.yaml
-  clear_state: core/state.yaml
-  merge_state: core/state.yaml
+types:
+  # ==========================================================================
+  # Core - Control (5 types)
+  # ==========================================================================
+  create_checkpoint:
+    category: core/control
+    brief: Save state snapshot for potential rollback
+    required_params: [name]
 
-  # Core - Evaluation (2)
-  evaluate: core/evaluation.yaml
-  compute: core/evaluation.yaml
+  rollback_checkpoint:
+    category: core/control
+    brief: Restore state from checkpoint
+    required_params: [name]
 
-  # Core - Interaction (2)
-  display_message: core/interaction.yaml
-  display_table: core/interaction.yaml
+  spawn_agent:
+    category: core/control
+    brief: Launch a Task agent for parallel work
+    required_params: [subagent_type, prompt, store_as]
 
-  # Core - Control (3)
-  create_checkpoint: core/control.yaml
-  rollback_checkpoint: core/control.yaml
-  spawn_agent: core/control.yaml
+  invoke_skill:
+    category: core/control
+    brief: Invoke another skill and wait for completion
+    required_params: [skill]
 
-  # Core - Skill (2)
-  invoke_pattern: core/skill.yaml
-  invoke_skill: core/skill.yaml
+  inline:
+    category: core/control
+    brief: Execute embedded pseudocode for non-reusable logic
+    required_params: [description, pseudocode]
 
-  # Core - Utility (2)
-  set_timestamp: core/utility.yaml
-  compute_hash: core/utility.yaml
+  # ==========================================================================
+  # Core - Evaluation (2 types)
+  # ==========================================================================
+  evaluate:
+    category: core/evaluation
+    brief: Evaluate expression and set flag based on result
+    required_params: [expression, set_flag]
 
-  # Core - Intent (4)
-  evaluate_keywords: core/intent.yaml
-  parse_intent_flags: core/intent.yaml
-  match_3vl_rules: core/intent.yaml
-  dynamic_route: core/intent.yaml
+  compute:
+    category: core/evaluation
+    brief: Run expression and store result
+    required_params: [expression, store_as]
 
-  # Core - Logging (10)
-  init_log: core/logging.yaml
-  log_node: core/logging.yaml
-  log_event: core/logging.yaml
-  log_warning: core/logging.yaml
-  log_error: core/logging.yaml
-  log_session_snapshot: core/logging.yaml
-  finalize_log: core/logging.yaml
-  write_log: core/logging.yaml
-  apply_log_retention: core/logging.yaml
-  output_ci_summary: core/logging.yaml
+  # ==========================================================================
+  # Core - Interaction (2 types)
+  # ==========================================================================
+  display_message:
+    category: core/interaction
+    brief: Show message to user
+    required_params: [message]
 
-  # Extensions - File System (4)
-  read_file: extensions/file-system.yaml
-  write_file: extensions/file-system.yaml
-  create_directory: extensions/file-system.yaml
-  delete_file: extensions/file-system.yaml
+  display_table:
+    category: core/interaction
+    brief: Show tabular data to user
+    required_params: [headers, rows]
 
-  # Extensions - Git (4)
-  clone_repo: extensions/git.yaml
-  get_sha: extensions/git.yaml
-  git_pull: extensions/git.yaml
-  git_fetch: extensions/git.yaml
+  display:
+    category: core/interaction
+    brief: Display content to user (alias for display_message)
+    required_params: [content]
 
-  # Extensions - Web (2)
-  web_fetch: extensions/web.yaml
-  cache_web_content: extensions/web.yaml
+  # ==========================================================================
+  # Core - Logging (10 types)
+  # ==========================================================================
+  init_log:
+    category: core/logging
+    brief: Initialize log structure with workflow metadata
+    required_params: [workflow_name]
 
-  # Extensions - Scripting (3)
-  run_script: extensions/scripting.yaml
-  run_python: extensions/scripting.yaml
-  run_bash: extensions/scripting.yaml
+  log_node:
+    category: core/logging
+    brief: Record node execution in history
+    required_params: [node, outcome]
 
-  # Extensions - Package (1)
-  install_tool: extensions/package.yaml
+  log_event:
+    category: core/logging
+    brief: Log domain-specific event
+    required_params: [event_type]
+
+  log_warning:
+    category: core/logging
+    brief: Add warning message to log
+    required_params: [message]
+
+  log_error:
+    category: core/logging
+    brief: Add error with context to log
+    required_params: [message]
+
+  log_session_snapshot:
+    category: core/logging
+    brief: Record mid-session checkpoint
+    required_params: [description]
+
+  finalize_log:
+    category: core/logging
+    brief: Complete log with timing and outcome
+    required_params: [outcome]
+
+  write_log:
+    category: core/logging
+    brief: Write log to file
+    required_params: []
+
+  apply_log_retention:
+    category: core/logging
+    brief: Clean up old log files
+    required_params: [path, strategy]
+
+  output_ci_summary:
+    category: core/logging
+    brief: Format output for CI environments
+    required_params: []
+
+  # ==========================================================================
+  # Core - State (5 types)
+  # ==========================================================================
+  set_flag:
+    category: core/state
+    brief: Set a boolean flag
+    required_params: [flag, value]
+
+  set_state:
+    category: core/state
+    brief: Set any state field
+    required_params: [field, value]
+
+  append_state:
+    category: core/state
+    brief: Append value to array field
+    required_params: [field, value]
+
+  clear_state:
+    category: core/state
+    brief: Reset field to null
+    required_params: [field]
+
+  merge_state:
+    category: core/state
+    brief: Merge object into state field
+    required_params: [field, value]
+
+  # ==========================================================================
+  # Core - Utility (2 types)
+  # ==========================================================================
+  set_timestamp:
+    category: core/utility
+    brief: Set current ISO timestamp
+    required_params: [store_as]
+
+  compute_hash:
+    category: core/utility
+    brief: Compute SHA-256 hash of content
+    required_params: [from, store_as]
+
+  # ==========================================================================
+  # Core - Intent (4 types)
+  # ==========================================================================
+  evaluate_keywords:
+    category: core/intent
+    brief: Match keywords to detect intent
+    required_params: [input, keyword_sets, store_as]
+
+  parse_intent_flags:
+    category: core/intent
+    brief: Parse 3VL flags from user input
+    required_params: [input, flag_definitions, store_as]
+
+  match_3vl_rules:
+    category: core/intent
+    brief: Match 3VL flags against rule table
+    required_params: [flags, rules, store_as]
+
+  dynamic_route:
+    category: core/intent
+    brief: Execute dynamically determined node transition
+    required_params: [action]
+
+  # ==========================================================================
+  # Extensions - File System (4 types)
+  # ==========================================================================
+  read_file:
+    category: extensions/file-system
+    brief: Read arbitrary file content
+    required_params: [path, store_as]
+
+  write_file:
+    category: extensions/file-system
+    brief: Write content to file
+    required_params: [path, content]
+
+  create_directory:
+    category: extensions/file-system
+    brief: Create directory including parents
+    required_params: [path]
+
+  delete_file:
+    category: extensions/file-system
+    brief: Delete file if exists
+    required_params: [path]
+
+  # ==========================================================================
+  # Extensions - Git (4 types)
+  # ==========================================================================
+  clone_repo:
+    category: extensions/git
+    brief: Clone git repository
+    required_params: [url, dest]
+
+  get_sha:
+    category: extensions/git
+    brief: Get HEAD commit SHA
+    required_params: [repo_path, store_as]
+
+  git_pull:
+    category: extensions/git
+    brief: Pull latest changes
+    required_params: [repo_path]
+
+  git_fetch:
+    category: extensions/git
+    brief: Fetch remote refs
+    required_params: [repo_path]
+
+  # ==========================================================================
+  # Extensions - Web (2 types)
+  # ==========================================================================
+  web_fetch:
+    category: extensions/web
+    brief: Fetch URL content
+    required_params: [url, store_as]
+
+  cache_web_content:
+    category: extensions/web
+    brief: Save fetched content to cache
+    required_params: [from, dest]
+
+  # ==========================================================================
+  # Extensions - Scripting (3 types)
+  # ==========================================================================
+  run_script:
+    category: extensions/scripting
+    brief: Execute script with auto-detected interpreter
+    required_params: [script]
+
+  run_python:
+    category: extensions/scripting
+    brief: Execute Python script
+    required_params: [script]
+
+  run_bash:
+    category: extensions/scripting
+    brief: Execute Bash script
+    required_params: [script]
+
+  # ==========================================================================
+  # Extensions - Package (1 type)
+  # ==========================================================================
+  install_tool:
+    category: extensions/package
+    brief: Install a CLI tool if not already available
+    required_params: [tool]
 
 # Statistics
 stats:
-  total_types: 44
-  core_types: 30
+  total_types: 45
+  core_types: 31
   extension_types: 14
-  definition_files: 13

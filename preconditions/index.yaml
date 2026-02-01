@@ -1,88 +1,8 @@
 # Precondition Definitions Index
-# Provides a master registry of all precondition types with local and remote sources
+# Registry of all precondition types with metadata for quick reference
 
-schema_version: "1.0"
-
-# Built-in definitions (local paths relative to this file)
-sources:
-  # Core preconditions (22 types)
-  - path: core/filesystem.yaml
-    category: core/filesystem
-    description: File and directory existence checks
-    types:
-      - config_exists
-      - index_exists
-      - index_is_placeholder
-      - file_exists
-      - directory_exists
-
-  - path: core/state.yaml
-    category: core/state
-    description: State inspection and comparison
-    types:
-      - flag_set
-      - flag_not_set
-      - state_equals
-      - state_not_null
-      - state_is_null
-      - count_equals
-      - count_above
-      - count_below
-
-  - path: core/tool.yaml
-    category: core/tool
-    description: Tool and module availability
-    types:
-      - tool_available
-      - tool_version_gte
-      - tool_authenticated
-      - tool_daemon_ready
-      - python_module_available
-
-  - path: core/composite.yaml
-    category: core/composite
-    description: Logical composition (AND, OR, NOR, XOR)
-    types:
-      - all_of
-      - any_of
-      - none_of
-      - xor_of
-
-  - path: core/expression.yaml
-    category: core/expression
-    description: Arbitrary expression evaluation
-    types:
-      - evaluate_expression
-
-  - path: core/logging.yaml
-    category: core/logging
-    description: Logging lifecycle checks
-    types:
-      - log_initialized
-      - log_level_enabled
-      - log_finalized
-
-  # Extension preconditions (5 types)
-  - path: extensions/source.yaml
-    category: extensions/source
-    description: Source repository checks
-    types:
-      - source_exists
-      - source_cloned
-      - source_has_updates
-
-  - path: extensions/web.yaml
-    category: extensions/web
-    description: Web fetch result verification
-    types:
-      - fetch_succeeded
-      - fetch_returned_content
-
-  - path: extensions/network.yaml
-    category: extensions/network
-    description: Network connectivity checks
-    types:
-      - network_available
+schema_version: "2.0"
+definition_file: preconditions.yaml
 
 # Remote extension definitions (public URLs)
 # Users can add custom preconditions from external sources
@@ -90,67 +10,197 @@ remote_sources:
   # Example: Custom CI/CD preconditions
   # - url: https://raw.githubusercontent.com/hiivmind/blueprint-ci/main/preconditions.yaml
   #   types: [pipeline_passed, artifact_exists, deployment_ready]
-  #
-  # Example: Database preconditions
-  # - url: https://hiivmind.dev/preconditions/database.yaml
-  #   types: [connection_available, schema_current]
 
-# Quick lookup table (type -> source file)
-# Auto-maintained: maps each precondition type to its definition file
-type_lookup:
-  # Core - Filesystem (5)
-  config_exists: core/filesystem.yaml
-  index_exists: core/filesystem.yaml
-  index_is_placeholder: core/filesystem.yaml
-  file_exists: core/filesystem.yaml
-  directory_exists: core/filesystem.yaml
+types:
+  # ==========================================================================
+  # Core - Composite (4 types)
+  # ==========================================================================
+  all_of:
+    category: core/composite
+    brief: All nested conditions must be true (AND)
+    required_params: [conditions]
 
-  # Core - State (8)
-  flag_set: core/state.yaml
-  flag_not_set: core/state.yaml
-  state_equals: core/state.yaml
-  state_not_null: core/state.yaml
-  state_is_null: core/state.yaml
-  count_equals: core/state.yaml
-  count_above: core/state.yaml
-  count_below: core/state.yaml
+  any_of:
+    category: core/composite
+    brief: At least one condition must be true (OR)
+    required_params: [conditions]
 
-  # Core - Tool (5)
-  tool_available: core/tool.yaml
-  tool_version_gte: core/tool.yaml
-  tool_authenticated: core/tool.yaml
-  tool_daemon_ready: core/tool.yaml
-  python_module_available: core/tool.yaml
+  none_of:
+    category: core/composite
+    brief: No conditions may be true (NOR)
+    required_params: [conditions]
 
-  # Core - Composite (4)
-  all_of: core/composite.yaml
-  any_of: core/composite.yaml
-  none_of: core/composite.yaml
-  xor_of: core/composite.yaml
+  xor_of:
+    category: core/composite
+    brief: Exactly one condition must be true (XOR)
+    required_params: [conditions]
 
-  # Core - Expression (1)
-  evaluate_expression: core/expression.yaml
+  # ==========================================================================
+  # Core - Expression (1 type)
+  # ==========================================================================
+  evaluate_expression:
+    category: core/expression
+    brief: Evaluate arbitrary boolean expression
+    required_params: [expression]
 
-  # Core - Logging (3)
-  log_initialized: core/logging.yaml
-  log_level_enabled: core/logging.yaml
-  log_finalized: core/logging.yaml
+  # ==========================================================================
+  # Core - Filesystem (5 types)
+  # ==========================================================================
+  config_exists:
+    category: core/filesystems
+    brief: Check if corpus config.yaml exists
+    required_params: []
 
-  # Extensions - Source (3)
-  source_exists: extensions/source.yaml
-  source_cloned: extensions/source.yaml
-  source_has_updates: extensions/source.yaml
+  index_exists:
+    category: core/filesystems
+    brief: Check if corpus index.md exists
+    required_params: []
 
-  # Extensions - Web (2)
-  fetch_succeeded: extensions/web.yaml
-  fetch_returned_content: extensions/web.yaml
+  index_is_placeholder:
+    category: core/filesystems
+    brief: Check if index contains placeholder text
+    required_params: []
 
-  # Extensions - Network (1)
-  network_available: extensions/network.yaml
+  file_exists:
+    category: core/filesystems
+    brief: Check if arbitrary file exists
+    required_params: [path]
+
+  directory_exists:
+    category: core/filesystems
+    brief: Check if directory exists
+    required_params: [path]
+
+  # ==========================================================================
+  # Core - Logging (3 types)
+  # ==========================================================================
+  log_initialized:
+    category: core/logging
+    brief: Check if logging has been initialized
+    required_params: []
+
+  log_level_enabled:
+    category: core/logging
+    brief: Check if log level allows specific threshold
+    required_params: [level]
+
+  log_finalized:
+    category: core/logging
+    brief: Check if logging has been finalized
+    required_params: []
+
+  # ==========================================================================
+  # Core - State (8 types)
+  # ==========================================================================
+  flag_set:
+    category: core/state
+    brief: Check if a boolean flag is true
+    required_params: [flag]
+
+  flag_not_set:
+    category: core/state
+    brief: Check if a boolean flag is false or undefined
+    required_params: [flag]
+
+  state_equals:
+    category: core/state
+    brief: Check if state field equals specific value
+    required_params: [field, value]
+
+  state_not_null:
+    category: core/state
+    brief: Check if state field has a value
+    required_params: [field]
+
+  state_is_null:
+    category: core/state
+    brief: Check if state field is null or undefined
+    required_params: [field]
+
+  count_equals:
+    category: core/state
+    brief: Check if array length equals value
+    required_params: [field, count]
+
+  count_above:
+    category: core/state
+    brief: Check if array length exceeds threshold
+    required_params: [field, min]
+
+  count_below:
+    category: core/state
+    brief: Check if array length is below threshold
+    required_params: [field, max]
+
+  # ==========================================================================
+  # Core - Tools (5 types)
+  # ==========================================================================
+  tool_available:
+    category: core/tools
+    brief: Check if command-line tool is installed
+    required_params: [tool]
+
+  tool_version_gte:
+    category: core/tools
+    brief: Check if tool version meets minimum requirement
+    required_params: [tool, min_version]
+
+  tool_authenticated:
+    category: core/tools
+    brief: Check if tool requiring authentication is authenticated
+    required_params: [tool]
+
+  tool_daemon_ready:
+    category: core/tools
+    brief: Check if tool's required daemon is running
+    required_params: [tool]
+
+  python_module_available:
+    category: core/python
+    brief: Check if Python module is installed
+    required_params: [module]
+
+  # ==========================================================================
+  # Core - Network (1 type)
+  # ==========================================================================
+  network_available:
+    category: core/network
+    brief: Check if network access is available
+    required_params: []
+
+  # ==========================================================================
+  # Core - Git (3 types)
+  # ==========================================================================
+  source_exists:
+    category: core/git
+    brief: Check if source ID exists in config.yaml
+    required_params: [id]
+
+  source_cloned:
+    category: core/git
+    brief: Check if source has been cloned
+    required_params: [id]
+
+  source_has_updates:
+    category: core/git
+    brief: Check if git source has upstream changes
+    required_params: [id]
+
+  # ==========================================================================
+  # Core - Web Fetch (2 types)
+  # ==========================================================================
+  fetch_succeeded:
+    category: core/web_fetch
+    brief: Check if a previous web fetch succeeded
+    required_params: [from]
+
+  fetch_returned_content:
+    category: core/web_fetch
+    brief: Check if fetch returned non-empty content
+    required_params: [from]
 
 # Statistics
 stats:
   total_types: 32
-  core_types: 26
-  extension_types: 6
-  definition_files: 9
+  core_types: 32
+  extension_types: 0

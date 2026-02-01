@@ -1,0 +1,441 @@
+# Precondition Examples
+# Documentary usage patterns for precondition types
+#
+# These examples are for human reference, not automated testing.
+
+schema_version: "1.0"
+description: |
+  Example usage patterns for precondition types.
+  These are documentary snippets for workflow authors.
+
+examples:
+  # ==========================================================================
+  # core/composite - Logical combinators
+  # ==========================================================================
+  core/composite:
+    all_of:
+      - title: "All conditions must be true (AND)"
+        yaml: |
+          condition:
+            type: all_of
+            conditions:
+              - type: file_exists
+                path: "config.yaml"
+              - type: tool_available
+                tool: git
+              - type: tool_available
+                tool: yq
+        explanation: |
+          Evaluates to true only if ALL conditions are true.
+          Short-circuits on first false condition.
+
+      - title: "Nested composite conditions"
+        yaml: |
+          condition:
+            type: all_of
+            conditions:
+              - type: file_exists
+                path: "data/config.yaml"
+              - type: any_of
+                conditions:
+                  - type: tool_available
+                    tool: yq
+                  - type: python_module_available
+                    module: yaml
+        explanation: |
+          Composite conditions can be nested.
+          Config must exist AND at least one YAML processor available.
+
+    any_of:
+      - title: "At least one condition true (OR)"
+        yaml: |
+          condition:
+            type: any_of
+            conditions:
+              - type: tool_available
+                tool: yq
+              - type: tool_available
+                tool: jq
+              - type: python_module_available
+                module: yaml
+        explanation: |
+          Evaluates to true if ANY condition is true.
+          Short-circuits on first true condition.
+
+    none_of:
+      - title: "No conditions may be true (NOR)"
+        yaml: |
+          condition:
+            type: none_of
+            conditions:
+              - type: file_exists
+                path: ".lock"
+              - type: flag_set
+                flag: operation_in_progress
+        explanation: |
+          Evaluates to true only if NO conditions are true.
+          Useful for exclusion checks.
+
+    xor_of:
+      - title: "Exactly one condition must be true (XOR)"
+        yaml: |
+          condition:
+            type: xor_of
+            conditions:
+              - type: flag_set
+                flag: is_git_source
+              - type: flag_set
+                flag: is_local_source
+              - type: flag_set
+                flag: is_web_source
+        explanation: |
+          Evaluates to true if EXACTLY one condition is true.
+          Does not short-circuit - always evaluates all conditions.
+          Useful for mutually exclusive states.
+
+  # ==========================================================================
+  # core/expression - Arbitrary expression evaluation
+  # ==========================================================================
+  core/expression:
+    evaluate_expression:
+      - title: "Check array length"
+        yaml: |
+          condition:
+            type: evaluate_expression
+            expression: "len(computed.sources) > 0"
+        explanation: |
+          Evaluates arbitrary boolean expression.
+          Supports len(), contains(), startswith(), endswith().
+
+      - title: "Complex condition"
+        yaml: |
+          condition:
+            type: evaluate_expression
+            expression: "computed.file_count > 100 && source_type == 'git'"
+        explanation: |
+          Combine multiple checks with logical operators.
+
+      - title: "String matching"
+        yaml: |
+          condition:
+            type: evaluate_expression
+            expression: "startswith(computed.url, 'https://github.com')"
+        explanation: |
+          Use built-in string functions for matching.
+
+  # ==========================================================================
+  # core/filesystem - File and directory checks
+  # ==========================================================================
+  core/filesystem:
+    file_exists:
+      - title: "Check for config file"
+        yaml: |
+          condition:
+            type: file_exists
+            path: "data/config.yaml"
+        explanation: |
+          Evaluates to true if file exists at path.
+          Path supports ${} interpolation.
+
+      - title: "Check with interpolated path"
+        yaml: |
+          condition:
+            type: file_exists
+            path: "${computed.output_dir}/index.md"
+        explanation: |
+          Path can include interpolated state values.
+
+    directory_exists:
+      - title: "Check for source directory"
+        yaml: |
+          condition:
+            type: directory_exists
+            path: ".source/${computed.source_id}"
+        explanation: |
+          Evaluates to true if directory exists.
+          Returns false if path is a file.
+
+    config_exists:
+      - title: "Check for corpus config (convenience)"
+        yaml: |
+          condition:
+            type: config_exists
+        explanation: |
+          Convenience precondition for data/config.yaml.
+          No parameters needed.
+
+    index_exists:
+      - title: "Check for built index"
+        yaml: |
+          condition:
+            type: index_exists
+        explanation: |
+          Convenience precondition for data/index.md.
+          Used to check if build has been run.
+
+    index_is_placeholder:
+      - title: "Check if index needs building"
+        yaml: |
+          condition:
+            type: index_is_placeholder
+        explanation: |
+          True if index contains placeholder text.
+          Indicates corpus hasn't been built yet.
+
+  # ==========================================================================
+  # core/logging - Logging state checks
+  # ==========================================================================
+  core/logging:
+    log_initialized:
+      - title: "Check if logging is ready"
+        yaml: |
+          condition:
+            type: log_initialized
+        explanation: |
+          True if init_log has been called.
+          Required before log_node, log_event, etc.
+
+    log_level_enabled:
+      - title: "Check if debug logging enabled"
+        yaml: |
+          condition:
+            type: log_level_enabled
+            level: debug
+        explanation: |
+          True if current log level includes debug.
+          Level hierarchy: error < warn < info < debug < trace
+
+    log_finalized:
+      - title: "Check if log is complete"
+        yaml: |
+          condition:
+            type: log_finalized
+        explanation: |
+          True if finalize_log has been called.
+          Required before write_log.
+
+  # ==========================================================================
+  # core/state - State inspection
+  # ==========================================================================
+  core/state:
+    flag_set:
+      - title: "Check boolean flag"
+        yaml: |
+          condition:
+            type: flag_set
+            flag: config_loaded
+        explanation: |
+          True if state.flags[flag] is true.
+
+    flag_not_set:
+      - title: "Check flag is false or undefined"
+        yaml: |
+          condition:
+            type: flag_not_set
+            flag: error_occurred
+        explanation: |
+          True if flag is false, undefined, or null.
+          Inverse of flag_set.
+
+    state_equals:
+      - title: "Check state field value"
+        yaml: |
+          condition:
+            type: state_equals
+            field: source_type
+            value: git
+        explanation: |
+          True if field equals specified value.
+          Supports dot notation for nested fields.
+
+      - title: "Check nested field"
+        yaml: |
+          condition:
+            type: state_equals
+            field: computed.config.version
+            value: 2
+        explanation: |
+          Access nested fields with dot notation.
+
+    state_not_null:
+      - title: "Check field has value"
+        yaml: |
+          condition:
+            type: state_not_null
+            field: computed.repo_url
+        explanation: |
+          True for any non-null value including empty strings.
+
+    state_is_null:
+      - title: "Check field is empty"
+        yaml: |
+          condition:
+            type: state_is_null
+            field: computed.error
+        explanation: |
+          True if field is null or undefined.
+
+    count_equals:
+      - title: "Check array has exact length"
+        yaml: |
+          condition:
+            type: count_equals
+            field: computed.sources
+            count: 0
+        explanation: |
+          True if array length equals count.
+          Returns false if field is null or not an array.
+
+    count_above:
+      - title: "Check array has enough items"
+        yaml: |
+          condition:
+            type: count_above
+            field: computed.candidates
+            min: 1
+        explanation: |
+          True if array length > min (exclusive).
+
+    count_below:
+      - title: "Check array within limit"
+        yaml: |
+          condition:
+            type: count_below
+            field: computed.errors
+            max: 10
+        explanation: |
+          True if array length < max (exclusive).
+
+  # ==========================================================================
+  # core/tool - Tool availability
+  # ==========================================================================
+  core/tool:
+    tool_available:
+      - title: "Check for required tool"
+        yaml: |
+          condition:
+            type: tool_available
+            tool: git
+        explanation: |
+          True if tool is available in PATH.
+          Uses 'which' to check availability.
+
+    python_module_available:
+      - title: "Check for Python module"
+        yaml: |
+          condition:
+            type: python_module_available
+            module: yaml
+        explanation: |
+          True if Python module can be imported.
+          Uses python3 interpreter.
+
+    tool_version_gte:
+      - title: "Check tool version"
+        yaml: |
+          condition:
+            type: tool_version_gte
+            tool: git
+            min_version: "2.0"
+        explanation: |
+          True if installed version >= min_version.
+          Falls back to existence check if version unknown.
+
+    tool_authenticated:
+      - title: "Check for authenticated tool"
+        yaml: |
+          condition:
+            type: tool_authenticated
+            tool: gh
+        explanation: |
+          True if tool is available AND authenticated.
+          Returns true for tools that don't require auth.
+
+    tool_daemon_ready:
+      - title: "Check for running daemon"
+        yaml: |
+          condition:
+            type: tool_daemon_ready
+            tool: docker
+        explanation: |
+          True if daemon-based tool is ready.
+          Checks both availability and daemon status.
+
+  # ==========================================================================
+  # extensions/network - Network connectivity
+  # ==========================================================================
+  extensions/network:
+    network_available:
+      - title: "Check internet connectivity"
+        yaml: |
+          condition:
+            type: network_available
+        explanation: |
+          True if network is available.
+          Defaults to checking github.com.
+
+      - title: "Check specific endpoint"
+        yaml: |
+          condition:
+            type: network_available
+            target: "https://api.example.com/health"
+        explanation: |
+          Check connectivity to specific URL.
+          Uses 5 second timeout.
+
+  # ==========================================================================
+  # extensions/source - Source repository checks
+  # ==========================================================================
+  extensions/source:
+    source_exists:
+      - title: "Check if source is configured"
+        yaml: |
+          condition:
+            type: source_exists
+            id: "${computed.source_id}"
+        explanation: |
+          True if source ID exists in config.yaml.
+          Does not verify source is cloned.
+
+    source_cloned:
+      - title: "Check if source is cloned"
+        yaml: |
+          condition:
+            type: source_cloned
+            id: polars
+        explanation: |
+          True if .source/{id}/ directory exists.
+
+    source_has_updates:
+      - title: "Check for upstream changes"
+        yaml: |
+          condition:
+            type: source_has_updates
+            id: "${computed.source_id}"
+        explanation: |
+          True if git source has new remote commits.
+          Performs network operation (git fetch).
+
+  # ==========================================================================
+  # extensions/web - Web fetch result checks
+  # ==========================================================================
+  extensions/web:
+    fetch_succeeded:
+      - title: "Check previous fetch succeeded"
+        yaml: |
+          condition:
+            type: fetch_succeeded
+            from: computed.page_fetch
+        explanation: |
+          True if fetch result has 2xx status.
+          Checks result stored from web_fetch consequence.
+
+    fetch_returned_content:
+      - title: "Check fetch has content"
+        yaml: |
+          condition:
+            type: fetch_returned_content
+            from: computed.page_fetch
+        explanation: |
+          True if fetch result has non-empty content.
+          More specific than fetch_succeeded.

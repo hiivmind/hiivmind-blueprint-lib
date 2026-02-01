@@ -1,0 +1,2547 @@
+# Workflow Execution Traversal
+# Core loop for executing workflow nodes
+#
+# This file defines the abstract execution engine that the LLM interprets
+# directly. It is the authoritative source for workflow execution semantics.
+
+schema_version: "2.3"
+category: execution
+
+execution:
+  # ==========================================================================
+  # category: core/execution
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # traversal
+  # --------------------------------------------------------------------------
+
+  traversal:
+    description:
+      brief: Core workflow execution loop
+      detail: |
+        Executes workflows following a 3-phase model:
+        Phase 1: Initialize - Load workflow, types, state
+        Phase 2: Execute - Loop through nodes until ending
+        Phase 3: Complete - Finalize log, write output
+
+        This is an LLM-native execution model: the LLM interprets these patterns
+        directly, enabling extensibility through new type definitions rather than
+        engine modifications.
+      notes:
+        - Single entry point per workflow (start_node)
+        - Node dispatch based on node.type field
+        - State is shared and mutable throughout execution
+        - Supports both static and dynamic routing targets
+        - Logging auto-injection based on config flags
+
+    phases:
+      - id: initialize
+        description: |
+          Load workflow, resolve types, initialize state, check entry preconditions.
+          This phase runs once before the execution loop begins.
+        effect: |
+          FUNCTION initialize(workflow_path, plugin_root, runtime_flags):
+              # 1. Load workflow
+              workflow = parse_yaml(read_file(workflow_path))
+
+              # 2. Load type definitions (see resolution/type-loader.yaml)
+              types = load_types(workflow.definitions)
+
+              # 3. Load and resolve output config (unified logging+display)
+              # See schema/config/output-config.json for schema
+              output_config = load_output_config(workflow, plugin_root, runtime_flags)
+
+              # 4. Load prompts config (for multi-modal interface support)
+              prompts_config = load_prompts_config(workflow, runtime_flags)
+
+              # 5. Validate
+              validate_schema(workflow)
+              validate_types_exist(workflow, types)
+              validate_graph_connectivity(workflow)
+
+              # 6. Check entry preconditions
+              FOR each precondition IN workflow.entry_preconditions:
+                  result = evaluate_precondition(precondition, types)
+                  IF result == false:
+                      DISPLAY "Cannot start: {precondition.error_message or 'precondition failed'}"
+                      STOP
+
+              # 7. Initialize state (see execution/state.yaml for structure)
+              state = {
+                  workflow_name: workflow.name,
+                  workflow_version: workflow.version,
+                  current_node: workflow.start_node,
+                  previous_node: null,
+                  interface: detect_interface(),
+                  history: [],
+                  user_responses: {},
+                  computed: {},
+                  flags: copy(workflow.initial_state.flags or {}),
+                  checkpoints: {},
+                  output: output_config,           # Unified output config
+                  prompts: prompts_config,         # Multi-modal prompts config
+                  batch_buffer: [],                # Buffer for batched nodes
+                  log: null,
+                  ...workflow.initial_state  # Copy custom fields
+              }
+
+              # 8. Auto-inject init_log if enabled
+              IF output_config.log_enabled:
+                  execute_consequence({
+                      type: "init_log",
+                      workflow_name: workflow.name,
+                      log_level: output_config.level
+                  }, types, state)
+
+              RETURN { workflow, types, state }
+
+      - id: execute
+        description: |
+          Main execution loop. Processes nodes sequentially until an ending is reached.
+          Each iteration: get node, check for ending, dispatch, record history, route.
+
+          Supports multi-turn conversation via awaiting_input state:
+          - If awaiting_input is set, resume the waiting node with user input
+          - If node returns { awaiting_input: true }, pause execution for user response
+
+          Output integration (unified):
+          - Batches consecutive non-interactive nodes when batch_enabled
+          - Flushes batch on user_prompt nodes, visible output, or threshold
+          - Respects level for output detail (silent, quiet, normal, verbose, debug)
+        effect: |
+          FUNCTION execute(workflow, types, state):
+              LOOP:
+                  # Check for multi-turn resume (tabular mode user_prompt)
+                  IF state.awaiting_input:
+                      # Resume the waiting node with user's input
+                      state.awaiting_input.user_input = get_user_input()
+                      node = workflow.nodes[state.awaiting_input.node_id]
+                      state.current_node = state.awaiting_input.node_id
+                  ELSE:
+                      node = workflow.nodes[state.current_node]
+
+                  # Check for ending
+                  IF state.current_node IN workflow.endings:
+                      # Flush any remaining batched nodes before ending
+                      flush_batch(state.batch_buffer, state.output, state)
+                      ending = workflow.endings[state.current_node]
+                      GOTO Phase 3 (completion)
+
+                  # Check if this node should break the batch (user_prompt, visible output)
+                  IF should_flush_batch(node, state.output):
+                      flush_batch(state.batch_buffer, state.output, state)
+
+                  # Execute node based on type (see nodes/core/*.yaml)
+                  outcome = dispatch_node(node, types, state)
+
+                  # Handle awaiting_input (multi-turn pause)
+                  IF outcome.awaiting_input:
+                      # Node is waiting for user input - pause execution
+                      # state.awaiting_input already set by the node
+                      PAUSE execution
+                      RETURN  # Will resume on next conversation turn
+
+                  # Handle display output based on level and batching
+                  IF should_batch_node(node, state.output):
+                      # Add to batch buffer
+                      state.batch_buffer.append({
+                          id: state.current_node,
+                          outcome: outcome,
+                          routing_target: outcome.next_node,
+                          phase: infer_phase_name(state)
+                      })
+                      # Check if batch threshold reached
+                      IF state.batch_buffer.length >= state.output.batch_threshold:
+                          flush_batch(state.batch_buffer, state.output, state)
+                  ELSE:
+                      # Display node transition immediately
+                      display_node_execution(state.current_node, node, outcome, state.output)
+
+                  # Record in history
+                  state.history.append({
+                      node: state.current_node,
+                      outcome: outcome,
+                      timestamp: now()
+                  })
+
+                  # Auto-inject log_node if logging enabled
+                  IF state.output.log_enabled AND state.output.level IN ["normal", "verbose", "debug"]:
+                      execute_consequence({
+                          type: "log_node",
+                          node_id: state.current_node,
+                          outcome: outcome
+                      }, types, state)
+
+                  # Update position
+                  state.previous_node = state.current_node
+                  state.current_node = outcome.next_node
+
+              UNTIL ending
+
+      - id: complete
+        description: |
+          Finalization phase. Generates logs, displays results to user.
+          Runs once after the execution loop reaches an ending.
+        effect: |
+          FUNCTION complete(ending, state, types):
+              # Finalize and write log if logging enabled
+              IF state.output.log_enabled:
+                  execute_consequence({
+                      type: "finalize_log",
+                      status: ending.type,
+                      summary: ending.summary
+                  }, types, state)
+
+                  filename = interpolate_filename("{skill_name}-{timestamp}.{ext}", {
+                      skill_name: state.workflow_name,
+                      timestamp: now().format("YYYY-MM-DD_HH-mm-ss"),
+                      ext: state.output.log_format
+                  })
+                  execute_consequence({
+                      type: "write_log",
+                      path: "{state.output.log_location}/{filename}"
+                  }, types, state)
+
+              # Display result to user (unless display disabled)
+              IF state.output.display_enabled:
+                  message = interpolate(ending.message, state)
+                  icon = state.output.use_icons ? (ending.type == "success" ? "✓ " : "✗ ") : ""
+
+                  IF ending.type == "success":
+                      DISPLAY "{icon}{message}"
+                      IF ending.summary:
+                          FOR each key, value IN ending.summary:
+                              DISPLAY "  {key}: {interpolate(value, state)}"
+
+                  ELSE IF ending.type == "error":
+                      DISPLAY "{icon}Error: " + message
+                      IF ending.details:
+                          DISPLAY interpolate(ending.details, state)
+                      IF ending.recovery:
+                          DISPLAY "Try running: /{ending.recovery}"
+
+              # Emit CI annotations if enabled
+              IF state.output.ci_mode AND ending.type == "error":
+                  DISPLAY "::error::{ending.message}"
+
+              RETURN ending.type
+
+    dispatch:
+      description: |
+        Node type dispatch. Routes to the appropriate node executor based on type.
+        Each node type has its own execution semantics defined in nodes/core/*.yaml.
+      effect: |
+        FUNCTION dispatch_node(node, types, state):
+            # Dispatch based on node.type
+            # See nodes/core/*.yaml for individual node execution semantics
+            SWITCH node.type:
+                CASE "action":
+                    RETURN execute_action_node(node, types, state)
+                CASE "conditional":
+                    RETURN execute_conditional_node(node, types, state)
+                CASE "user_prompt":
+                    RETURN execute_user_prompt_node(node, types, state)
+                CASE "validation_gate":
+                    # DEPRECATED: Use conditional with audit.enabled
+                    RETURN execute_validation_gate_node(node, types, state)
+                CASE "reference":
+                    RETURN execute_reference_node(node, types, state)
+                DEFAULT:
+                    THROW "Unknown node type: {node.type}"
+
+    interface_detection:
+      description: |
+        Detects the execution environment for multi-modal prompt dispatch.
+        Determines how user prompts are presented and responses collected.
+      effect: |
+        FUNCTION detect_interface():
+            # Detection priority: explicit config > context signals > tool availability
+
+            # 1. Check for explicit interface in prompts config
+            IF state.prompts?.interface AND state.prompts.interface != "auto":
+                RETURN state.prompts.interface
+
+            # 2. Check for agent context (spawned as sub-agent)
+            IF context.is_subagent AND NOT context.has_user_access:
+                RETURN "agent"
+
+            # 3. Check for API context (HTTP request)
+            IF context.is_api_request:
+                RETURN "api"
+
+            # 4. Check for Claude Code (AskUserQuestion tool available)
+            IF tool_available("AskUserQuestion"):
+                RETURN "claude_code"
+
+            # 5. Check for web context (Claude.ai or similar)
+            IF context.is_web_interface:
+                RETURN "web"
+
+            # 6. Fallback to web (conversational mode)
+            RETURN "web"
+
+    capabilities:
+      interface_modes:
+        - id: claude_code
+          description: Claude Code CLI with full tool access
+          prompt_mode: interactive
+          features:
+            - Structured prompts via AskUserQuestion tool
+            - Multi-select support
+            - File operations via tools
+            - Real-time feedback
+        - id: web
+          description: Web interfaces (Claude.ai, custom UIs)
+          prompt_mode: forms
+          features:
+            - Rich HTML forms and buttons
+            - Markdown table fallback
+            - Single response per turn
+            - User types or clicks responses
+        - id: api
+          description: Programmatic/HTTP API access
+          prompt_mode: structured
+          features:
+            - JSON request/response format
+            - Schema-validated input
+            - No interactive UI
+            - Batch processing support
+        - id: agent
+          description: Embedded sub-agent without user access
+          prompt_mode: autonomous
+          features:
+            - LLM evaluates options autonomously
+            - No user prompting
+            - Context-based selection
+            - Configurable selection strategies
+
+    benefits:
+      - name: Extensibility
+        description: New types require only definition files, not engine changes
+      - name: Self-describing
+        description: Type definitions fully specify behavior via pseudocode effects
+      - name: Natural handling
+        description: The LLM naturally handles interpolation, error recovery, tool calls
+      - name: Zero deployment
+        description: Updates to types or engine apply to all skills immediately
+
+    output_helpers:
+      description: |
+        Helper functions for output during workflow execution.
+        These functions are called by the execute phase to render display and log output.
+        Uses unified output config (state.output) with level-based behavior.
+
+      should_batch_node:
+        description: Determine if a node should be added to the batch buffer
+        effect: |
+          FUNCTION should_batch_node(node, output_config):
+              # Never batch if batching disabled
+              IF NOT output_config.batch_enabled:
+                  RETURN false
+
+              # Never batch at verbose+ levels (show all details)
+              IF output_config.level IN ["verbose", "debug"]:
+                  RETURN false
+
+              # Never batch in silent mode (no intermediate output)
+              IF output_config.level == "silent":
+                  RETURN false
+
+              # Never batch user_prompt nodes
+              IF node.type == "user_prompt":
+                  RETURN false
+
+              # Batch action and conditional nodes in quiet/normal modes
+              RETURN true
+
+      should_flush_batch:
+        description: Determine if the batch should be flushed before executing this node
+        effect: |
+          FUNCTION should_flush_batch(node, output_config):
+              # Always flush before user_prompt nodes
+              IF node.type == "user_prompt":
+                  RETURN true
+
+              # Flush if batch is at threshold
+              # (handled separately in execute loop)
+
+              RETURN false
+
+      flush_batch:
+        description: Render batched nodes and clear the buffer
+        effect: |
+          FUNCTION flush_batch(batch_buffer, output_config, state):
+              IF batch_buffer.length == 0:
+                  RETURN
+
+              # In silent mode, don't display batch summaries
+              IF output_config.level == "silent":
+                  batch_buffer.clear()
+                  RETURN
+
+              # If display disabled, skip visual output
+              IF NOT output_config.display_enabled:
+                  batch_buffer.clear()
+                  RETURN
+
+              # If below threshold, show individual transitions instead
+              IF batch_buffer.length < output_config.batch_threshold:
+                  FOR each entry IN batch_buffer:
+                      display_node_transition(entry.id, output_config)
+                  batch_buffer.clear()
+                  RETURN
+
+              # Display batch summary
+              last_entry = batch_buffer[batch_buffer.length - 1]
+              phase_name = last_entry.phase OR "Processing"
+              icon = output_config.use_icons ? "→ " : ""
+
+              DISPLAY "{phase_name}... [{batch_buffer.length} nodes] {icon}{last_entry.routing_target}"
+
+              batch_buffer.clear()
+
+      display_node_execution:
+        description: Display a node execution based on level
+        effect: |
+          FUNCTION display_node_execution(node_id, node, outcome, output_config):
+              # Skip if display disabled
+              IF NOT output_config.display_enabled:
+                  RETURN
+
+              # Silent mode: no output except prompts and final result
+              IF output_config.level == "silent":
+                  RETURN
+
+              # Quiet mode: handled by batching, individual nodes not shown
+              IF output_config.level == "quiet":
+                  RETURN
+
+              # Normal mode: show transitions
+              IF output_config.level == "normal":
+                  display_node_transition(node_id, output_config)
+                  RETURN
+
+              # Verbose mode: show details
+              IF output_config.level == "verbose":
+                  display_node_transition(node_id, output_config)
+                  IF node.type == "conditional":
+                      display_condition_details(node, outcome, output_config)
+                  RETURN
+
+              # Debug mode: show everything
+              IF output_config.level == "debug":
+                  display_node_transition(node_id, output_config)
+                  display_node_debug(node_id, node, outcome, output_config)
+
+      display_node_transition:
+        description: Display a simple node transition arrow
+        effect: |
+          FUNCTION display_node_transition(node_id, output_config):
+              icon = output_config.use_icons ? "→ " : ""
+              DISPLAY "{icon}{node_id}"
+
+      display_condition_details:
+        description: Display condition evaluation details (verbose mode)
+        effect: |
+          FUNCTION display_condition_details(node, outcome, output_config):
+              indent = "  "
+              DISPLAY "{indent}Condition: {node.condition.expression OR node.condition.type}"
+              DISPLAY "{indent}Result: {outcome.condition_result}"
+              branch = outcome.condition_result ? "on_true" : "on_false"
+              DISPLAY "{indent}Branch: {branch} → {outcome.next_node}"
+
+      display_node_debug:
+        description: Display full node debug information (debug mode)
+        effect: |
+          FUNCTION display_node_debug(node_id, node, outcome, output_config):
+              DISPLAY "[DEBUG] Node: {node_id} (type: {node.type})"
+              DISPLAY "[DEBUG]   Outcome: {JSON.stringify(outcome)}"
+
+      infer_phase_name:
+        description: Infer a human-readable phase name from state
+        effect: |
+          FUNCTION infer_phase_name(state):
+              # Use state.phase if available
+              IF state.phase:
+                  RETURN capitalize(state.phase)
+
+              # Otherwise infer from workflow position
+              IF state.history.length == 0:
+                  RETURN "Initializing"
+              ELSE:
+                  RETURN "Processing"
+
+      expand_batch_on_error:
+        description: Expand batch details when an error occurs
+        effect: |
+          FUNCTION expand_batch_on_error(batch_buffer, error_node_id, error, output_config):
+              DISPLAY "{batch_buffer[0].phase}... [{batch_buffer.length} nodes] ─ EXPANDED DUE TO ERROR:"
+              indent = "  "
+
+              FOR each entry IN batch_buffer:
+                  IF entry.id == error_node_id:
+                      DISPLAY "{indent}→ {entry.id}: FAILED"
+                      DISPLAY "{indent}  Error: {error.message}"
+                  ELSE:
+                      DISPLAY "{indent}→ {entry.id}: {entry.outcome.status OR 'passed'}"
+
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # preconditions
+  # --------------------------------------------------------------------------
+
+  # Precondition Dispatch
+  # Type-based precondition evaluation
+  #
+  # This file defines how preconditions are evaluated based on their
+  # type definitions from the TypeRegistry.
+
+  precondition_dispatch:
+    description:
+      brief: Type-based precondition evaluation
+      detail: |
+        Preconditions are boolean evaluations that don't modify state.
+        They are used in conditional nodes, validation gates, and entry checks
+        to determine workflow routing based on current state.
+
+        Each precondition has a type that maps to a definition in the TypeRegistry
+        (loaded from preconditions/core/*.yaml or extensions).
+      notes:
+        - Preconditions are pure evaluations (no side effects)
+        - Return boolean true/false
+        - Supports ${...} interpolation in parameters
+        - Composite preconditions (all_of, any_of, xor_of, none_of) combine multiple conditions
+
+    evaluation_algorithm:
+      description: Main evaluation function for preconditions
+      effect: |
+        FUNCTION evaluate_precondition(precondition, types, state):
+            # 1. Resolve type definition
+            type_def = types.preconditions[precondition.type]
+            IF type_def == null:
+                THROW "Unknown precondition type: {precondition.type}"
+
+            # 2. Interpolate parameters
+            params = interpolate_params(precondition, type_def, state)
+
+            # 3. Evaluate based on type
+            SWITCH precondition.type:
+                # === Filesystem ===
+                CASE "file_exists":
+                    RETURN file_exists(params.path)
+                CASE "directory_exists":
+                    RETURN directory_exists(params.path)
+                CASE "file_not_exists":
+                    RETURN NOT file_exists(params.path)
+                CASE "config_exists":
+                    RETURN file_exists("data/config.yaml")
+
+                # === State ===
+                CASE "flag_set":
+                    RETURN state.flags[params.flag] == true
+                CASE "flag_not_set":
+                    RETURN state.flags[params.flag] != true
+                CASE "state_equals":
+                    RETURN get_nested(state, params.field) == params.value
+                CASE "state_not_equals":
+                    RETURN get_nested(state, params.field) != params.value
+                CASE "state_not_null":
+                    RETURN get_nested(state, params.field) != null
+                CASE "state_is_null":
+                    RETURN get_nested(state, params.field) == null
+                CASE "state_not_empty":
+                    value = get_nested(state, params.field)
+                    RETURN value != null AND value != "" AND value.length > 0
+
+                # === Composite ===
+                CASE "all_of":
+                    FOR each cond IN params.conditions:
+                        IF NOT evaluate_precondition(cond, types, state):
+                            RETURN false
+                    RETURN true
+
+                CASE "any_of":
+                    FOR each cond IN params.conditions:
+                        IF evaluate_precondition(cond, types, state):
+                            RETURN true
+                    RETURN false
+
+                CASE "none_of":
+                    FOR each cond IN params.conditions:
+                        IF evaluate_precondition(cond, types, state):
+                            RETURN false
+                    RETURN true
+
+                CASE "xor_of":
+                    # Exactly one must be true (no short-circuit)
+                    true_count = 0
+                    FOR each cond IN params.conditions:
+                        IF evaluate_precondition(cond, types, state):
+                            true_count += 1
+                    RETURN true_count == 1
+
+                # === Expression ===
+                CASE "evaluate_expression":
+                    RETURN evaluate_expression(params.expression, state)
+
+                # === Tool ===
+                CASE "tool_available":
+                    RETURN check_tool_available(params.tool)
+
+                DEFAULT:
+                    # Fall back to type definition evaluation
+                    RETURN evaluate_from_definition(type_def, params, state)
+
+    type_categories:
+      - category: filesystem
+        description: Check file and directory existence
+        types:
+          - name: file_exists
+            description: True if file exists at path
+            parameters:
+              - name: path
+                type: string
+                required: true
+          - name: directory_exists
+            description: True if directory exists at path
+            parameters:
+              - name: path
+                type: string
+                required: true
+          - name: file_not_exists
+            description: True if file does NOT exist at path
+            parameters:
+              - name: path
+                type: string
+                required: true
+          - name: config_exists
+            description: True if data/config.yaml exists (convenience)
+            parameters: []
+
+      - category: state
+        description: Check state values and flags
+        types:
+          - name: flag_set
+            description: True if flag is set to true
+            parameters:
+              - name: flag
+                type: string
+                required: true
+          - name: flag_not_set
+            description: True if flag is not set or false
+            parameters:
+              - name: flag
+                type: string
+                required: true
+          - name: state_equals
+            description: True if state field equals value
+            parameters:
+              - name: field
+                type: string
+                required: true
+              - name: value
+                type: any
+                required: true
+          - name: state_not_null
+            description: True if state field is not null
+            parameters:
+              - name: field
+                type: string
+                required: true
+          - name: state_is_null
+            description: True if state field is null
+            parameters:
+              - name: field
+                type: string
+                required: true
+          - name: state_not_empty
+            description: True if state field is not null/empty/zero-length
+            parameters:
+              - name: field
+                type: string
+                required: true
+
+      - category: composite
+        description: Combine multiple preconditions with logical operators
+        types:
+          - name: all_of
+            description: True if ALL conditions are true (AND)
+            short_circuit: true
+            parameters:
+              - name: conditions
+                type: array
+                items: precondition
+                required: true
+          - name: any_of
+            description: True if ANY condition is true (OR)
+            short_circuit: true
+            parameters:
+              - name: conditions
+                type: array
+                items: precondition
+                required: true
+          - name: none_of
+            description: True if NO conditions are true (NOR)
+            short_circuit: true
+            parameters:
+              - name: conditions
+                type: array
+                items: precondition
+                required: true
+          - name: xor_of
+            description: True if EXACTLY ONE condition is true (XOR)
+            short_circuit: false
+            parameters:
+              - name: conditions
+                type: array
+                items: precondition
+                required: true
+
+      - category: expression
+        description: Evaluate arbitrary expressions
+        types:
+          - name: evaluate_expression
+            description: Evaluate expression as boolean
+            parameters:
+              - name: expression
+                type: string
+                required: true
+                description: Expression string to evaluate (e.g., "len(computed.sources) > 0")
+
+      - category: tool
+        description: Check tool availability
+        types:
+          - name: tool_available
+            description: True if tool is available in environment
+            parameters:
+              - name: tool
+                type: string
+                required: true
+
+    fallback_evaluation:
+      description: |
+        For types not hardcoded in the dispatch, evaluate using the
+        type definition's evaluation field.
+      effect: |
+        FUNCTION evaluate_from_definition(type_def, params, state):
+            # The type definition contains evaluation instructions
+            # that the LLM interprets directly
+            evaluation = type_def.evaluation
+
+            IF evaluation.effect:
+                # Apply the evaluation effect
+                RETURN apply_evaluation(evaluation.effect, params, state)
+
+            THROW "Type {type_def.type} has no evaluation defined"
+
+    audit_mode:
+      description: |
+        When used with conditional nodes in audit mode, preconditions are
+        evaluated without short-circuiting to collect all results.
+      behavior:
+        - All conditions are evaluated regardless of intermediate results
+        - Results are collected with pass/fail status
+        - Error messages from audit.messages are attached to failures
+        - Final result depends on composite type (all_of, any_of, xor_of)
+
+      effect: |
+        # Called from conditional node when audit.enabled = true
+        FUNCTION evaluate_with_audit(condition, type_def, state, audit_config):
+            conditions = get_nested_conditions(condition)
+            results = []
+
+            FOR index, cond IN enumerate(conditions):
+                result = evaluate_precondition(cond, types, state)
+
+                entry = {
+                    index: index,
+                    condition: cond,
+                    passed: result
+                }
+
+                IF NOT result AND audit_config.messages[cond.type]:
+                    entry.message = audit_config.messages[cond.type]
+
+                results.append(entry)
+
+            RETURN {
+                results: results,
+                passed_count: count(results, r => r.passed),
+                failed_count: count(results, r => NOT r.passed),
+                total: results.length
+            }
+
+        FUNCTION get_nested_conditions(condition):
+            # For composite preconditions, return the nested conditions array
+            IF condition.type IN ["all_of", "any_of", "xor_of", "none_of"]:
+                RETURN condition.conditions
+            ELSE:
+                # Single condition - wrap in array for uniform processing
+                RETURN [condition]
+
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # consequences
+  # --------------------------------------------------------------------------
+
+  # Consequence Dispatch
+  # Type-based consequence execution
+  #
+  # This file defines how consequences are dispatched and executed based on
+  # their type definitions from the TypeRegistry.
+
+  consequence_dispatch:
+    description:
+      brief: Type-based consequence execution
+      detail: |
+        Consequences are operations that modify state, call tools, compute values,
+        or produce side effects. Each consequence has a type that maps to a definition
+        in the TypeRegistry (loaded from consequences/core/*.yaml or extensions).
+
+        The dispatch algorithm resolves the type definition, checks requirements,
+        and routes to the appropriate handler based on payload.kind.
+      notes:
+        - Type definitions specify behavior via payload.effect
+        - Requirements are checked before execution
+        - Results can be stored in state.computed via store_as
+        - Supports ${...} interpolation in parameters
+
+    dispatch_algorithm:
+      description: Main dispatch function for consequence execution
+      effect: |
+        FUNCTION execute_consequence(consequence, types, state):
+            # 1. Resolve type definition
+            type_def = types.consequences[consequence.type]
+            IF type_def == null:
+                THROW "Unknown consequence type: {consequence.type}"
+
+            # 2. Check requirements
+            IF type_def.payload.requires:
+                check_requirements(type_def.payload.requires)
+
+            # 3. Dispatch based on payload.kind
+            SWITCH type_def.payload.kind:
+                CASE "state_mutation":
+                    execute_state_mutation(consequence, type_def, state)
+
+                CASE "computation":
+                    execute_computation(consequence, type_def, state)
+
+                CASE "tool_call":
+                    execute_tool_call(consequence, type_def, state)
+
+                CASE "composite":
+                    execute_composite(consequence, type_def, types, state)
+
+                CASE "side_effect":
+                    execute_side_effect(consequence, type_def, state)
+
+                DEFAULT:
+                    THROW "Unknown payload kind: {type_def.payload.kind}"
+
+    kinds:
+      - kind: state_mutation
+        description: |
+          Direct state modifications (set_flag, set_state, append_state, etc.)
+          These consequences modify the runtime state directly.
+        examples:
+          - set_flag
+          - set_state
+          - append_state
+          - clear_flag
+        effect: |
+          FUNCTION execute_state_mutation(consequence, type_def, state):
+              # Interpolate parameter values
+              params = interpolate_params(consequence, type_def, state)
+
+              # Apply effect to state
+              # The LLM interprets type_def.payload.effect and applies it
+              apply_effect(type_def.payload.effect, params, state)
+
+      - kind: computation
+        description: |
+          Expression evaluation and result storage (evaluate, compute)
+          These consequences evaluate expressions and optionally store results.
+        examples:
+          - evaluate
+          - compute
+          - parse_intent_flags
+          - match_3vl_rules
+        effect: |
+          FUNCTION execute_computation(consequence, type_def, state):
+              params = interpolate_params(consequence, type_def, state)
+
+              # Evaluate expression
+              result = evaluate_expression(params.expression, state)
+
+              # Store result
+              IF consequence.store_as:
+                  set_nested(state.computed, consequence.store_as, result)
+              IF consequence.set_flag:
+                  state.flags[consequence.set_flag] = result
+
+      - kind: tool_call
+        description: |
+          Execute a Claude Code tool (Bash, Read, Write, WebFetch, etc.)
+          These consequences map to actual tool invocations.
+        examples:
+          - clone_repo
+          - read_file
+          - write_file
+          - web_fetch
+          - run_command
+        effect: |
+          FUNCTION execute_tool_call(consequence, type_def, state):
+              params = interpolate_params(consequence, type_def, state)
+
+              # Check tool availability
+              IF NOT tool_available(type_def.payload.tool):
+                  # Try alternatives if defined
+                  FOR each alt IN type_def.payload.alternatives:
+                      IF evaluate_condition(alt.condition, state):
+                          CALL tool with alt.effect
+                          RETURN
+                  IF type_def.payload.alternatives.fallback:
+                      THROW type_def.payload.alternatives.fallback.error
+
+              # Build tool call from effect
+              tool_call = build_tool_call(type_def.payload.effect, params)
+
+              # Execute tool
+              result = CALL type_def.payload.tool with tool_call
+
+              # Store result if specified
+              IF consequence.store_as:
+                  set_nested(state.computed, consequence.store_as, result)
+
+      - kind: composite
+        description: |
+          Multiple sub-consequences executed in sequence.
+          Used for complex operations that combine multiple steps.
+        examples:
+          - add_source (combines multiple state and file operations)
+          - clone_and_verify (clone + checksum)
+        effect: |
+          FUNCTION execute_composite(consequence, type_def, types, state):
+              FOR each sub_consequence IN type_def.payload.consequences:
+                  execute_consequence(sub_consequence, types, state)
+
+      - kind: side_effect
+        description: |
+          Display or output without state mutation.
+          Used for user feedback and debugging.
+        examples:
+          - display_message
+          - display_table
+          - log_debug
+        effect: |
+          FUNCTION execute_side_effect(consequence, type_def, state):
+              params = interpolate_params(consequence, type_def, state)
+
+              SWITCH type_def.type:
+                  CASE "display_message":
+                      DISPLAY interpolate(params.message, state)
+                  CASE "display_table":
+                      DISPLAY render_table(params.data, params.columns)
+                  CASE "log_debug":
+                      LOG_DEBUG interpolate(params.message, state)
+
+    parameter_interpolation:
+      description: |
+        Consequence parameters are interpolated against state before execution.
+        This resolves ${...} references to actual values.
+      effect: |
+        FUNCTION interpolate_params(consequence, type_def, state):
+            params = {}
+
+            # Get parameter definitions from type
+            FOR each param_def IN type_def.parameters:
+                raw_value = consequence[param_def.name]
+
+                IF raw_value == null:
+                    IF param_def.required:
+                        THROW "Missing required parameter: {param_def.name}"
+                    ELSE IF param_def.default != null:
+                        raw_value = param_def.default
+                    ELSE:
+                        CONTINUE
+
+                # Interpolate string values
+                IF typeof(raw_value) == "string":
+                    params[param_def.name] = interpolate(raw_value, state)
+                ELSE IF typeof(raw_value) == "object":
+                    params[param_def.name] = deep_interpolate(raw_value, state)
+                ELSE:
+                    params[param_def.name] = raw_value
+
+            RETURN params
+
+        FUNCTION deep_interpolate(obj, state):
+            IF typeof(obj) == "string":
+                RETURN interpolate(obj, state)
+            IF typeof(obj) == "array":
+                RETURN obj.map(item => deep_interpolate(item, state))
+            IF typeof(obj) == "object":
+                result = {}
+                FOR each key, value IN obj:
+                    result[key] = deep_interpolate(value, state)
+                RETURN result
+            RETURN obj
+
+    requirements_check:
+      description: |
+        Some consequences require specific conditions to be met before execution.
+        Requirements are defined in type_def.payload.requires.
+      effect: |
+        FUNCTION check_requirements(requires):
+            FOR each req IN requires:
+                SWITCH req.type:
+                    CASE "tool":
+                        IF NOT tool_available(req.tool):
+                            THROW "Required tool not available: {req.tool}"
+                    CASE "interface":
+                        IF state.interface != req.interface:
+                            THROW "Requires {req.interface} interface"
+                    CASE "flag":
+                        IF NOT state.flags[req.flag]:
+                            THROW "Required flag not set: {req.flag}"
+
+    error_handling:
+      description: |
+        Consequence execution failures are caught and propagated to the node level.
+        The node's on_failure routing determines what happens next.
+
+      behavior:
+        - If a consequence fails, subsequent consequences in the same action node are skipped
+        - Error information is available for logging and display
+        - Checkpoints can be used to rollback state on failure
+
+      effect: |
+        # Error propagation in action node
+        FUNCTION execute_action_node(node, types, state):
+            TRY:
+                FOR each action IN node.actions:
+                    execute_consequence(action, types, state)
+                RETURN { success: true, next_node: node.on_success }
+            CATCH error:
+                IF node.checkpoint_rollback:
+                    rollback_checkpoint(node.checkpoint_rollback, state)
+                RETURN { success: false, next_node: node.on_failure, error: error }
+
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # state
+  # --------------------------------------------------------------------------
+
+  # Workflow State Management
+  # Runtime state structure and variable interpolation
+  #
+  # This file defines the state model that workflows use during execution.
+  # It is the authoritative source for state structure and interpolation semantics.
+
+  state:
+    description:
+      brief: Runtime state structure and variable interpolation
+      detail: |
+        Workflows maintain a runtime state object that tracks execution progress,
+        stores computed values, records user responses, and enables rollback via
+        checkpoints. State is mutable and shared across the entire workflow execution.
+
+        Variable interpolation uses ${...} syntax to reference state values within
+        workflow YAML. This enables dynamic behavior while maintaining declarative structure.
+      notes:
+        - State is initialized from workflow.initial_state
+        - State persists across conversation turns
+        - Checkpoints enable rollback on failure
+        - Variable interpolation supports nested paths
+
+    structure:
+      description: |
+        Complete runtime state structure. Fields are categorized by purpose.
+      example: |
+        state:
+          # Identity (from workflow)
+          workflow_name: "add-source"
+          workflow_version: "1.0.0"
+
+          # Position (execution tracking)
+          current_node: "ask_source_type"
+          previous_node: "check_url_provided"
+
+          # Runtime detection
+          interface: "claude_code"  # or "claude_ai"
+
+          # Logging (resolved from 4-tier hierarchy)
+          logging:
+            enabled: true
+            level: "info"
+            auto:
+              init: true
+              finalize: true
+              write: true
+              node_tracking: true
+
+          # Log session (created by init_log)
+          log:
+            workflow: "add-source"
+            level: "info"
+            entries: []
+            started_at: "2026-01-28T10:30:00Z"
+
+          # Execution history
+          history:
+            - node: "locate_corpus"
+              outcome: { success: true }
+              timestamp: "2026-01-27T10:30:00Z"
+            - node: "check_url_provided"
+              outcome: { branch: "false" }
+              timestamp: "2026-01-27T10:30:01Z"
+
+          # User interaction results
+          user_responses:
+            ask_source_type:
+              handler_id: "git"
+              raw: { selected: "Git repository" }
+
+          # Computed values from consequences
+          computed:
+            config:
+              schema_version: 2
+              corpus: { name: "polars" }
+              sources: []
+            source_id: "polars"
+            repo_url: "https://github.com/pola-rs/polars"
+
+          # Boolean routing flags
+          flags:
+            config_found: true
+            manifest_detected: false
+            is_first_source: true
+
+          # Rollback snapshots
+          checkpoints:
+            before_clone:
+              current_node: "execute_clone"
+              flags: { ... }
+              computed: { ... }
+
+          # Prompts configuration (from initial_state or defaults)
+          prompts:
+            mode: "interactive"        # or "tabular"
+            tabular:
+              match_strategy: "prefix"
+              other_handler: "prompt"
+
+          # Multi-turn conversation state (for tabular mode)
+          awaiting_input: null         # or { node_id: "select_format", type: "tabular" }
+
+          # Custom fields from initial_state
+          phase: "setup"
+          source_type: "git"
+
+      fields:
+        identity:
+          - name: workflow_name
+            type: string
+            description: Name from workflow.yaml
+            source: workflow.name
+          - name: workflow_version
+            type: string
+            description: Version from workflow.yaml
+            source: workflow.version
+
+        position:
+          - name: current_node
+            type: string
+            description: Node currently being executed
+            source: workflow.start_node (initial)
+          - name: previous_node
+            type: string
+            description: Last executed node
+            source: Updated after each node
+
+        runtime:
+          - name: interface
+            type: string
+            enum: ["claude_code", "claude_ai"]
+            description: Detected interface environment
+            source: detect_interface() at initialization
+
+          - name: awaiting_input
+            type: object
+            description: |
+              Tracks multi-turn conversation state for tabular mode user prompts.
+              Set when a user_prompt node in tabular mode displays options and awaits
+              user text response. Cleared when the response is processed.
+            properties:
+              node_id:
+                {
+                  type: string,
+                  description: "The user_prompt node awaiting input",
+                }
+              type:
+                {
+                  type: string,
+                  enum: ["tabular"],
+                  description: "The prompt type",
+                }
+              user_input:
+                {
+                  type: string,
+                  description: "User's text response (set on resume)",
+                }
+            source: Set by user_prompt node in tabular mode
+
+          - name: prompts
+            type: object
+            description: |
+              Resolved prompts configuration for user_prompt node execution.
+              Configured via initial_state.prompts in workflow.yaml.
+            properties:
+              mode:
+                {
+                  type: string,
+                  enum: ["interactive", "tabular"],
+                  default: "interactive",
+                }
+              tabular: { type: object, description: "Tabular mode settings" }
+            source: workflow.initial_state.prompts (defaults applied if omitted)
+
+        logging:
+          - name: logging
+            type: object
+            description: Resolved logging configuration (4-tier hierarchy)
+            source: load_logging_config()
+          - name: log
+            type: object
+            description: Log session, created by init_log consequence
+            source: null until init_log executes
+
+        history:
+          - name: history
+            type: array
+            items:
+              type: object
+              properties:
+                node: { type: string }
+                outcome: { type: object }
+                timestamp: { type: string, format: datetime }
+            description: Array of executed node records
+
+        user_responses:
+          - name: user_responses
+            type: object
+            description: Results from user_prompt nodes, keyed by node name
+            additionalProperties:
+              type: object
+              properties:
+                handler_id: { type: string }
+                raw: { type: object }
+
+        computed:
+          - name: computed
+            type: object
+            description: Results from action consequences (store_as targets)
+            additionalProperties: true
+
+        flags:
+          - name: flags
+            type: object
+            description: Boolean values for routing decisions
+            additionalProperties:
+              type: boolean
+
+        checkpoints:
+          - name: checkpoints
+            type: object
+            description: Named state snapshots for rollback
+            additionalProperties:
+              type: object
+
+    interpolation:
+      description: |
+        Variable interpolation replaces ${...} patterns with values from state.
+        Supports nested paths using dot notation and array access.
+      patterns:
+        - pattern: "${field}"
+          description: Top-level state field
+          example: "${source_type}"
+        - pattern: "${computed.field}"
+          description: Computed value
+          example: "${computed.repo_url}"
+        - pattern: "${flags.flag}"
+          description: Boolean flag
+          example: "${flags.config_found}"
+        - pattern: "${user_responses.node.field}"
+          description: User response field
+          example: "${user_responses.ask_type.handler_id}"
+        - pattern: "${computed.nested.path}"
+          description: Nested computed value
+          example: "${computed.config.corpus.name}"
+        - pattern: "${computed.array[0]}"
+          description: Array index access
+          example: "${computed.sources[0].id}"
+        - pattern: "${history[-1].node}"
+          description: Negative index (last element)
+          example: "${history[-1].outcome}"
+
+      effect: |
+        FUNCTION interpolate(template, state):
+            # Replace ${...} patterns with values from state
+            FOR each match IN template.match_all(/\$\{([^}]+)\}/):
+                path = match.group(1)
+                value = resolve_path(state, path)
+                IF value == null:
+                    THROW "Unresolved variable: ${path}"
+                template = template.replace(match.full, to_string(value))
+            RETURN template
+
+        FUNCTION resolve_path(state, path):
+            # Resolution order:
+            # 1. computed.{name}
+            # 2. flags.{name}
+            # 3. user_responses.{name}
+            # 4. top-level state.{field}
+
+            IF path.startsWith("computed."):
+                RETURN get_nested(state.computed, path.substring(9))
+            IF path.startsWith("flags."):
+                RETURN state.flags[path.substring(6)]
+            IF path.startsWith("user_responses."):
+                RETURN get_nested(state.user_responses, path.substring(15))
+            RETURN get_nested(state, path)
+
+        FUNCTION get_nested(obj, path):
+            parts = parse_path(path)  # Handles dots and brackets
+            current = obj
+            FOR each part IN parts:
+                IF current == null:
+                    RETURN null
+                IF part.is_array_index:
+                    index = part.index
+                    IF index < 0:
+                        index = current.length + index
+                    current = current[index]
+                ELSE:
+                    current = current[part.key]
+            RETURN current
+
+    dynamic_routing:
+      description: |
+        Routing targets (on_success, on_failure, branches.*, next_node) support
+        variable interpolation, enabling dynamic routing based on computed state.
+
+        Static targets are validated at load time; dynamic targets containing ${...}
+        are validated at runtime when the value is resolved.
+      effect: |
+        FUNCTION resolve_routing_target(target, state):
+            # If target contains ${...}, interpolate it
+            IF target.includes("${"):
+                resolved = interpolate(target, state)
+                IF resolved == null OR resolved == "":
+                    THROW "Dynamic routing target resolved to null/empty: {target}"
+                RETURN resolved
+            ELSE:
+                # Static target - return as-is
+                RETURN target
+
+      patterns:
+        - name: Dynamic action routing
+          description: Route based on computed action result
+          example: |
+            execute_matched_intent:
+              type: action
+              actions:
+                - type: dynamic_route
+                  action: "${computed.intent_matches.winner.action}"
+              on_success: "${computed.dynamic_target}"  # Interpolated!
+              on_failure: show_main_menu
+
+        - name: Conditional dynamic branch
+          description: Route based on computed destination
+          example: |
+            route_by_type:
+              type: conditional
+              condition:
+                type: state_not_null
+                field: computed.next_destination
+              branches:
+                on_true: "${computed.next_destination}"  # Interpolated!
+                on_false: default_handler
+
+    checkpoint_operations:
+      description: |
+        Checkpoints enable state snapshots for rollback on failure.
+        Useful for operations that may fail and leave partial state.
+      effect: |
+        FUNCTION create_checkpoint(name, state):
+            # Create deep copy of current state
+            state.checkpoints[name] = deep_copy(state)
+
+        FUNCTION rollback_checkpoint(name, state):
+            IF name NOT IN state.checkpoints:
+                THROW "Checkpoint not found: {name}"
+
+            checkpoint = state.checkpoints[name]
+
+            # Restore all state except checkpoints themselves
+            state.current_node = checkpoint.current_node
+            state.previous_node = checkpoint.previous_node
+            state.computed = checkpoint.computed
+            state.flags = checkpoint.flags
+            state.user_responses = checkpoint.user_responses
+            state.history = checkpoint.history
+            # ... other fields
+
+      usage:
+        - title: Creating a checkpoint before risky operation
+          yaml: |
+            prepare_clone:
+              type: action
+              actions:
+                - type: create_checkpoint
+                  name: "before_clone"
+              on_success: execute_clone
+              on_failure: error_checkpoint
+
+        - title: Rollback on failure
+          yaml: |
+            execute_clone:
+              type: action
+              actions:
+                - type: clone_repo
+                  url: "${computed.repo_url}"
+                  path: ".source/${computed.source_id}"
+              on_success: verify_clone
+              on_failure: handle_clone_failure
+
+            handle_clone_failure:
+              type: action
+              actions:
+                - type: rollback_checkpoint
+                  name: "before_clone"
+                - type: display_message
+                  message: "Clone failed, state restored"
+              on_success: ask_retry
+              on_failure: error_rollback
+
+    state_access_patterns:
+      description: Common patterns for reading and writing state
+
+      reading:
+        - pattern: "Dot notation for nested fields"
+          example: "computed.config.corpus.name"
+        - pattern: "Array access with brackets"
+          example: "computed.config.sources[0].id"
+        - pattern: "Negative index for last element"
+          example: "history[-1].node"
+
+      writing:
+        - pattern: "set_state consequence"
+          example: |
+            - type: set_state
+              field: source_type
+              value: git
+        - pattern: "set_flag consequence"
+          example: |
+            - type: set_flag
+              flag: config_found
+              value: true
+        - pattern: "store_as on consequence"
+          example: |
+            - type: read_file
+              path: "config.yaml"
+              store_as: config
+        - pattern: "evaluate with set_flag"
+          example: |
+            - type: evaluate
+              expression: "len(computed.sources) == 0"
+              set_flag: is_first_source
+
+    state_lifecycle:
+      description: State lifecycle throughout workflow execution
+
+      phases:
+        - phase: Initialization
+          steps:
+            - Load workflow.yaml
+            - Create empty state structure
+            - Copy workflow.initial_state fields
+            - Copy workflow.initial_state.flags
+            - Set current_node = workflow.start_node
+            - Detect interface
+
+        - phase: During Execution
+          steps:
+            - Execute node (may modify computed, flags, user_responses)
+            - Append to history
+            - Update previous_node, current_node
+
+        - phase: On Error
+          steps:
+            - State may be partially modified
+            - If checkpoint exists, can rollback
+            - Route to on_failure node
+
+        - phase: On Completion
+          steps:
+            - State is final
+            - History contains full execution path
+            - Summary can reference final computed values
+
+    state_persistence:
+      description: |
+        State exists in conversation context and persists across turns.
+        This enables multi-turn workflows with user interaction.
+      example: |
+        Turn 1:
+          User invokes skill
+          → Initialize state
+          → Execute nodes until user_prompt
+          → Present AskUserQuestion
+          → State persists...
+
+        Turn 2:
+          User responds
+          → Resume from user_prompt node
+          → Store response in state.user_responses
+          → Continue execution
+          → State persists...
+
+        Turn N:
+          Workflow reaches ending
+          → Display result
+          → State complete
+
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # output
+  # --------------------------------------------------------------------------
+  # Unified Output Configuration
+  # Consolidates logging (file output) and display (terminal output)
+  #
+  # This section replaces the separate logging and display configurations
+  # with a unified 2-tier system: hardcoded defaults → skill config → runtime flags
+
+  output:
+    description:
+      brief: Unified output configuration (logging + display)
+      detail: |
+        Output configuration controls both terminal display and file logging.
+        This consolidates the previous separate logging and display configs
+        into a single unified configuration with simplified settings.
+
+        Reduces 4-tier hierarchy to 2-tier:
+        - Hardcoded defaults (no remote fetch latency)
+        - Skill config (workflow.initial_state.output)
+        - Runtime flags (--verbose, --quiet, etc.)
+
+        Reduces 46+ settings to 12 core settings controlled by unified level.
+      notes:
+        - Single 'level' controls both display verbosity and log capture
+        - Separate enable flags for display and logging
+        - Simplified runtime flags (6 instead of 14+)
+        - CI mode for GitHub Actions integration
+      schema: schema/config/output-config.json
+      since: "2.4.0"
+
+    loading_algorithm:
+      description: Load and resolve output configuration
+      effect: |
+        FUNCTION load_output_config(workflow, plugin_root, runtime_flags):
+            # Start with hardcoded defaults (no remote fetch)
+            config = {
+                level: "normal",
+                display_enabled: true,
+                batch_enabled: true,
+                batch_threshold: 3,
+                use_icons: true,
+                log_enabled: true,
+                log_format: "yaml",
+                log_location: ".logs/",
+                ci_mode: false
+            }
+
+            # Override with skill config (workflow.initial_state.output)
+            IF workflow.initial_state.output:
+                config = merge(config, workflow.initial_state.output)
+
+            # Override with runtime flags (highest priority)
+            IF runtime_flags.verbose OR runtime_flags.v:
+                config.level = "verbose"
+            IF runtime_flags.quiet OR runtime_flags.q:
+                config.level = "quiet"
+            IF runtime_flags.debug:
+                config.level = "debug"
+            IF runtime_flags.no_log:
+                config.log_enabled = false
+            IF runtime_flags.no_display:
+                config.display_enabled = false
+            IF runtime_flags.ci:
+                config.ci_mode = true
+
+            RETURN config
+
+    level_behavior:
+      description: |
+        Unified level controls both display and logging behavior.
+        Each level includes all behavior from lower levels.
+
+      levels:
+        - level: silent
+          display_shows:
+            - User prompts (always shown)
+            - Final result (always shown)
+          log_captures:
+            - Errors only
+          use_case: Production embedded workflows
+
+        - level: quiet
+          display_shows:
+            - User prompts
+            - Final result
+            - Batch summaries
+          log_captures:
+            - Errors
+            - Warnings
+          use_case: Normal user-facing operation
+
+        - level: normal
+          display_shows:
+            - User prompts
+            - Final result
+            - Batch summaries
+            - Node transitions
+          log_captures:
+            - Errors
+            - Warnings
+            - Info
+          use_case: Development and troubleshooting
+          default: true
+
+        - level: verbose
+          display_shows:
+            - User prompts
+            - Final result
+            - All node details (no batching)
+            - Condition evaluations
+            - Branch decisions
+          log_captures:
+            - Errors
+            - Warnings
+            - Info
+            - Debug
+          use_case: Debugging workflow logic
+
+        - level: debug
+          display_shows:
+            - Everything from verbose
+            - Full state dumps
+            - Interpolation steps
+            - Type resolution
+          log_captures:
+            - Everything (trace level)
+          use_case: Deep debugging of engine behavior
+
+    runtime_flags:
+      description: Simplified command-line flags (6 instead of 14+)
+      mappings:
+        - flag: "--verbose, -v"
+          maps_to: "output.level: verbose"
+        - flag: "--quiet, -q"
+          maps_to: "output.level: quiet"
+        - flag: "--debug"
+          maps_to: "output.level: debug"
+        - flag: "--no-log"
+          maps_to: "output.log_enabled: false"
+        - flag: "--no-display"
+          maps_to: "output.display_enabled: false"
+        - flag: "--ci"
+          maps_to: "output.ci_mode: true"
+
+    migration:
+      description: |
+        For backwards compatibility, the engine checks for legacy
+        logging/display configs and converts them to output config.
+      effect: |
+        FUNCTION migrate_legacy_config(workflow):
+            # Check for legacy configs
+            IF workflow.initial_state.logging OR workflow.initial_state.display:
+                # Convert to unified output config
+                output = {}
+
+                # Map logging level to unified level
+                IF workflow.initial_state.logging?.level:
+                    output.level = map_log_level(workflow.initial_state.logging.level)
+
+                # Map display verbosity to unified level
+                IF workflow.initial_state.display?.verbosity:
+                    output.level = workflow.initial_state.display.verbosity
+
+                # Map logging.enabled
+                IF workflow.initial_state.logging?.enabled != null:
+                    output.log_enabled = workflow.initial_state.logging.enabled
+
+                # Map display.enabled
+                IF workflow.initial_state.display?.enabled != null:
+                    output.display_enabled = workflow.initial_state.display.enabled
+
+                # Map batch settings
+                IF workflow.initial_state.display?.batch:
+                    output.batch_enabled = workflow.initial_state.display.batch.enabled
+                    output.batch_threshold = workflow.initial_state.display.batch.threshold
+
+                # Map output settings
+                IF workflow.initial_state.logging?.output:
+                    output.log_format = workflow.initial_state.logging.output.format
+                    output.log_location = workflow.initial_state.logging.output.location
+
+                # Map CI settings
+                IF workflow.initial_state.logging?.ci?.format == "github":
+                    output.ci_mode = true
+
+                RETURN output
+
+            RETURN null
+
+        FUNCTION map_log_level(log_level):
+            # Map old log levels to unified levels
+            SWITCH log_level:
+                CASE "error": RETURN "silent"
+                CASE "warn": RETURN "quiet"
+                CASE "info": RETURN "normal"
+                CASE "debug": RETURN "verbose"
+                CASE "trace": RETURN "debug"
+                DEFAULT: RETURN "normal"
+
+    since: "2.4.0"
+
+  # --------------------------------------------------------------------------
+  # display (DEPRECATED - use output instead)
+  # --------------------------------------------------------------------------
+  # Display Configuration Loader
+  # DEPRECATED: This section is preserved for backwards compatibility.
+  # New workflows should use the unified 'output' configuration instead.
+  # See execution.output for the replacement.
+  #
+  # Migration: display.verbosity → output.level
+  #            display.batch.enabled → output.batch_enabled
+  #            display.format.use_icons → output.use_icons
+  display:
+    deprecated: true
+    deprecated_since: "2.4.0"
+    replacement: output
+    description:
+      brief: 4-tier display configuration resolution
+      detail: |
+        Display configuration controls real-time terminal output during workflow execution.
+        This is distinct from logging which writes to files. Display determines what the
+        user sees in the terminal as the workflow runs.
+
+        Configuration can be specified at multiple levels, with higher-priority
+        levels overriding lower ones. This enables framework defaults, plugin-wide settings,
+        skill-specific overrides, and runtime control.
+      notes:
+        - Runtime flags have highest priority
+        - Skill-specific config overrides plugin defaults
+        - Plugin defaults override framework defaults
+        - Framework defaults are always fetched (with hardcoded fallback)
+        - Batch mode collapses non-interactive nodes into summary lines
+
+    priority_hierarchy:
+      description: |
+        Configuration is resolved from lowest to highest priority.
+        Higher priority values override lower ones during deep merge.
+      tiers:
+        - tier: 4
+          name: Framework defaults
+          source: Remote lib (definitions.source) or hardcoded fallback
+          priority: lowest
+          description: Base defaults for all workflows
+
+        - tier: 3
+          name: Plugin config
+          source: .hiivmind/blueprint/display.yaml
+          priority: low
+          description: Plugin-wide defaults
+
+        - tier: 2
+          name: Skill config
+          source: workflow.initial_state.display
+          priority: high
+          description: Skill-specific overrides
+
+        - tier: 1
+          name: Runtime flags
+          source: Command-line flags (--verbose, --quiet, --terse, etc.)
+          priority: highest
+          description: User runtime overrides
+
+    loading_algorithm:
+      description: Main loading function for display configuration
+      effect: |
+        FUNCTION load_display_config(workflow, plugin_root, runtime_flags):
+            # Priority 1: Runtime flags (--verbose, --quiet, --terse, etc.)
+            runtime_config = extract_display_from_runtime(runtime_flags)
+
+            # Priority 2: Skill config (workflow.initial_state.display)
+            skill_config = workflow.initial_state.display ?? {}
+
+            # Priority 3: Plugin config (.hiivmind/blueprint/display.yaml)
+            plugin_config_path = "{plugin_root}/.hiivmind/blueprint/display.yaml"
+            IF file_exists(plugin_config_path):
+                plugin_config = read_yaml(plugin_config_path)
+            ELSE:
+                plugin_config = {}
+
+            # Priority 4: Framework defaults (fetched from lib)
+            framework_config = load_framework_defaults(workflow.definitions)
+
+            # Merge: runtime > skill > plugin > framework (deep merge)
+            resolved_config = deep_merge(
+                framework_config,  # Lowest priority
+                plugin_config,
+                skill_config,
+                runtime_config     # Highest priority
+            )
+
+            # Validate resolved config
+            validate_display_config(resolved_config)
+
+            RETURN resolved_config
+
+    runtime_flag_extraction:
+      description: Extract display configuration from runtime flags
+      effect: |
+        FUNCTION extract_display_from_runtime(flags):
+            config = {}
+
+            # Verbosity flags
+            IF flags.verbose OR flags.v:
+                config.verbosity = "verbose"
+            IF flags.quiet OR flags.q:
+                config.verbosity = "silent"
+            IF flags.terse:
+                config.verbosity = "terse"
+            IF flags.debug:
+                config.verbosity = "debug"
+
+            # Batch flag
+            IF flags.no_batch:
+                config.batch = config.batch ?? {}
+                config.batch.enabled = false
+
+            # Master switch
+            IF flags.no_display:
+                config.enabled = false
+
+            RETURN config
+
+      flag_mappings:
+        - flag: "--verbose, -v"
+          maps_to: "display.verbosity: verbose"
+        - flag: "--quiet, -q"
+          maps_to: "display.verbosity: silent"
+        - flag: "--terse"
+          maps_to: "display.verbosity: terse"
+        - flag: "--debug"
+          maps_to: "display.verbosity: debug"
+        - flag: "--no-batch"
+          maps_to: "display.batch.enabled: false"
+        - flag: "--no-display"
+          maps_to: "display.enabled: false"
+
+    framework_defaults_loading:
+      description: Fetch framework defaults from type definitions library
+      effect: |
+        FUNCTION load_framework_defaults(definitions_block):
+            # 1. Parse source
+            source = definitions_block.source
+            parts = parse_source(source)  # {owner, repo, version}
+
+            # 2. Construct URL
+            url = "https://raw.githubusercontent.com/{parts.owner}/{parts.repo}/{parts.version}/display/defaults.yaml"
+
+            # 3. Fetch defaults
+            TRY:
+                defaults = fetch(url)
+                RETURN defaults.content
+            CATCH:
+                # Fallback to hardcoded defaults if fetch fails
+                RETURN HARDCODED_DEFAULTS
+
+      hardcoded_defaults:
+        enabled: true
+        verbosity: "normal"
+        batch:
+          enabled: true
+          threshold: 3
+          show_summary: true
+          show_node_list: false
+          expand_on_error: true
+        show:
+          workflow_state: true
+          node_transitions: true
+          condition_eval: false
+          branch_result: true
+          user_prompts: true
+          tool_output: true
+          final_result: true
+          phase_markers: false
+          spinner_text: true
+        format:
+          style: "structured"
+          indent: 2
+          use_icons: true
+          timestamp: false
+
+    verbosity_levels:
+      description: |
+        Verbosity levels control how much output is shown during execution.
+        Each level includes all output from lower levels plus additional details.
+
+      levels:
+        - level: silent
+          output:
+            - User prompts (cannot be disabled)
+            - Final result (cannot be disabled)
+          use_case: Production or embedded workflows
+
+        - level: terse
+          output:
+            - Batch summaries for non-interactive segments
+            - User prompts
+            - Final result
+          use_case: Normal user-facing operation
+
+        - level: normal
+          output:
+            - Node transition arrows (→ node_name)
+            - Batch internal nodes when threshold met
+            - User prompts
+            - Final result
+          use_case: Development and basic troubleshooting
+          default: true
+
+        - level: verbose
+          output:
+            - Workflow state at phase boundaries
+            - All node details
+            - Condition evaluation expressions
+            - Branch decisions
+            - No batching (all nodes shown)
+          use_case: Debugging workflow logic
+
+        - level: debug
+          output:
+            - Full state dumps at each node
+            - All internal details
+            - Interpolation steps
+            - Type resolution details
+          use_case: Deep debugging of engine behavior
+
+    batch_mode:
+      description: |
+        Batch mode collapses consecutive non-interactive nodes into summary lines.
+        This reduces visual noise while still providing feedback.
+
+      algorithm:
+        effect: |
+          FUNCTION should_batch(node, state, display_config):
+              # Never batch if batching disabled
+              IF NOT display_config.batch.enabled:
+                  RETURN false
+
+              # Never batch at verbose+ levels
+              IF display_config.verbosity IN ["verbose", "debug"]:
+                  RETURN false
+
+              # Never batch user_prompt nodes
+              IF node.type == "user_prompt":
+                  RETURN false
+
+              # Never batch nodes with user-visible output
+              IF node_has_visible_output(node):
+                  RETURN false
+
+              RETURN true
+
+          FUNCTION flush_batch(batch_buffer, display_config, state):
+              IF batch_buffer.length == 0:
+                  RETURN
+
+              # Check if threshold met
+              IF batch_buffer.length < display_config.batch.threshold:
+                  # Show individual nodes instead
+                  FOR each node IN batch_buffer:
+                      display_node_transition(node, display_config)
+                  RETURN
+
+              # Display batch summary
+              last_node = batch_buffer[batch_buffer.length - 1]
+              next_target = last_node.routing_target
+
+              IF display_config.batch.show_summary:
+                  IF display_config.batch.show_node_list:
+                      node_ids = batch_buffer.map(n => n.id).join(", ")
+                      DISPLAY "{batch_buffer.phase}... [{node_ids}] → {next_target}"
+                  ELSE:
+                      DISPLAY "{batch_buffer.phase}... [{batch_buffer.length} nodes] → {next_target}"
+              ELSE:
+                  DISPLAY "{batch_buffer.phase}... → {next_target}"
+
+      breaking_conditions:
+        - condition: user_prompt node
+          reason: Requires user interaction
+        - condition: Node with user-visible output
+          reason: Tool output to show
+        - condition: Error occurs
+          reason: Expand on error for debugging
+        - condition: verbose or debug verbosity
+          reason: Detailed output requested
+        - condition: Threshold not met
+          reason: Less than N consecutive nodes
+
+    deep_merge:
+      description: Merge configuration objects with nested override
+      effect: |
+        FUNCTION deep_merge(...objects):
+            result = {}
+
+            FOR each obj IN objects:
+                FOR each key, value IN obj:
+                    IF value is object AND result[key] is object:
+                        # Recursively merge nested objects
+                        result[key] = deep_merge(result[key], value)
+                    ELSE:
+                        # Overwrite scalar or null values
+                        result[key] = value
+
+            RETURN result
+
+      example:
+        framework:
+          verbosity: "normal"
+          batch:
+            enabled: true
+            threshold: 3
+        plugin:
+          verbosity: "terse"
+        skill:
+          batch:
+            threshold: 5
+        result:
+          verbosity: "terse"
+          batch:
+            enabled: true
+            threshold: 5
+
+    plugin_config_discovery:
+      description: Find plugin-level display configuration
+      effect: |
+        FUNCTION find_plugin_config(skill_path):
+            # Walk up from skill directory to find .hiivmind/blueprint/
+            current = skill_path
+            WHILE current != "/":
+                candidate = "{current}/.hiivmind/blueprint/display.yaml"
+                IF file_exists(candidate):
+                    RETURN candidate
+                current = parent_directory(current)
+            RETURN null
+
+    validation:
+      description: Validate resolved display configuration
+      effect: |
+        FUNCTION validate_display_config(config):
+            errors = []
+
+            # Verbosity validation
+            valid_levels = ["silent", "terse", "normal", "verbose", "debug"]
+            IF config.verbosity AND config.verbosity NOT IN valid_levels:
+                errors.push("Invalid verbosity level: {config.verbosity}")
+
+            # Format style validation
+            valid_styles = ["structured", "minimal", "inline"]
+            IF config.format?.style AND config.format.style NOT IN valid_styles:
+                errors.push("Invalid format style: {config.format.style}")
+
+            # Batch threshold validation
+            IF config.batch?.threshold:
+                IF config.batch.threshold < 2:
+                    errors.push("batch.threshold must be >= 2")
+                IF config.batch.threshold > 100:
+                    errors.push("batch.threshold must be <= 100")
+
+            # Indent validation
+            IF config.format?.indent:
+                IF config.format.indent < 0 OR config.format.indent > 8:
+                    errors.push("format.indent must be between 0 and 8")
+
+            IF errors.length > 0:
+                THROW "Display configuration validation failed:\n" + errors.join("\n")
+
+      valid_values:
+        verbosity: ["silent", "terse", "normal", "verbose", "debug"]
+        format_style: ["structured", "minimal", "inline"]
+
+    sub_workflow_inheritance:
+      description: |
+        When a reference node invokes a sub-workflow, display configuration
+        is inherited by default. Can be overridden via context.display.
+
+      default_behavior: |
+        Sub-workflows inherit parent's state.display automatically because
+        reference nodes share state with the parent workflow.
+
+      override_pattern:
+        yaml: |
+          detect_intent:
+            type: reference
+            workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+            context:
+              arguments: "${arguments}"
+              display:                          # Override for this sub-workflow
+                verbosity: "verbose"            # More detail for intent detection
+                batch:
+                  enabled: false                # Show all nodes
+            next_node: execute_dynamic_route
+
+    display_functions:
+      description: Helper functions for rendering display output
+
+      render_node_transition:
+        effect: |
+          FUNCTION display_node_transition(node_id, display_config):
+              IF NOT display_config.show.node_transitions:
+                  RETURN
+
+              icon = display_config.format.use_icons ? "→ " : ""
+              DISPLAY "{icon}{node_id}"
+
+      render_condition_eval:
+        effect: |
+          FUNCTION display_condition_eval(condition, result, display_config):
+              IF NOT display_config.show.condition_eval:
+                  RETURN
+
+              indent = " ".repeat(display_config.format.indent)
+              DISPLAY "{indent}Condition: {condition.expression}"
+              DISPLAY "{indent}Result: {result}"
+
+      render_branch_result:
+        effect: |
+          FUNCTION display_branch_result(branch, target, display_config):
+              IF NOT display_config.show.branch_result:
+                  RETURN
+
+              indent = " ".repeat(display_config.format.indent)
+              DISPLAY "{indent}Branch: {branch} → {target}"
+
+      render_batch_summary:
+        effect: |
+          FUNCTION display_batch_summary(batch, phase_name, target, display_config):
+              IF display_config.batch.show_node_list:
+                  nodes = batch.map(n => n.id).join(", ")
+                  DISPLAY "{phase_name}... [{nodes}] → {target}"
+              ELSE IF display_config.batch.show_summary:
+                  DISPLAY "{phase_name}... [{batch.length} nodes] → {target}"
+              ELSE:
+                  DISPLAY "{phase_name}... → {target}"
+
+      render_workflow_state:
+        effect: |
+          FUNCTION display_workflow_state(state, display_config):
+              IF NOT display_config.show.workflow_state:
+                  RETURN
+              IF display_config.verbosity NOT IN ["verbose", "debug"]:
+                  RETURN
+
+              DISPLAY "● Workflow State:"
+              indent = " ".repeat(display_config.format.indent)
+              FOR each key, value IN state:
+                  IF key NOT IN ["history", "log", "checkpoints"]:  # Skip large fields
+                      DISPLAY "{indent}- {key}: {format_value(value)}"
+
+      render_final_result:
+        effect: |
+          FUNCTION display_final_result(ending, state, display_config):
+              # Final result always shown (show.final_result cannot be disabled)
+              icon = display_config.format.use_icons ? (ending.type == "success" ? "✓ " : "✗ ") : ""
+
+              message = interpolate(ending.message, state)
+              DISPLAY "{icon}{message}"
+
+              IF ending.summary:
+                  indent = " ".repeat(display_config.format.indent)
+                  FOR each key, value IN ending.summary:
+                      DISPLAY "{indent}- {key}: {interpolate(value, state)}"
+
+    since: "2.3.0"
+
+  # --------------------------------------------------------------------------
+  # logging (DEPRECATED - use output instead)
+  # --------------------------------------------------------------------------
+  # Logging Configuration Loader
+  # DEPRECATED: This section is preserved for backwards compatibility.
+  # New workflows should use the unified 'output' configuration instead.
+  # See execution.output for the replacement.
+  #
+  # Migration: logging.level → output.level (with mapping)
+  #            logging.enabled → output.log_enabled
+  #            logging.output.format → output.log_format
+  #            logging.output.location → output.log_location
+  #            logging.ci.format: "github" → output.ci_mode: true
+  logging:
+    deprecated: true
+    deprecated_since: "2.4.0"
+    replacement: output
+    description:
+      brief: 4-tier logging configuration resolution
+      detail: |
+        Logging configuration can be specified at multiple levels, with higher-priority
+        levels overriding lower ones. This enables framework defaults, plugin-wide settings,
+        skill-specific overrides, and runtime control.
+
+        The loader resolves configuration from all tiers and deep-merges them into
+        a single resolved configuration used during workflow execution.
+      notes:
+        - Runtime flags have highest priority
+        - Skill-specific config overrides plugin defaults
+        - Plugin defaults override framework defaults
+        - Framework defaults are always fetched (with hardcoded fallback)
+        - Auto-injection flags control consequence insertion
+
+    priority_hierarchy:
+      description: |
+        Configuration is resolved from lowest to highest priority.
+        Higher priority values override lower ones during deep merge.
+      tiers:
+        - tier: 4
+          name: Framework defaults
+          source: Remote lib (definitions.source) or hardcoded fallback
+          priority: lowest
+          description: Base defaults for all workflows
+
+        - tier: 3
+          name: Plugin config
+          source: .hiivmind/blueprint/logging.yaml
+          priority: low
+          description: Plugin-wide defaults
+
+        - tier: 2
+          name: Skill config
+          source: workflow.initial_state.logging
+          priority: high
+          description: Skill-specific overrides
+
+        - tier: 1
+          name: Runtime flags
+          source: Command-line flags (--verbose, --log-level, etc.)
+          priority: highest
+          description: User runtime overrides
+
+    loading_algorithm:
+      description: Main loading function for logging configuration
+      effect: |
+        FUNCTION load_logging_config(workflow, plugin_root, runtime_flags):
+            # Priority 1: Runtime flags (--log-level, --verbose, etc.)
+            runtime_config = extract_logging_from_runtime(runtime_flags)
+
+            # Priority 2: Skill config (workflow.initial_state.logging)
+            skill_config = workflow.initial_state.logging ?? {}
+
+            # Priority 3: Plugin config (.hiivmind/blueprint/logging.yaml)
+            plugin_config_path = "{plugin_root}/.hiivmind/blueprint/logging.yaml"
+            IF file_exists(plugin_config_path):
+                plugin_config = read_yaml(plugin_config_path)
+            ELSE:
+                plugin_config = {}
+
+            # Priority 4: Framework defaults (fetched from lib)
+            framework_config = load_framework_defaults(workflow.definitions)
+
+            # Merge: runtime > skill > plugin > framework (deep merge)
+            resolved_config = deep_merge(
+                framework_config,  # Lowest priority
+                plugin_config,
+                skill_config,
+                runtime_config     # Highest priority
+            )
+
+            # Validate resolved config
+            validate_logging_config(resolved_config)
+
+            RETURN resolved_config
+
+    runtime_flag_extraction:
+      description: Extract logging configuration from runtime flags
+      effect: |
+        FUNCTION extract_logging_from_runtime(flags):
+            config = {}
+
+            # Level flags
+            IF flags.log_level:
+                config.level = flags.log_level
+            IF flags.verbose OR flags.v:
+                config.level = "debug"
+            IF flags.quiet OR flags.q:
+                config.level = "error"
+            IF flags.trace:
+                config.level = "trace"
+
+            # Output flags
+            IF flags.log_format:
+                config.output = config.output ?? {}
+                config.output.format = flags.log_format
+            IF flags.log_dir:
+                config.output = config.output ?? {}
+                config.output.location = flags.log_dir
+
+            # Control flags
+            IF flags.no_log:
+                config.enabled = false
+            IF flags.ci:
+                config.ci = config.ci ?? {}
+                config.ci.format = "github"
+
+            RETURN config
+
+      flag_mappings:
+        - flag: "--verbose, -v"
+          maps_to: "logging.level: debug"
+        - flag: "--quiet, -q"
+          maps_to: "logging.level: error"
+        - flag: "--trace"
+          maps_to: "logging.level: trace"
+        - flag: "--log-level=X"
+          maps_to: "logging.level: X"
+        - flag: "--log-format=X"
+          maps_to: "logging.output.format: X"
+        - flag: "--log-dir=X"
+          maps_to: "logging.output.location: X"
+        - flag: "--no-log"
+          maps_to: "logging.enabled: false"
+        - flag: "--ci"
+          maps_to: "logging.ci.format: github"
+
+    framework_defaults_loading:
+      description: Fetch framework defaults from type definitions library
+      effect: |
+        FUNCTION load_framework_defaults(definitions_block):
+            # 1. Parse source
+            source = definitions_block.source
+            parts = parse_source(source)  # {owner, repo, version}
+
+            # 2. Construct URL
+            url = "https://raw.githubusercontent.com/{parts.owner}/{parts.repo}/{parts.version}/logging/defaults.yaml"
+
+            # 3. Fetch defaults
+            TRY:
+                defaults = fetch(url)
+                RETURN defaults.content
+            CATCH:
+                # Fallback to hardcoded defaults if fetch fails
+                RETURN HARDCODED_DEFAULTS
+
+      hardcoded_defaults:
+        enabled: true
+        level: "info"
+        auto:
+          init: true
+          finalize: true
+          write: true
+          node_tracking: true
+        capture:
+          nodes: true
+          state_changes: false
+          user_responses: true
+          timing: true
+        output:
+          format: "yaml"
+          location: ".logs/"
+          filename: "{skill_name}-{timestamp}.{ext}"
+        retention:
+          strategy: "count"
+          count: 10
+        ci:
+          format: "none"
+          annotations: true
+
+    deep_merge:
+      description: Merge configuration objects with nested override
+      effect: |
+        FUNCTION deep_merge(...objects):
+            result = {}
+
+            FOR each obj IN objects:
+                FOR each key, value IN obj:
+                    IF value is object AND result[key] is object:
+                        # Recursively merge nested objects
+                        result[key] = deep_merge(result[key], value)
+                    ELSE:
+                        # Overwrite scalar or null values
+                        result[key] = value
+
+            RETURN result
+
+      example:
+        framework:
+          enabled: true
+          level: "info"
+          auto:
+            init: true
+            node_tracking: true
+          output:
+            format: "yaml"
+            location: ".logs/"
+        plugin:
+          level: "warn"
+          output:
+            location: "data/logs/"
+        skill:
+          auto:
+            node_tracking: false
+        result:
+          enabled: true
+          level: "warn"
+          auto:
+            init: true
+            node_tracking: false
+          output:
+            format: "yaml"
+            location: "data/logs/"
+
+    plugin_config_discovery:
+      description: Find plugin-level logging configuration
+      effect: |
+        FUNCTION find_plugin_config(skill_path):
+            # Walk up from skill directory to find .hiivmind/blueprint/
+            current = skill_path
+            WHILE current != "/":
+                candidate = "{current}/.hiivmind/blueprint/logging.yaml"
+                IF file_exists(candidate):
+                    RETURN candidate
+                current = parent_directory(current)
+            RETURN null
+
+    validation:
+      description: Validate resolved logging configuration
+      effect: |
+        FUNCTION validate_logging_config(config):
+            errors = []
+
+            # Level validation
+            valid_levels = ["error", "warn", "info", "debug", "trace"]
+            IF config.level AND config.level NOT IN valid_levels:
+                errors.push("Invalid log level: {config.level}")
+
+            # Output format validation
+            valid_formats = ["yaml", "json", "markdown"]
+            IF config.output?.format AND config.output.format NOT IN valid_formats:
+                errors.push("Invalid output format: {config.output.format}")
+
+            # Retention validation
+            valid_strategies = ["none", "days", "count"]
+            IF config.retention?.strategy AND config.retention.strategy NOT IN valid_strategies:
+                errors.push("Invalid retention strategy: {config.retention.strategy}")
+
+            IF config.retention?.strategy == "days" AND NOT config.retention?.days:
+                errors.push("retention.days required when strategy is 'days'")
+
+            IF config.retention?.strategy == "count" AND NOT config.retention?.count:
+                errors.push("retention.count required when strategy is 'count'")
+
+            # CI format validation
+            valid_ci_formats = ["none", "github", "plain", "json"]
+            IF config.ci?.format AND config.ci.format NOT IN valid_ci_formats:
+                errors.push("Invalid CI format: {config.ci.format}")
+
+            IF errors.length > 0:
+                THROW "Logging configuration validation failed:\n" + errors.join("\n")
+
+      valid_values:
+        level: ["error", "warn", "info", "debug", "trace"]
+        output_format: ["yaml", "json", "markdown"]
+        retention_strategy: ["none", "days", "count"]
+        ci_format: ["none", "github", "plain", "json"]
+
+    sub_workflow_inheritance:
+      description: |
+        When a reference node invokes a sub-workflow, logging configuration
+        is inherited by default. Can be overridden via context.logging.
+
+      default_behavior: |
+        Sub-workflows inherit parent's state.logging automatically because
+        reference nodes share state with the parent workflow.
+
+      override_pattern:
+        yaml: |
+          detect_intent:
+            type: reference
+            workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+            context:
+              arguments: "${arguments}"
+              logging:                        # Override for this sub-workflow
+                level: "debug"                # More verbose for intent detection
+                auto:
+                  node_tracking: true
+            next_node: execute_dynamic_route
+
+      log_nesting:
+        description: |
+          Sub-workflow logs are nested within the parent's log for traceability.
+        example: |
+          node_history:
+            - id: validate_input
+              outcome: success
+              timestamp: "2026-01-28T10:30:00Z"
+
+            - id: detect_intent
+              outcome: success
+              timestamp: "2026-01-28T10:30:01Z"
+              sub_workflow:                   # Nested sub-workflow log
+                name: "intent-detection"
+                version: "1.0.0"
+                node_history:
+                  - id: parse_flags
+                    outcome: success
+                  - id: match_rules
+                    outcome: success
+                status: "success"
+
+            - id: execute_action
+              outcome: success
+              timestamp: "2026-01-28T10:30:02Z"
+
+    auto_injection:
+      description: |
+        The engine automatically injects logging consequences based on auto.* flags.
+        This ensures consistent logging without requiring explicit consequences in every workflow.
+
+      flags:
+        - flag: auto.init
+          injects: init_log
+          phase: Initialize (Phase 1)
+          description: Create log session at workflow start
+
+        - flag: auto.node_tracking
+          injects: log_node
+          phase: Execute (Phase 2, after each node)
+          description: Record each node execution in log
+
+        - flag: auto.finalize
+          injects: finalize_log
+          phase: Complete (Phase 3)
+          description: Finalize log with status and summary
+
+        - flag: auto.write
+          injects: write_log
+          phase: Complete (Phase 3)
+          description: Write log to file
+
+    since: "1.3.0"
