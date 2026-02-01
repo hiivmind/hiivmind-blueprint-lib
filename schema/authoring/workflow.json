@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/workflow.json",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/workflow.json",
   "$comment": "Schema version 2.3 - Added display configuration for real-time output verbosity. Uses $ref composition.",
   "title": "Blueprint Workflow Schema",
   "description": "JSON Schema for hiivmind-blueprint workflow.yaml files",
@@ -12,7 +12,7 @@
       "description": "Workflow name (used as identifier)"
     },
     "version": {
-      "$ref": "common.json#/$defs/semver"
+      "$ref": "../common.json#/$defs/semver"
     },
     "description": {
       "type": "string",
@@ -41,15 +41,15 @@
         },
         "computed": { "type": "object" },
         "logging": {
-          "$ref": "logging-config.json#/$defs/loggingConfig",
+          "$ref": "../config/logging-config.json#/$defs/loggingConfig",
           "description": "Skill-specific logging configuration (priority 2 in 4-tier hierarchy)"
         },
         "prompts": {
-          "$ref": "prompts-config.json#/$defs/promptsConfig",
+          "$ref": "../config/prompts-config.json#/$defs/promptsConfig",
           "description": "User prompt execution mode configuration (interactive or tabular)"
         },
         "display": {
-          "$ref": "display-config.json#/$defs/displayConfig",
+          "$ref": "../config/display-config.json#/$defs/displayConfig",
           "description": "Skill-specific display configuration for real-time output (priority 2 in 4-tier hierarchy)"
         }
       },
@@ -61,7 +61,7 @@
       "additionalProperties": { "type": "string" }
     },
     "start_node": {
-      "$ref": "common.json#/$defs/node_reference",
+      "$ref": "../common.json#/$defs/node_reference",
       "description": "ID of the first node to execute"
     },
     "nodes": {
@@ -154,7 +154,7 @@
               "description": "Use local embedded definitions"
             },
             {
-              "$ref": "common.json#/$defs/repo_reference",
+              "$ref": "../common.json#/$defs/repo_reference",
               "description": "Shorthand: owner/repo@version"
             }
           ]
@@ -178,7 +178,7 @@
         },
         "extensions": {
           "type": "array",
-          "items": { "$ref": "common.json#/$defs/repo_reference" },
+          "items": { "$ref": "../common.json#/$defs/repo_reference" },
           "description": "Additional type definition packages to load"
         },
         "fallback": {

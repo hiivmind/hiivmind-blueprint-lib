@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/resolution/type-loader.json",
+  "$comment": "Schema version 2.0 - Type Loader resolution schema",
+  "title": "Type Loader Schema",
+  "description": "Schema for resolution/type-loader.yaml - defines how type definitions are loaded from remote repositories",
+  "type": "object",
+  "required": ["schema_version", "category", "resolution"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "../common.json#/$defs/semver_short",
+      "description": "Schema version (semver major.minor)"
+    },
+    "category": {
+      "const": "resolution",
+      "description": "File category"
+    },
+    "resolution": {
+      "type": "object",
+      "required": ["type_loader"],
+      "additionalProperties": false,
+      "properties": {
+        "type_loader": {
+          "$ref": "#/$defs/type_loader"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "type_loader": {
+      "type": "object",
+      "required": ["description", "source_format", "loading_algorithm"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "$ref": "#/$defs/description"
+        },
+        "source_format": {
+          "$ref": "#/$defs/source_format"
+        },
+        "loading_algorithm": {
+          "$ref": "#/$defs/algorithm"
+        },
+        "source_parsing": {
+          "$ref": "#/$defs/algorithm"
+        },
+        "url_construction": {
+          "$ref": "#/$defs/algorithm"
+        },
+        "fetching": {
+          "$ref": "#/$defs/fetching"
+        },
+        "index_format": {
+          "$ref": "#/$defs/index_format"
+        },
+        "registry_building": {
+          "$ref": "#/$defs/algorithm"
+        },
+        "lazy_loading": {
+          "$ref": "#/$defs/lazy_loading"
+        },
+        "extension_loading": {
+          "$ref": "#/$defs/extension_loading"
+        },
+        "validation": {
+          "$ref": "#/$defs/algorithm"
+        },
+        "error_messages": {
+          "$ref": "#/$defs/error_messages"
+        },
+        "since": {
+          "$ref": "../common.json#/$defs/semver",
+          "description": "Version when this loader was introduced"
+        }
+      }
+    },
+    "description": {
+      "type": "object",
+      "required": ["brief"],
+      "additionalProperties": false,
+      "properties": {
+        "brief": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "One-line description"
+        },
+        "detail": {
+          "type": "string",
+          "description": "Extended description with markdown"
+        },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Additional notes and caveats"
+        }
+      }
+    },
+    "source_format": {
+      "type": "object",
+      "required": ["pattern", "examples"],
+      "additionalProperties": false,
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Format pattern (e.g., {owner}/{repo}@{version})"
+        },
+        "examples": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Example source strings"
+        },
+        "version_formats": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["format", "behavior"],
+            "additionalProperties": false,
+            "properties": {
+              "format": { "type": "string" },
+              "behavior": { "type": "string" }
+            }
+          },
+          "description": "Supported version format patterns"
+        }
+      }
+    },
+    "algorithm": {
+      "type": "object",
+      "required": ["effect"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "What this algorithm does"
+        },
+        "effect": {
+          "type": "string",
+          "description": "Pseudocode describing the algorithm"
+        },
+        "result_structure": {
+          "type": "string",
+          "description": "YAML showing the result structure"
+        },
+        "note": {
+          "type": "string",
+          "description": "Additional notes about the algorithm"
+        }
+      }
+    },
+    "fetching": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "primary_method": {
+          "$ref": "#/$defs/fetch_method"
+        },
+        "fallback_method": {
+          "$ref": "#/$defs/fetch_method"
+        },
+        "combined_fetch": {
+          "$ref": "#/$defs/algorithm"
+        },
+        "fetch_order": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Order of files to fetch"
+        }
+      }
+    },
+    "fetch_method": {
+      "type": "object",
+      "required": ["description", "effect"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "effect": {
+          "type": "string",
+          "description": "Pseudocode for the fetch method"
+        }
+      }
+    },
+    "index_format": {
+      "type": "object",
+      "required": ["description", "example"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "example": {
+          "type": "string",
+          "description": "YAML example of the index format"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "required", "description"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "required": { "type": "boolean" },
+              "description": { "type": "string" }
+            }
+          },
+          "description": "Field definitions for the index format"
+        }
+      }
+    },
+    "lazy_loading": {
+      "type": "object",
+      "required": ["description", "effect"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "effect": {
+          "type": "string",
+          "description": "Pseudocode for lazy loading"
+        },
+        "note": {
+          "type": "string",
+          "description": "Additional notes about lazy loading behavior"
+        }
+      }
+    },
+    "extension_loading": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "usage": {
+          "type": "string",
+          "description": "YAML example of extension usage"
+        },
+        "merge_strategy": {
+          "$ref": "#/$defs/algorithm"
+        },
+        "namespaced_usage": {
+          "type": "string",
+          "description": "YAML example of namespaced type usage"
+        }
+      }
+    },
+    "error_messages": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "examples": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["error", "context"],
+            "additionalProperties": false,
+            "properties": {
+              "error": { "type": "string" },
+              "context": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

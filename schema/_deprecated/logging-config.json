@@ -1,8 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/logging-config.json",
-  "title": "Blueprint Logging Configuration",
-  "description": "Schema for .hiivmind/blueprint/logging.yaml plugin-level logging configuration",
+  "$comment": "DEPRECATED since v2.4.0 - Use output-config.json instead. This schema is preserved for backwards compatibility.",
+  "title": "Blueprint Logging Configuration (DEPRECATED)",
+  "description": "DEPRECATED: Use schema/config/output-config.json instead. This schema is preserved for backwards compatibility. Migration: logging.level → output.level (with mapping), logging.enabled → output.log_enabled, logging.output.format → output.log_format, logging.output.location → output.log_location, logging.ci.format: 'github' → output.ci_mode: true",
+  "deprecated": true,
   "type": "object",
   "properties": {
     "logging": {

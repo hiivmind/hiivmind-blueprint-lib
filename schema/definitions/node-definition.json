@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/node-definition.json",
-  "$comment": "Schema version 1.0 - Node type definition format for modular YAML files",
+  "$comment": "Schema version 2.0 - Converted to object pattern (type is now object key)",
   "title": "Node Type Definition Schema",
   "description": "Schema for YAML node type definition files",
   "type": "object",
@@ -9,7 +9,7 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "$ref": "common.json#/$defs/semver_short",
+      "$ref": "../common.json#/$defs/semver_short",
       "description": "Schema version (semver major.minor)"
     },
     "category": {
@@ -18,23 +18,20 @@
       "description": "Node category (flat, unlike precondition/consequence paths)"
     },
     "nodes": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
         "$ref": "#/$defs/node"
-      }
+      },
+      "description": "Node definitions keyed by type name"
     }
   },
   "$defs": {
     "node": {
       "type": "object",
-      "required": ["type", "description", "fields", "execution"],
+      "required": ["description", "fields", "execution"],
       "additionalProperties": false,
       "properties": {
-        "type": {
-          "$ref": "common.json#/$defs/identifier",
-          "description": "Unique node type identifier"
-        },
         "description": {
           "$ref": "#/$defs/nodeDescription"
         },
@@ -65,15 +62,15 @@
           "description": "Related node types"
         },
         "since": {
-          "$ref": "common.json#/$defs/semver",
+          "$ref": "../common.json#/$defs/semver",
           "description": "Version when this node type was introduced"
         },
         "audit_since": {
-          "$ref": "common.json#/$defs/semver",
+          "$ref": "../common.json#/$defs/semver",
           "description": "Version when audit capability was added (for conditional)"
         },
         "deprecated_since": {
-          "$ref": "common.json#/$defs/semver",
+          "$ref": "../common.json#/$defs/semver",
           "description": "Version when this node type was deprecated"
         }
       }
@@ -107,7 +104,7 @@
       "additionalProperties": false,
       "properties": {
         "since": {
-          "$ref": "common.json#/$defs/semver",
+          "$ref": "../common.json#/$defs/semver",
           "description": "Version when deprecation occurred"
         },
         "replacement": {
@@ -130,12 +127,22 @@
       "additionalProperties": false,
       "properties": {
         "name": {
-          "$ref": "common.json#/$defs/identifier",
+          "$ref": "../common.json#/$defs/identifier",
           "description": "Field name"
         },
         "type": {
           "type": "string",
-          "enum": ["string", "boolean", "number", "array", "object", "precondition", "consequence", "node_reference", "any"],
+          "enum": [
+            "string",
+            "boolean",
+            "number",
+            "array",
+            "object",
+            "precondition",
+            "consequence",
+            "node_reference",
+            "any"
+          ],
           "description": "Field type (includes special types for workflow references)"
         },
         "required": {
@@ -175,7 +182,10 @@
           "oneOf": [
             { "$ref": "#/$defs/field" },
             { "$ref": "#/$defs/inlineItemDefinition" },
-            { "type": "string", "description": "Simple type reference (e.g., 'consequence')" }
+            {
+              "type": "string",
+              "description": "Simple type reference (e.g., 'consequence')"
+            }
           ],
           "description": "Schema for array items (when type is array)"
         },
@@ -247,7 +257,17 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["string", "boolean", "number", "array", "object", "precondition", "consequence", "node_reference", "any"],
+          "enum": [
+            "string",
+            "boolean",
+            "number",
+            "array",
+            "object",
+            "precondition",
+            "consequence",
+            "node_reference",
+            "any"
+          ],
           "description": "Item type"
         },
         "properties": {

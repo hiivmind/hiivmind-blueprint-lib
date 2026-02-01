@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/resolution/index.json",
+  "$comment": "Schema version 2.0 - Type Index schema for consequences, preconditions, nodes, and execution index files",
+  "title": "Type Index Schema",
+  "description": "Schema for index.yaml files that provide type registries and reference consolidated definition files",
+  "type": "object",
+  "required": ["schema_version", "definition_file", "types"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "../common.json#/$defs/semver_short",
+      "description": "Schema version (semver major.minor)"
+    },
+    "definition_file": {
+      "type": "string",
+      "pattern": "^[a-z_-]+\\.yaml$",
+      "description": "Path to consolidated definition file (relative to index)",
+      "examples": ["consequences.yaml", "preconditions.yaml", "workflow_nodes.yaml", "engine_execution.yaml"]
+    },
+    "description": {
+      "type": "string",
+      "description": "Optional description of this index"
+    },
+    "remote_sources": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/remote_source"
+      },
+      "description": "Optional list of remote extension sources"
+    },
+    "types": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/type_entry"
+      },
+      "description": "Type registry with metadata for each type"
+    },
+    "categories": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/category_entry"
+      },
+      "description": "Optional category groupings"
+    },
+    "stats": {
+      "$ref": "#/$defs/stats"
+    },
+    "loaders": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/loader_entry"
+      },
+      "description": "For resolution/index.yaml - loader definitions"
+    },
+    "usage_guide": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "use_when": { "type": "string" },
+          "example": { "type": "string" }
+        }
+      },
+      "description": "For resolution/index.yaml - usage guidance"
+    }
+  },
+  "$defs": {
+    "type_entry": {
+      "type": "object",
+      "required": ["category", "brief"],
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "type": "string",
+          "description": "Category path (e.g., core/state, extensions/git)"
+        },
+        "brief": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "One-line description of the type"
+        },
+        "required_params": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Required parameter names"
+        },
+        "required_fields": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Required field names (for node types)"
+        }
+      }
+    },
+    "category_entry": {
+      "type": "object",
+      "required": ["description"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Category description"
+        },
+        "types": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Types in this category"
+        }
+      }
+    },
+    "remote_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to remote definition file"
+        },
+        "types": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Types provided by this source"
+        }
+      }
+    },
+    "loader_entry": {
+      "type": "object",
+      "required": ["path", "purpose"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^[a-z-]+\\.yaml$",
+          "description": "Path to loader file"
+        },
+        "purpose": {
+          "type": "string",
+          "description": "What this loader does"
+        },
+        "features": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Key features of this loader"
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "total_types": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of types"
+        },
+        "core_types": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of core types"
+        },
+        "extension_types": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of extension types"
+        },
+        "total_loaders": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of loaders (for resolution/index.yaml)"
+        }
+      }
+    }
+  }
+}

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/consequence-definition.json",
-  "$comment": "Schema version 1.1 - Added requires, execution, provides, alternatives, script for extensibility",
+  "$comment": "Schema version 2.0 - Converted to object pattern (type is now object key)",
   "title": "Consequence Definition Schema",
   "description": "Schema for YAML consequence definition files",
   "type": "object",
@@ -9,33 +9,34 @@
   "additionalProperties": false,
   "properties": {
     "schema_version": {
-      "$ref": "common.json#/$defs/semver_short",
+      "$ref": "../common.json#/$defs/semver_short",
       "description": "Schema version (semver major.minor)"
     },
     "category": {
-      "$ref": "common.json#/$defs/category_path"
+      "$ref": "../common.json#/$defs/category_path"
     },
     "description": {
       "type": "string",
       "description": "Brief description of this category"
     },
     "consequences": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
         "$ref": "#/$defs/consequence"
-      }
+      },
+      "description": "Consequence definitions keyed by type name"
     }
   },
   "$defs": {
     "consequence": {
       "type": "object",
-      "required": ["type", "description", "parameters", "payload"],
+      "required": ["category", "description", "parameters", "payload"],
       "additionalProperties": false,
       "properties": {
-        "type": {
-          "$ref": "common.json#/$defs/identifier",
-          "description": "Unique consequence type identifier"
+        "category": {
+          "$ref": "../common.json#/$defs/category_path",
+          "description": "Category path for this consequence type"
         },
         "description": {
           "$ref": "#/$defs/consequenceDescription"
@@ -43,7 +44,7 @@
         "parameters": {
           "type": "array",
           "items": {
-            "$ref": "common.json#/$defs/parameter"
+            "$ref": "../common.json#/$defs/parameter"
           }
         },
         "payload": {
@@ -63,7 +64,7 @@
           "description": "Related consequence types"
         },
         "since": {
-          "$ref": "common.json#/$defs/semver",
+          "$ref": "../common.json#/$defs/semver",
           "description": "Version when this consequence was introduced"
         }
       }
@@ -98,7 +99,13 @@
       "properties": {
         "kind": {
           "type": "string",
-          "enum": ["state_mutation", "tool_call", "computation", "side_effect", "composite"],
+          "enum": [
+            "state_mutation",
+            "tool_call",
+            "computation",
+            "side_effect",
+            "composite"
+          ],
           "description": "Type of operation"
         },
         "tool": {

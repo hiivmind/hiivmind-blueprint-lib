@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/intent-mapping.json",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/intent-mapping.json",
   "title": "Blueprint Intent Mapping Schema",
   "description": "JSON Schema for hiivmind-blueprint intent-mapping.yaml files (3VL intent detection)",
   "type": "object",
@@ -57,7 +57,7 @@
           "type": "object",
           "description": "Map of flag names to required 3VL values",
           "additionalProperties": {
-            "$ref": "common.json#/$defs/three_valued_logic"
+            "$ref": "../common.json#/$defs/three_valued_logic"
           }
         },
         "action": {

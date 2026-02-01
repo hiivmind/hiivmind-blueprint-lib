@@ -1,0 +1,211 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/definitions/execution-definition.json",
+  "$comment": "Schema version 2.0 - Object pattern for execution definitions",
+  "title": "Execution Definition Schema",
+  "description": "Schema for YAML execution definition files",
+  "type": "object",
+  "required": ["schema_version", "category", "execution"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "../common.json#/$defs/semver_short",
+      "description": "Schema version (semver major.minor)"
+    },
+    "category": {
+      "type": "string",
+      "const": "execution",
+      "description": "Category for execution definitions"
+    },
+    "execution": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "$ref": "#/$defs/execution_module"
+      },
+      "description": "Execution module definitions keyed by type name"
+    }
+  },
+  "$defs": {
+    "execution_module": {
+      "type": "object",
+      "required": ["description"],
+      "additionalProperties": true,
+      "properties": {
+        "description": {
+          "$ref": "#/$defs/moduleDescription"
+        },
+        "phases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/phase"
+          },
+          "description": "Execution phases (for traversal module)"
+        },
+        "functions": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/function"
+          },
+          "description": "Dispatch functions (for dispatch modules)"
+        },
+        "structure": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "State structure definition (for state module)"
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Configuration options"
+        },
+        "levels": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/logLevel"
+          },
+          "description": "Log levels (for logging module)"
+        },
+        "formats": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Output formats (for display module)"
+        },
+        "priority_hierarchy": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Priority order for configuration resolution"
+        }
+      }
+    },
+    "moduleDescription": {
+      "type": "object",
+      "required": ["brief"],
+      "additionalProperties": false,
+      "properties": {
+        "brief": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "One-line description"
+        },
+        "detail": {
+          "type": "string",
+          "description": "Extended description with markdown"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Additional notes and caveats"
+        }
+      }
+    },
+    "phase": {
+      "type": "object",
+      "required": ["id", "description"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Phase identifier"
+        },
+        "description": {
+          "type": "string",
+          "description": "What this phase does"
+        },
+        "effect": {
+          "type": "string",
+          "description": "Pseudocode describing the phase effect"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "description": "Steps within this phase"
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": ["id", "description"],
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Step identifier"
+        },
+        "description": {
+          "type": "string",
+          "description": "What this step does"
+        },
+        "effect": {
+          "type": "string",
+          "description": "Pseudocode describing the step effect"
+        },
+        "behavior": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Behavioral configuration for this step"
+        }
+      }
+    },
+    "function": {
+      "type": "object",
+      "required": ["description"],
+      "additionalProperties": true,
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "What this function does"
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "$ref": "../common.json#/$defs/parameter"
+          },
+          "description": "Function parameters"
+        },
+        "returns": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Return value specification"
+        },
+        "effect": {
+          "type": "string",
+          "description": "Pseudocode describing the function effect"
+        },
+        "dispatch_table": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Type-to-handler dispatch mapping"
+        }
+      }
+    },
+    "logLevel": {
+      "type": "object",
+      "required": ["description"],
+      "additionalProperties": true,
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "What this log level captures"
+        },
+        "includes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "What content is included at this level"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/prompts-config.json",
+  "$comment": "Schema version 2.0 - Multi-modal user prompt execution modes configuration",
+  "title": "Blueprint Prompts Configuration",
+  "description": "Schema for configuring user-prompt node execution across different interfaces. Supports Claude Code (interactive), web (forms), API (structured), and embedded agents (autonomous). Can be used standalone (plugin-level prompts.yaml) or embedded in workflow.yaml initial_state.prompts.",
+  "type": "object",
+  "properties": {
+    "prompts": {
+      "$ref": "#/$defs/promptsConfig"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "promptsConfig": {
+      "type": "object",
+      "description": "Prompts configuration for user_prompt node execution across interfaces",
+      "properties": {
+        "interface": {
+          "type": "string",
+          "description": "Execution interface. 'auto' detects from context; explicit values override detection.",
+          "enum": ["auto", "claude_code", "web", "api", "agent"],
+          "default": "auto"
+        },
+        "modes": {
+          "$ref": "#/$defs/interfaceModes",
+          "description": "Mode configuration per interface. Determines how prompts are presented and responses collected."
+        },
+        "default_mode": {
+          "type": "string",
+          "description": "Fallback mode when interface is unknown or detection fails",
+          "enum": ["interactive", "tabular", "forms", "structured", "autonomous"],
+          "default": "interactive"
+        },
+        "tabular": {
+          "$ref": "#/$defs/tabularConfig"
+        },
+        "autonomous": {
+          "$ref": "#/$defs/autonomousConfig"
+        }
+      },
+      "additionalProperties": false
+    },
+    "interfaceModes": {
+      "type": "object",
+      "description": "Mode assignment per interface type",
+      "properties": {
+        "claude_code": {
+          "type": "string",
+          "description": "Mode for Claude Code CLI (AskUserQuestion tool available)",
+          "enum": ["interactive", "tabular"],
+          "default": "interactive"
+        },
+        "web": {
+          "type": "string",
+          "description": "Mode for web interfaces (Claude.ai, custom UIs)",
+          "enum": ["tabular", "forms"],
+          "default": "forms"
+        },
+        "api": {
+          "type": "string",
+          "description": "Mode for API/programmatic access",
+          "enum": ["structured", "tabular"],
+          "default": "structured"
+        },
+        "agent": {
+          "type": "string",
+          "description": "Mode for embedded sub-agents (no direct user access)",
+          "enum": ["autonomous"],
+          "default": "autonomous"
+        }
+      },
+      "additionalProperties": false
+    },
+    "tabularConfig": {
+      "type": "object",
+      "description": "Configuration for tabular mode user prompts (markdown table with text matching)",
+      "properties": {
+        "match_strategy": {
+          "type": "string",
+          "description": "How to match user text input to option IDs",
+          "enum": ["exact", "prefix", "fuzzy"],
+          "default": "prefix"
+        },
+        "other_handler": {
+          "type": "string",
+          "description": "What to do when user input doesn't match any option ID",
+          "enum": ["prompt", "route", "fail"],
+          "default": "prompt"
+        },
+        "fuzzy_threshold": {
+          "type": "number",
+          "description": "Similarity threshold for fuzzy matching (0.0-1.0). Only used when match_strategy is 'fuzzy'.",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.7
+        },
+        "case_sensitive": {
+          "type": "boolean",
+          "description": "Whether matching is case-sensitive. Defaults to false (case-insensitive).",
+          "default": false
+        },
+        "show_option_ids": {
+          "type": "boolean",
+          "description": "Whether to show the Option ID column in the table. Defaults to true.",
+          "default": true
+        },
+        "instruction_text": {
+          "type": "string",
+          "description": "Custom instruction text shown below the table. Use {default} to include default text.",
+          "default": "**Please type the Option ID of your choice.**"
+        }
+      },
+      "additionalProperties": false
+    },
+    "autonomousConfig": {
+      "type": "object",
+      "description": "Configuration for autonomous mode (embedded agents without user interaction)",
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "description": "How the LLM selects from available options",
+          "enum": ["best_match", "first_valid", "random", "weighted"],
+          "default": "best_match"
+        },
+        "context_fields": {
+          "type": "array",
+          "description": "State fields the LLM should consider when evaluating options",
+          "items": {
+            "type": "string"
+          },
+          "default": ["computed.intent_flags", "arguments"]
+        },
+        "fallback": {
+          "type": "string",
+          "description": "Handler ID to use if no option matches. Maps to on_response key.",
+          "default": "other"
+        },
+        "confidence_threshold": {
+          "type": "number",
+          "description": "Minimum confidence (0.0-1.0) required to select an option. Below threshold uses fallback.",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "default": 0.5
+        },
+        "explain_selection": {
+          "type": "boolean",
+          "description": "Whether to log the reasoning for option selection (useful for debugging)",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "interfaceDetection": {
+      "description": "How interface type is detected at runtime",
+      "type": "object",
+      "properties": {
+        "claude_code": {
+          "description": "Detected when AskUserQuestion tool is available",
+          "const": "tool_available('AskUserQuestion')"
+        },
+        "web": {
+          "description": "Detected in Claude.ai or web UI context",
+          "const": "context.is_web_interface"
+        },
+        "api": {
+          "description": "Detected in HTTP/programmatic context",
+          "const": "context.is_api_request"
+        },
+        "agent": {
+          "description": "Detected when spawned as sub-agent without user access",
+          "const": "context.is_subagent AND NOT context.has_user_access"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "prompts": {
+        "interface": "auto"
+      }
+    },
+    {
+      "prompts": {
+        "interface": "claude_code",
+        "modes": {
+          "claude_code": "interactive"
+        }
+      }
+    },
+    {
+      "prompts": {
+        "interface": "auto",
+        "modes": {
+          "claude_code": "tabular",
+          "web": "forms",
+          "api": "structured",
+          "agent": "autonomous"
+        },
+        "tabular": {
+          "match_strategy": "prefix",
+          "other_handler": "prompt"
+        }
+      }
+    },
+    {
+      "prompts": {
+        "interface": "agent",
+        "autonomous": {
+          "strategy": "best_match",
+          "context_fields": ["computed.intent_flags", "arguments", "computed.context"],
+          "fallback": "other",
+          "confidence_threshold": 0.7,
+          "explain_selection": true
+        }
+      }
+    },
+    {
+      "prompts": {
+        "interface": "api",
+        "modes": {
+          "api": "structured"
+        },
+        "default_mode": "structured"
+      }
+    },
+    {
+      "prompts": {
+        "interface": "auto",
+        "modes": {
+          "claude_code": "tabular"
+        },
+        "tabular": {
+          "match_strategy": "fuzzy",
+          "fuzzy_threshold": 0.7,
+          "other_handler": "route",
+          "case_sensitive": false
+        }
+      }
+    },
+    {
+      "prompts": {
+        "interface": "web",
+        "modes": {
+          "web": "forms"
+        }
+      }
+    }
+  ]
+}

@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/node-types.json",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/node-types.json",
   "$comment": "Schema version 2.0 - Node type definitions. validation_gate deprecated in favor of conditional with audit.",
   "title": "Blueprint Node Types Schema",
-  "description": "Definitions for workflow node types: action, conditional, user_prompt, validation_gate (deprecated), reference",
+  "description": "Definitions for workflow node types: action, conditional, user_prompt, reference",
   "$defs": {
     "node": {
       "type": "object",
@@ -12,13 +12,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": [
-            "action",
-            "conditional",
-            "user_prompt",
-            "validation_gate",
-            "reference"
-          ],
+          "enum": ["action", "conditional", "user_prompt", "reference"],
           "description": "Node type"
         },
         "description": {
@@ -40,10 +34,6 @@
           "then": { "$ref": "#/$defs/user_prompt_node" }
         },
         {
-          "if": { "properties": { "type": { "const": "validation_gate" } } },
-          "then": { "$ref": "#/$defs/validation_gate_node" }
-        },
-        {
           "if": { "properties": { "type": { "const": "reference" } } },
           "then": { "$ref": "#/$defs/reference_node" }
         }
@@ -62,11 +52,11 @@
           "description": "Consequences to execute sequentially"
         },
         "on_success": {
-          "$ref": "common.json#/$defs/node_reference",
+          "$ref": "../common.json#/$defs/node_reference",
           "description": "Node or ending to transition to on success"
         },
         "on_failure": {
-          "$ref": "common.json#/$defs/node_reference",
+          "$ref": "../common.json#/$defs/node_reference",
           "description": "Node or ending to transition to on failure"
         }
       }
@@ -111,11 +101,11 @@
           "required": ["on_true", "on_false"],
           "properties": {
             "on_true": {
-              "$ref": "common.json#/$defs/node_reference",
+              "$ref": "../common.json#/$defs/node_reference",
               "description": "Node to transition to if condition is true"
             },
             "on_false": {
-              "$ref": "common.json#/$defs/node_reference",
+              "$ref": "../common.json#/$defs/node_reference",
               "description": "Node to transition to if condition is false"
             }
           },
@@ -142,41 +132,6 @@
         }
       }
     },
-    "validation_gate_node": {
-      "type": "object",
-      "$comment": "DEPRECATED in v2.0.0 - Use conditional node with audit.enabled instead",
-      "required": ["validations", "on_valid", "on_invalid"],
-      "properties": {
-        "type": { "const": "validation_gate" },
-        "description": { "type": "string" },
-        "validations": {
-          "type": "array",
-          "items": {
-            "allOf": [
-              { "$ref": "#/$defs/precondition" },
-              {
-                "properties": {
-                  "error_message": {
-                    "type": "string",
-                    "description": "Error message if validation fails"
-                  }
-                }
-              }
-            ]
-          },
-          "minItems": 1,
-          "description": "Preconditions to validate"
-        },
-        "on_valid": {
-          "$ref": "common.json#/$defs/node_reference",
-          "description": "Node to transition to if all validations pass"
-        },
-        "on_invalid": {
-          "$ref": "common.json#/$defs/node_reference",
-          "description": "Node to transition to if any validation fails"
-        }
-      }
-    },
     "reference_node": {
       "type": "object",
       "required": ["doc", "next_node"],
@@ -197,7 +152,7 @@
           "additionalProperties": true
         },
         "next_node": {
-          "$ref": "common.json#/$defs/node_reference",
+          "$ref": "../common.json#/$defs/node_reference",
           "description": "Node to transition to after reference executes"
         }
       }
@@ -290,7 +245,7 @@
           "description": "Consequences to apply when this option is selected"
         },
         "next_node": {
-          "$ref": "common.json#/$defs/node_reference",
+          "$ref": "../common.json#/$defs/node_reference",
           "description": "Node to transition to"
         }
       }
@@ -302,7 +257,7 @@
       "required": ["type"],
       "properties": {
         "type": {
-          "$ref": "common.json#/$defs/identifier",
+          "$ref": "../common.json#/$defs/identifier",
           "description": "Precondition type identifier (e.g., file_exists, flag_set, all_of)"
         },
         "error_message": {
@@ -319,7 +274,7 @@
       "required": ["type"],
       "properties": {
         "type": {
-          "$ref": "common.json#/$defs/identifier",
+          "$ref": "../common.json#/$defs/identifier",
           "description": "Consequence type identifier (e.g., set_state, clone_repo, run_python)"
         }
       },

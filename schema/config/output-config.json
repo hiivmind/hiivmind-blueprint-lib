@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/config/output-config.json",
+  "$comment": "Schema version 1.0 - Unified output configuration (consolidates logging + display)",
+  "title": "Blueprint Output Configuration",
+  "description": "Unified schema for workflow output configuration. Consolidates logging (file output) and display (terminal output) into a single configuration. Can be used standalone (.hiivmind/blueprint/output.yaml) or embedded in workflow.yaml initial_state.output.",
+  "type": "object",
+  "properties": {
+    "output": {
+      "$ref": "#/$defs/outputConfig"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "outputConfig": {
+      "type": "object",
+      "description": "Unified output configuration controlling both terminal display and file logging",
+      "properties": {
+        "level": {
+          "type": "string",
+          "description": "Unified verbosity level controlling both display detail and log capture. Higher levels include all output from lower levels.",
+          "enum": ["silent", "quiet", "normal", "verbose", "debug"],
+          "default": "normal"
+        },
+        "display_enabled": {
+          "type": "boolean",
+          "description": "Master switch for terminal output. When false, only prompts and final result are shown.",
+          "default": true
+        },
+        "batch_enabled": {
+          "type": "boolean",
+          "description": "Enable batching of consecutive non-interactive nodes into summary lines. Reduces visual noise while providing progress feedback.",
+          "default": true
+        },
+        "batch_threshold": {
+          "type": "integer",
+          "description": "Minimum consecutive non-interactive nodes required to trigger batch summary. Below threshold, individual transitions are shown.",
+          "minimum": 2,
+          "maximum": 100,
+          "default": 3
+        },
+        "use_icons": {
+          "type": "boolean",
+          "description": "Use icons in output (checkmark, arrow, question mark, cross)",
+          "default": true
+        },
+        "log_enabled": {
+          "type": "boolean",
+          "description": "Master switch for file logging. When false, no log files are written.",
+          "default": true
+        },
+        "log_format": {
+          "type": "string",
+          "description": "Output format for log files",
+          "enum": ["yaml", "json"],
+          "default": "yaml"
+        },
+        "log_location": {
+          "type": "string",
+          "description": "Directory for log files (relative to skill/plugin root)",
+          "default": ".logs/",
+          "pattern": "^[^/].*$"
+        },
+        "ci_mode": {
+          "type": "boolean",
+          "description": "Enable CI integration. Emits GitHub annotations for errors and warnings.",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "levelBehavior": {
+      "description": "Behavior mapping for each verbosity level",
+      "type": "object",
+      "properties": {
+        "silent": {
+          "description": "Minimal output - prompts and final result only",
+          "const": {
+            "display_shows": ["prompts", "final_result"],
+            "log_captures": ["errors"]
+          }
+        },
+        "quiet": {
+          "description": "Adds batch summaries and warnings",
+          "const": {
+            "display_shows": ["prompts", "final_result", "batch_summaries"],
+            "log_captures": ["errors", "warnings"]
+          }
+        },
+        "normal": {
+          "description": "Adds node transitions - default level",
+          "const": {
+            "display_shows": ["prompts", "final_result", "batch_summaries", "node_transitions"],
+            "log_captures": ["errors", "warnings", "info"]
+          }
+        },
+        "verbose": {
+          "description": "All details shown, no batching",
+          "const": {
+            "display_shows": ["prompts", "final_result", "node_transitions", "condition_details", "branch_decisions", "state_dumps"],
+            "log_captures": ["errors", "warnings", "info", "debug"]
+          }
+        },
+        "debug": {
+          "description": "Full state dumps and internal details",
+          "const": {
+            "display_shows": ["prompts", "final_result", "node_transitions", "condition_details", "branch_decisions", "state_dumps", "interpolation_steps", "type_resolution"],
+            "log_captures": ["errors", "warnings", "info", "debug", "trace"]
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "output": {
+        "level": "normal"
+      }
+    },
+    {
+      "output": {
+        "level": "quiet",
+        "batch_enabled": true,
+        "batch_threshold": 3,
+        "log_enabled": true,
+        "log_format": "yaml"
+      }
+    },
+    {
+      "output": {
+        "level": "verbose",
+        "batch_enabled": false,
+        "log_format": "json",
+        "log_location": "data/logs/"
+      }
+    },
+    {
+      "output": {
+        "level": "quiet",
+        "ci_mode": true,
+        "display_enabled": false
+      }
+    },
+    {
+      "output": {
+        "level": "debug",
+        "log_enabled": true,
+        "log_format": "yaml"
+      }
+    }
+  ],
+  "runtime_flags": {
+    "description": "Command-line flags that map to output configuration",
+    "mappings": [
+      {
+        "flag": "--verbose, -v",
+        "maps_to": "output.level: verbose"
+      },
+      {
+        "flag": "--quiet, -q",
+        "maps_to": "output.level: quiet"
+      },
+      {
+        "flag": "--debug",
+        "maps_to": "output.level: debug"
+      },
+      {
+        "flag": "--no-log",
+        "maps_to": "output.log_enabled: false"
+      },
+      {
+        "flag": "--no-display",
+        "maps_to": "output.display_enabled: false"
+      },
+      {
+        "flag": "--ci",
+        "maps_to": "output.ci_mode: true"
+      }
+    ]
+  }
+}

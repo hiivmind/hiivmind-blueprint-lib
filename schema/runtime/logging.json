@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/logging.json",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/runtime/logging.json",
   "title": "Workflow Execution Log",
   "description": "Defines the structure of workflow execution logs. This schema is domain-agnostic; plugins extend it with custom event types and domain-specific fields.",
   "type": "object",
@@ -14,7 +14,7 @@
           "description": "Name of the workflow being executed"
         },
         "workflow_version": {
-          "$ref": "common.json#/$defs/semver",
+          "$ref": "../common.json#/$defs/semver",
           "description": "Version of the workflow"
         },
         "skill_name": {

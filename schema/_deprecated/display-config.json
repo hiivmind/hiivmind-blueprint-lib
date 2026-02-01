@@ -1,8 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/display-config.json",
-  "title": "Blueprint Display Configuration",
-  "description": "Schema for .hiivmind/blueprint/display.yaml plugin-level display configuration",
+  "$comment": "DEPRECATED since v2.4.0 - Use output-config.json instead. This schema is preserved for backwards compatibility.",
+  "title": "Blueprint Display Configuration (DEPRECATED)",
+  "description": "DEPRECATED: Use schema/config/output-config.json instead. This schema is preserved for backwards compatibility. Migration: display.verbosity → output.level, display.batch.enabled → output.batch_enabled, display.batch.threshold → output.batch_threshold, display.format.use_icons → output.use_icons",
+  "deprecated": true,
   "type": "object",
   "properties": {
     "display": {

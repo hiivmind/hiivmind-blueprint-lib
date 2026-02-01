@@ -1,0 +1,300 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/resolution/workflow-loader.json",
+  "$comment": "Schema version 2.0 - Workflow Loader resolution schema",
+  "title": "Workflow Loader Schema",
+  "description": "Schema for resolution/workflow-loader.yaml - defines how reusable workflows are loaded from remote repositories",
+  "type": "object",
+  "required": ["schema_version", "category", "resolution"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "../common.json#/$defs/semver_short",
+      "description": "Schema version (semver major.minor)"
+    },
+    "category": {
+      "const": "resolution",
+      "description": "File category"
+    },
+    "resolution": {
+      "type": "object",
+      "required": ["workflow_loader"],
+      "additionalProperties": false,
+      "properties": {
+        "workflow_loader": {
+          "$ref": "#/$defs/workflow_loader"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "workflow_loader": {
+      "type": "object",
+      "required": ["description", "reference_format", "loading_algorithm"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "$ref": "#/$defs/description"
+        },
+        "reference_format": {
+          "$ref": "#/$defs/reference_format"
+        },
+        "loading_algorithm": {
+          "$ref": "#/$defs/algorithm"
+        },
+        "fetching": {
+          "$ref": "#/$defs/fetching"
+        },
+        "reference_parsing": {
+          "$ref": "#/$defs/algorithm"
+        },
+        "local_references": {
+          "$ref": "#/$defs/local_references"
+        },
+        "workflow_index_format": {
+          "$ref": "#/$defs/index_format"
+        },
+        "dependency_validation": {
+          "$ref": "#/$defs/algorithm"
+        },
+        "execution": {
+          "$ref": "#/$defs/algorithm"
+        },
+        "input_output_mapping": {
+          "$ref": "#/$defs/io_mapping"
+        },
+        "isolated_execution": {
+          "$ref": "#/$defs/isolated_execution"
+        },
+        "version_pinning": {
+          "$ref": "#/$defs/version_pinning"
+        },
+        "error_messages": {
+          "$ref": "#/$defs/error_messages"
+        },
+        "since": {
+          "$ref": "../common.json#/$defs/semver",
+          "description": "Version when this loader was introduced"
+        }
+      }
+    },
+    "description": {
+      "type": "object",
+      "required": ["brief"],
+      "additionalProperties": false,
+      "properties": {
+        "brief": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "One-line description"
+        },
+        "detail": {
+          "type": "string",
+          "description": "Extended description with markdown"
+        },
+        "notes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Additional notes and caveats"
+        }
+      }
+    },
+    "reference_format": {
+      "type": "object",
+      "required": ["pattern", "examples"],
+      "additionalProperties": false,
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Format pattern (e.g., {owner}/{repo}@{version}:{workflow-name})"
+        },
+        "examples": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Example reference strings"
+        }
+      }
+    },
+    "algorithm": {
+      "type": "object",
+      "required": ["effect"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "What this algorithm does"
+        },
+        "effect": {
+          "type": "string",
+          "description": "Pseudocode describing the algorithm"
+        }
+      }
+    },
+    "fetching": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "primary_method": {
+          "$ref": "#/$defs/fetch_method"
+        },
+        "fallback_method": {
+          "$ref": "#/$defs/fetch_method"
+        },
+        "combined_fetch": {
+          "$ref": "#/$defs/algorithm"
+        }
+      }
+    },
+    "fetch_method": {
+      "type": "object",
+      "required": ["description", "effect"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "effect": {
+          "type": "string",
+          "description": "Pseudocode for the fetch method"
+        }
+      }
+    },
+    "local_references": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "example": {
+          "type": "string",
+          "description": "YAML example of local reference usage"
+        }
+      }
+    },
+    "index_format": {
+      "type": "object",
+      "required": ["description", "example"],
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "example": {
+          "type": "string",
+          "description": "YAML example of the index format"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "required", "description"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "type": "string" },
+              "required": { "type": "boolean" },
+              "description": { "type": "string" }
+            }
+          },
+          "description": "Field definitions for the index format"
+        }
+      }
+    },
+    "io_mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "description": { "type": "string" },
+            "example": { "type": "string" }
+          }
+        },
+        "outputs": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "description": { "type": "string" },
+            "example": { "type": "string" }
+          }
+        }
+      }
+    },
+    "isolated_execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "example": {
+          "type": "string",
+          "description": "YAML example of isolated execution"
+        },
+        "comparison": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type", "state", "use_case"],
+            "additionalProperties": false,
+            "properties": {
+              "type": { "type": "string" },
+              "state": { "type": "string" },
+              "use_case": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "version_pinning": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "formats": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["format", "behavior"],
+            "additionalProperties": false,
+            "properties": {
+              "format": { "type": "string" },
+              "behavior": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "error_messages": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "examples": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["error", "context"],
+            "additionalProperties": false,
+            "properties": {
+              "error": { "type": "string" },
+              "context": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
