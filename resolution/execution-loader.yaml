@@ -1,0 +1,631 @@
+# Execution Semantics Loader
+# Bootstrap sequence and selective loading for execution semantics
+#
+# This file defines how execution semantics (traversal, state, dispatch, output)
+# are loaded from the consolidated engine_execution.yaml file. Resolves the bootstrap
+# ordering concern: minimal bootstrap requires only workflow.yaml path parsing, which
+# is trivial and documented here.
+#
+# v2.4.0: Unified output config replaces separate display/logging sections
+
+schema_version: "2.0"
+category: resolution
+
+resolution:
+  execution_loader:
+    description:
+      brief: Bootstrap sequence and selective loading for execution semantics
+      detail: |
+        The execution loader handles the critical first phase of workflow execution:
+        loading the execution semantics that define HOW to interpret workflows.
+
+        This creates an apparent catch-22: "need execution semantics to load execution
+        semantics." The resolution is that minimal bootstrap requires only:
+        1. Read workflow.yaml from provided path
+        2. Extract definitions.source
+        3. Parse as {owner, repo, version} or {is_local, local_path}
+
+        This parsing is trivial string manipulation documented in source_parsing below.
+        Once source is parsed, execution semantics can be fetched using the same
+        fetch patterns as type-loader.yaml and workflow-loader.yaml.
+      notes:
+        - Resolves bootstrap ordering concern with minimal-bootstrap pattern
+        - Supports both remote GitHub repos and local filesystem paths
+        - Uses gh api for fetching remote (private repo support)
+        - Falls back to raw.githubusercontent.com for public repos when gh unavailable
+        - Local paths bypass network entirely (instant, offline-capable)
+        - Sections can be loaded selectively or as complete file
+        - Output section has hardcoded defaults (no remote fetch required)
+        - Legacy display/logging sections auto-migrate to unified output config
+
+    source_format:
+      description: Source format supporting both remote GitHub repos and local paths
+      patterns:
+        remote: "{owner}/{repo}@{version}"
+        local_relative: '"./" or "./{path}"'
+        local_absolute: '"/absolute/path"'
+
+      examples:
+        - source: "hiivmind/hiivmind-blueprint-lib@v2.0.0"
+          type: remote
+          description: Remote GitHub repository with version pin
+        - source: "./"
+          type: local
+          description: Current directory (locally checked out repo)
+        - source: "/home/user/git/my-lib"
+          type: local
+          description: Absolute path to local library
+
+      detection:
+        is_local: |
+          source.startsWith("./") OR source.startsWith("/")
+        is_remote: |
+          source.matches(/^[^\/]+\/[^@]+@.+$/)
+
+    bootstrap:
+      description: Bootstrap sequence resolving the apparent catch-22
+
+      minimal_bootstrap:
+        description: Absolute minimum before loading execution semantics
+        requires: workflow.yaml path only
+        steps:
+          - step: 1
+            action: Read workflow.yaml from provided path
+            note: Direct file read - no execution semantics needed
+          - step: 2
+            action: Extract definitions.source field
+            note: Simple YAML parse - field extraction only
+          - step: 3
+            action: Parse source string
+            note: String manipulation per source_parsing below
+
+        why_not_circular: |
+          The bootstrap sequence requires NO execution semantics because:
+          1. Reading a file is a primitive operation (Read tool)
+          2. Extracting a YAML field is trivial parsing
+          3. String parsing (owner/repo@version) is simple regex
+
+          Once we have the parsed source, we can fetch execution semantics
+          using the same fetch patterns as any other library file.
+
+      fetch_order:
+        description: Order of operations after minimal bootstrap
+        phases:
+          - id: bootstrap
+            description: Parse workflow.yaml, extract definitions.source
+            requires: workflow.yaml path
+            produces: source_parts (is_local, local_path OR owner, repo, version)
+
+          - id: execution_semantics
+            description: Fetch execution/engine_execution.yaml
+            requires: source_parts
+            produces: execution semantics (traversal, state, dispatch, output)
+
+          - id: types
+            description: Load type definitions per type-loader.yaml
+            requires: source_parts, definitions block
+            produces: TypeRegistry
+
+          - id: initialize
+            description: Initialize state, check entry preconditions
+            requires: execution semantics, TypeRegistry, workflow
+            produces: initial state
+
+          - id: execute
+            description: Begin execution loop per traversal semantics
+            requires: all above
+            produces: execution results
+
+    source_parsing:
+      description: Parse source string into components (identical to type-loader.yaml)
+      effect: |
+        FUNCTION parse_source(source):
+            # Check for local path first
+            IF source.startsWith("./") OR source.startsWith("/"):
+                # Local path - resolve to absolute
+                IF source.startsWith("./"):
+                    local_path = resolve_relative_path(source)
+                ELSE:
+                    local_path = source
+
+                # Validate path exists
+                IF NOT directory_exists(local_path):
+                    THROW "Local source path does not exist: {local_path}"
+
+                RETURN {
+                    is_local: true,
+                    local_path: local_path,
+                    owner: null,
+                    repo: null,
+                    version: null
+                }
+
+            # Parse remote: owner/repo@version
+            match = source.match(/^([^\/]+)\/([^@]+)@(.+)$/)
+
+            IF NOT match:
+                THROW "Invalid source format: {source}. Expected: owner/repo@version or local path (./ or /path)"
+
+            RETURN {
+                is_local: false,
+                local_path: null,
+                owner: match[1],
+                repo: match[2],
+                version: match[3]
+            }
+
+      examples:
+        - input: "hiivmind/hiivmind-blueprint-lib@v2.0.0"
+          output: |
+            { is_local: false, owner: "hiivmind", repo: "hiivmind-blueprint-lib", version: "v2.0.0" }
+
+        - input: "./"
+          output: |
+            { is_local: true, local_path: "/current/working/directory" }
+
+    section_registry:
+      description: Registry of execution sections in engine_execution.yaml
+      sections:
+        traversal:
+          required: true
+          description: Core workflow execution loop
+          path_in_file: "execution.traversal"
+          depends_on: []
+          purpose: |
+            Defines the 3-phase execution model (initialize, execute, complete)
+            and the node dispatch loop. Always required.
+
+        state:
+          required: true
+          description: State structure and management
+          path_in_file: "execution.state"
+          depends_on: []
+          purpose: |
+            Defines state schema, interpolation rules, and checkpoint management.
+            Always required for state initialization and variable resolution.
+
+        precondition_dispatch:
+          required: true
+          description: Dispatch logic for precondition evaluation
+          path_in_file: "execution.precondition_dispatch"
+          depends_on: [state]
+          purpose: |
+            Defines how precondition types are evaluated. Required for
+            entry preconditions and conditional nodes.
+
+        consequence_dispatch:
+          required: true
+          description: Dispatch logic for consequence execution
+          path_in_file: "execution.consequence_dispatch"
+          depends_on: [state]
+          purpose: |
+            Defines how consequence types are executed. Required for
+            action nodes and response handlers.
+
+        output:
+          required: true
+          has_defaults: true
+          description: Unified output configuration (logging + display)
+          path_in_file: "execution.output"
+          depends_on: []
+          purpose: |
+            Unified configuration for terminal display and file logging.
+            Consolidates the previous separate logging and display configs
+            into a single configuration with 12 core settings controlled
+            by unified level. Has hardcoded defaults - no remote fetch required.
+          since: "2.4.0"
+          replaces:
+            - "execution.display (deprecated)"
+            - "execution.logging (deprecated)"
+
+        # DEPRECATED sections (preserved for backwards compatibility)
+        display:
+          deprecated: true
+          deprecated_since: "2.4.0"
+          replacement: output
+          required: false
+          has_defaults: true
+          description: Display configuration (DEPRECATED - use output)
+          path_in_file: "execution.display"
+          depends_on: []
+          purpose: |
+            DEPRECATED: Use execution.output instead.
+            Preserved for backwards compatibility with existing workflows.
+
+        logging:
+          deprecated: true
+          deprecated_since: "2.4.0"
+          replacement: output
+          required: false
+          can_disable: true
+          description: Logging configuration (DEPRECATED - use output)
+          path_in_file: "execution.logging"
+          depends_on: []
+          purpose: |
+            DEPRECATED: Use execution.output instead.
+            Preserved for backwards compatibility with existing workflows.
+
+    fetching:
+      description: Fetch YAML content from local path or GitHub repository
+
+      local_method:
+        description: Read directly from local filesystem (fastest, no network)
+        effect: |
+          FUNCTION fetch_local(local_path, path):
+              full_path = "{local_path}/{path}"
+
+              IF NOT file_exists(full_path):
+                  RETURN { success: false, error: "File not found: {full_path}" }
+
+              result = CALL Read with:
+                  file_path: full_path
+
+              IF result.error:
+                  RETURN { success: false, error: result.error }
+
+              RETURN { success: true, content: parse_yaml(result.content) }
+
+        advantages:
+          - No network latency
+          - Works offline
+          - No authentication required
+          - Instant feedback during development
+
+      gh_api_method:
+        description: Use gh api for authenticated access (supports private repos)
+        effect: |
+          FUNCTION fetch_gh_api(owner, repo, path, version):
+              result = CALL Bash with:
+                  command: "gh api repos/{owner}/{repo}/contents/{path}?ref={version} --jq '.content' | base64 -d"
+
+              IF result.exit_code != 0:
+                  RETURN { success: false, error: result.stderr }
+
+              RETURN { success: true, content: parse_yaml(result.stdout) }
+
+        advantages:
+          - Works with private repositories
+          - Respects GitHub rate limits
+          - Uses existing gh authentication
+
+      raw_url_method:
+        description: Use raw.githubusercontent.com for public repos when gh unavailable
+        effect: |
+          FUNCTION fetch_raw_url(owner, repo, path, version):
+              url = "https://raw.githubusercontent.com/{owner}/{repo}/{version}/{path}"
+              response = CALL WebFetch with:
+                  url: url
+                  prompt: "Return the raw YAML content"
+
+              IF response.status >= 400:
+                  RETURN { success: false, error: "{response.status} {url}" }
+
+              # Handle redirects
+              IF response.redirect_url:
+                  RETURN fetch_raw_url_direct(response.redirect_url)
+
+              RETURN { success: true, content: parse_yaml(response.content) }
+
+        advantages:
+          - Works without gh CLI installed
+          - Good fallback for public repos
+          - Simple HTTP fetch
+
+      combined_fetch:
+        description: Unified fetch supporting local paths and remote with fallback
+        effect: |
+          FUNCTION fetch(source_parts, path):
+              # Local path: direct file read (fastest)
+              IF source_parts.is_local:
+                  result = fetch_local(source_parts.local_path, path)
+                  IF result.success:
+                      LOG "Fetched locally: {source_parts.local_path}/{path}"
+                      RETURN result.content
+
+                  THROW "Failed to fetch local: {source_parts.local_path}/{path}\n  Error: {result.error}"
+
+              # Remote: try gh api first, then raw URL fallback
+              owner = source_parts.owner
+              repo = source_parts.repo
+              version = source_parts.version
+
+              result = fetch_gh_api(owner, repo, path, version)
+              IF result.success:
+                  LOG "Fetched via gh api: {owner}/{repo}/{path}@{version}"
+                  RETURN result.content
+
+              # Fall back to raw URL (public repos only)
+              LOG "gh api failed, trying raw URL fallback"
+              result = fetch_raw_url(owner, repo, path, version)
+              IF result.success:
+                  LOG "Fetched via raw URL: {owner}/{repo}/{path}@{version}"
+                  RETURN result.content
+
+              THROW "Failed to fetch: {owner}/{repo}/{path}@{version}\n  gh api: {result.error}\n  raw URL: {result.error}"
+
+      method_selection:
+        description: Which method is used based on source type
+        table: |
+          | Source Type        | Primary Method | Fallback Method |
+          |--------------------|----------------|-----------------|
+          | Local path (./)    | local_method   | none (error)    |
+          | Local path (/)     | local_method   | none (error)    |
+          | Remote (owner/repo)| gh_api_method  | raw_url_method  |
+
+    loading_strategies:
+      description: Strategies for loading execution semantics
+
+      full:
+        description: Fetch entire engine_execution.yaml
+        use_when:
+          - Gateway commands (need all sections)
+          - Complex skills with logging and display customization
+          - Development/debugging (want complete reference)
+        effect: |
+          FUNCTION load_execution_full(source_parts):
+              content = fetch(source_parts, "execution/engine_execution.yaml")
+              RETURN content.execution
+
+        file_size: ~2300 lines
+        network_fetches: 1
+
+      selective:
+        description: Extract specific sections via yq
+        use_when:
+          - Simple skills (minimal footprint)
+          - Logging disabled (skip logging section)
+          - Performance-critical (reduce context size)
+        minimal_set:
+          - traversal
+          - state
+          - precondition_dispatch
+          - consequence_dispatch
+
+        effect: |
+          FUNCTION load_execution_selective(source_parts, sections):
+              # Build yq query for section extraction
+              section_queries = sections.map(s => '.execution.' + s).join(', ')
+              query = '{ execution: { ' + section_queries + ' } }'
+
+              IF source_parts.is_local:
+                  # Direct yq on local file
+                  full_path = "{source_parts.local_path}/execution/engine_execution.yaml"
+                  result = CALL Bash with:
+                      command: "yq eval '{query}' {full_path}"
+                  RETURN parse_yaml(result.stdout).execution
+              ELSE:
+                  # Fetch and pipe through yq
+                  result = CALL Bash with:
+                      command: |
+                          gh api repos/{owner}/{repo}/contents/execution/engine_execution.yaml?ref={version} \
+                              --jq '.content' | base64 -d | yq eval '{query}' -
+                  RETURN parse_yaml(result.stdout).execution
+
+        example_queries:
+          minimal: |
+            yq eval '{ execution: { .execution.traversal, .execution.state, .execution.precondition_dispatch, .execution.consequence_dispatch } }' engine_execution.yaml
+
+          with_output: |
+            yq eval '{ execution: { .execution.traversal, .execution.state, .execution.precondition_dispatch, .execution.consequence_dispatch, .execution.output } }' engine_execution.yaml
+
+      automatic:
+        description: Auto-select strategy based on workflow analysis
+        effect: |
+          FUNCTION load_execution_auto(source_parts, workflow):
+              # Determine if output customization is needed
+              # The unified output config has hardcoded defaults, so the section
+              # is only needed if custom settings are specified
+              has_output_config = workflow.initial_state?.output != null
+              has_output_flags = runtime_flags.any(f =>
+                  f.startsWith("--verbose") OR f.startsWith("--quiet") OR
+                  f == "--debug" OR f == "--no-log" OR f == "--no-display" OR f == "--ci")
+
+              # Check for legacy configs (backwards compatibility)
+              has_legacy_config = workflow.initial_state?.logging != null
+                                  OR workflow.initial_state?.display != null
+
+              IF has_output_config OR has_output_flags OR has_legacy_config:
+                  # Load with output section for config resolution
+                  RETURN load_execution_selective(source_parts,
+                      ["traversal", "state", "precondition_dispatch", "consequence_dispatch", "output"])
+              ELSE:
+                  # Minimal load - hardcoded output defaults are sufficient
+                  RETURN load_execution_selective(source_parts,
+                      ["traversal", "state", "precondition_dispatch", "consequence_dispatch"])
+
+    optionality:
+      description: Which sections can be omitted
+
+      output:
+        required: false
+        has_defaults: true
+        skip_conditions:
+          - No custom output config in workflow.initial_state.output
+          - No output-related runtime flags provided
+          - No legacy logging/display configs present
+        when_skipped:
+          - Hardcoded defaults are used (no remote fetch)
+          - level: "normal", display_enabled: true, log_enabled: true, etc.
+        note: |
+          The unified output section has hardcoded defaults that work without
+          loading the section. Only load if custom config is specified or
+          runtime flags need to be processed against the section schema.
+
+          Hardcoded defaults (used when section not loaded):
+            level: "normal"
+            display_enabled: true
+            batch_enabled: true
+            batch_threshold: 3
+            use_icons: true
+            log_enabled: true
+            log_format: "yaml"
+            log_location: ".logs/"
+            ci_mode: false
+
+      # DEPRECATED sections
+      logging:
+        deprecated: true
+        deprecated_since: "2.4.0"
+        replacement: output
+        note: |
+          DEPRECATED: Use workflow.initial_state.output instead.
+          If legacy logging config is detected, it will be automatically
+          migrated to unified output config per engine_execution.yaml migration.
+
+      display:
+        deprecated: true
+        deprecated_since: "2.4.0"
+        replacement: output
+        note: |
+          DEPRECATED: Use workflow.initial_state.output instead.
+          If legacy display config is detected, it will be automatically
+          migrated to unified output config per engine_execution.yaml migration.
+
+    template_guidance:
+      description: How templates should reference execution semantics
+
+      thin_loader:
+        pattern: |
+          Templates should reference the consolidated file and execution-loader:
+
+          **Required files (fetch all before proceeding):**
+
+          | File | Path | Purpose |
+          |------|------|---------|
+          | engine_execution.yaml | execution/engine_execution.yaml | All execution semantics |
+          | execution-loader.yaml | resolution/execution-loader.yaml | Bootstrap sequence (read first) |
+          | type-loader.yaml | resolution/type-loader.yaml | Type definition loading |
+
+        rationale: |
+          Single consolidated file reduces network fetches from 4-6 to 1.
+          The execution-loader documents bootstrap sequence and section optionality.
+
+      gateway_command:
+        pattern: |
+          Gateways need full execution semantics plus workflow loading:
+
+          | File | Path | Purpose |
+          |------|------|---------|
+          | execution-loader.yaml | resolution/execution-loader.yaml | Bootstrap sequence (read first) |
+          | engine_execution.yaml | execution/engine_execution.yaml | All execution semantics |
+          | type-loader.yaml | resolution/type-loader.yaml | Type definition loading |
+          | workflow-loader.yaml | resolution/workflow-loader.yaml | Reference node loading |
+
+        rationale: |
+          Gateways use reference nodes to load sub-workflows, so they need
+          workflow-loader.yaml in addition to execution semantics.
+
+      skill_with_executor:
+        pattern: |
+          Raw URL format for direct linking:
+
+          | Semantic | Source |
+          |----------|--------|
+          | All execution | [engine_execution.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{version}/execution/engine_execution.yaml) |
+          | Type loading | [type-loader.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{version}/resolution/type-loader.yaml) |
+          | Execution loading | [execution-loader.yaml](https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/{version}/resolution/execution-loader.yaml) |
+
+        rationale: |
+          Raw URLs allow direct browser access to semantics for reference.
+          Consolidated file means single link covers all execution sections.
+
+    main_algorithm:
+      description: Complete execution loading algorithm
+      effect: |
+        FUNCTION load_execution_semantics(workflow_path, runtime_flags):
+            # Phase 1: Minimal bootstrap (no execution semantics needed)
+            workflow = parse_yaml(read_file(workflow_path))
+            source = workflow.definitions.source
+            source_parts = parse_source(source)
+
+            # Phase 2: Fetch execution semantics
+            # Use automatic strategy selection based on workflow analysis
+            execution = load_execution_auto(source_parts, workflow)
+
+            # Phase 3: Load type definitions (per type-loader.yaml)
+            types = load_types_hybrid(workflow.definitions, workflow)
+
+            # Phase 4: Initialize state per execution.state
+            state = initialize_state(workflow, execution.state)
+
+            # Phase 5: Check entry preconditions per execution.precondition_dispatch
+            IF workflow.entry_preconditions:
+                FOR each precondition IN workflow.entry_preconditions:
+                    result = evaluate_precondition(precondition, state, types, execution.precondition_dispatch)
+                    IF NOT result.satisfied:
+                        THROW "Entry precondition failed: {precondition.type}"
+
+            RETURN {
+                workflow: workflow,
+                execution: execution,
+                types: types,
+                state: state
+            }
+
+    error_messages:
+      description: Provide clear, actionable error messages
+
+      examples:
+        - error: "Failed to fetch execution semantics (remote)"
+          source_type: remote
+          context: |
+            Source: hiivmind/hiivmind-blueprint-lib@v2.0.0
+
+            Tried:
+            1. gh api repos/hiivmind/hiivmind-blueprint-lib/contents/execution/engine_execution.yaml?ref=v2.0.0 → (error)
+            2. https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/execution/engine_execution.yaml → (error)
+
+            Suggestions:
+            - For private repos: Verify gh auth status (gh auth status)
+            - Check the version exists: https://github.com/hiivmind/hiivmind-blueprint-lib/tags
+            - Verify network connectivity
+
+        - error: "Failed to fetch execution semantics (local)"
+          source_type: local
+          context: |
+            Source: ./lib/blueprint
+
+            Tried:
+            1. /home/user/project/lib/blueprint/execution/engine_execution.yaml → File not found
+
+            Suggestions:
+            - Verify the path exists: ls -la ./lib/blueprint/execution
+            - Check for required file: engine_execution.yaml
+            - Ensure proper directory structure
+
+        - error: "Invalid source format"
+          context: |
+            Source: invalid-source
+
+            Expected formats:
+            - Remote: owner/repo@version (e.g., hiivmind/hiivmind-blueprint-lib@v2.0.0)
+            - Local relative: ./ or ./path (e.g., ./lib/blueprint)
+            - Local absolute: /path (e.g., /home/user/git/my-lib)
+
+        - error: "Missing required execution section"
+          context: |
+            Section: traversal
+
+            The execution file is missing the required 'traversal' section.
+
+            Required sections: traversal, state, precondition_dispatch, consequence_dispatch
+            Optional sections: output (has hardcoded defaults)
+            Deprecated sections: display, logging (use output instead)
+
+            Suggestions:
+            - Verify the file structure matches engine_execution.yaml schema
+            - Check if using correct version of hiivmind-blueprint-lib (v2.4.0+ for unified output)
+
+        - error: "yq filter failed"
+          context: |
+            Failed to extract sections using yq filter.
+
+            Query: { execution: { .execution.traversal, .execution.state } }
+            File: /path/to/execution/engine_execution.yaml
+
+            Suggestions:
+            - Verify yq is installed: yq --version (requires yq v4+)
+            - Check YAML syntax in the source file
+            - Ensure the file has correct execution.* structure
+
+    since: "2.0.0"

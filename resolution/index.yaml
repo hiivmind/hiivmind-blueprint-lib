@@ -1,0 +1,67 @@
+# Resolution Loaders Index
+# Registry of loaders for remote type and workflow resolution
+
+schema_version: "2.0"
+description: |
+  Resolution loaders enable workflows to fetch type definitions and
+  reusable workflows from remote GitHub repositories at runtime.
+
+loaders:
+  type_loader:
+    path: type-loader.yaml
+    purpose: Load consequence/precondition type definitions from GitHub repos
+    features:
+      - Version pinning for reproducibility
+      - gh api with raw URL fallback
+      - Lazy loading of full definitions
+      - Selective loading with workflow analysis
+      - Hybrid strategy selection (automatic)
+      - Extension type merging with namespace collision handling
+
+  workflow_loader:
+    path: workflow-loader.yaml
+    purpose: Load reusable workflows from GitHub repos via reference nodes
+    features:
+      - Shared state execution (unlike invoke_skill)
+      - Input/output mapping
+      - Dependency validation
+      - Local file references with doc parameter
+
+  execution_loader:
+    path: execution-loader.yaml
+    purpose: Bootstrap sequence and selective loading for execution semantics
+    features:
+      - Minimal bootstrap (no execution semantics needed to start)
+      - Section optionality (logging can be disabled)
+      - Selective loading with yq filtering
+      - Full or automatic strategy selection
+
+# Quick reference for which loader to use
+usage_guide:
+  type_loader:
+    use_when: Workflow definitions block specifies a source
+    example: |
+      definitions:
+        source: hiivmind/hiivmind-blueprint-lib@v2.0.0
+
+  workflow_loader:
+    use_when: Reference node specifies a remote workflow
+    example: |
+      detect_intent:
+        type: reference
+        workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+        context:
+          arguments: "${arguments}"
+        next_node: execute_route
+
+  execution_loader:
+    use_when: Loading execution semantics at workflow initialization
+    example: |
+      # Execution semantics are loaded automatically from definitions.source
+      # This happens in Phase 1 of the bootstrap sequence:
+      # 1. Parse workflow.yaml → extract definitions.source
+      # 2. Fetch execution/engine_execution.yaml from source
+      # 3. Initialize state, types, and begin execution
+
+stats:
+  total_loaders: 3

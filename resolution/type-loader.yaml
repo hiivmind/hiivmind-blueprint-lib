@@ -20,16 +20,41 @@ resolution:
         Supports version pinning for reproducible builds and extension
         loading for custom type definitions.
       notes:
-        - Uses raw.githubusercontent.com for fetching
+        - Uses gh api for fetching (private repo support)
+        - Falls back to raw.githubusercontent.com for public repos when gh unavailable
         - Supports version pinning (@v2.0.0)
         - Lazy loads individual type files on first use
         - Extensions can add custom types with namespace prefixing on collision
 
     source_format:
-      pattern: "{owner}/{repo}@{version}"
+      description: Source format supporting both remote GitHub repos and local paths
+      patterns:
+        remote: "{owner}/{repo}@{version}"
+        local_relative: '"./" or "./{path}"'
+        local_absolute: '"/absolute/path"'
+
       examples:
-        - "hiivmind/hiivmind-blueprint-lib@v2.0.0"
-        - "mycorp/custom-types@v1.0.0"
+        - source: "hiivmind/hiivmind-blueprint-lib@v2.0.0"
+          type: remote
+          description: Remote GitHub repository with version pin
+        - source: "mycorp/custom-types@v1.0.0"
+          type: remote
+          description: Private or public GitHub repository
+        - source: "./"
+          type: local
+          description: Current directory (locally checked out repo)
+        - source: "./lib/types"
+          type: local
+          description: Relative path from current directory
+        - source: "/home/user/git/my-types"
+          type: local
+          description: Absolute path to local type definitions
+
+      detection:
+        is_local: |
+          source.startsWith("./") OR source.startsWith("/")
+        is_remote: |
+          source.matches(/^[^\/]+\/[^@]+@.+$/)
 
       version_formats:
         - format: "@v2.0.0"
@@ -39,25 +64,29 @@ resolution:
         - format: "@v2"
           behavior: Latest minor in v2.x.x
 
+      local_notes: |
+        Local paths are useful for:
+        - Development: Testing type changes before publishing
+        - Monorepos: Types defined in same repository as workflows
+        - Offline: No network required for local paths
+        - Speed: No network latency for local file reads
+
     loading_algorithm:
-      description: Main loading function for type definitions
+      description: Main loading function for type definitions (supports local and remote)
       effect: |
         FUNCTION load_types(definitions_block):
-            # 1. Parse source
+            # 1. Parse source (returns {is_local, local_path} or {owner, repo, version})
             source = definitions_block.source
-            parts = parse_source(source)  # {owner, repo, version}
+            parts = parse_source(source)
 
-            # 2. Construct base URL
-            base_url = "https://raw.githubusercontent.com/{parts.owner}/{parts.repo}/{parts.version}/"
+            # 2. Fetch index files (routes to local/gh api/raw URL based on source type)
+            consequences_index = fetch(parts, "consequences/index.yaml")
+            preconditions_index = fetch(parts, "preconditions/index.yaml")
 
-            # 3. Fetch index files
-            consequences_index = fetch(base_url + "consequences/index.yaml")
-            preconditions_index = fetch(base_url + "preconditions/index.yaml")
+            # 3. Build registry from indexes
+            registry = build_registry(consequences_index, preconditions_index, parts)
 
-            # 4. Build registry from indexes
-            registry = build_registry(consequences_index, preconditions_index, base_url)
-
-            # 5. Load extensions
+            # 4. Load extensions
             IF definitions_block.extensions:
                 FOR each ext IN definitions_block.extensions:
                     ext_registry = load_types({ source: ext })
@@ -66,87 +95,252 @@ resolution:
             RETURN registry
 
     source_parsing:
-      description: Parse GitHub shorthand into components
+      description: Parse source string into components (supports local and remote)
       effect: |
         FUNCTION parse_source(source):
-            # Parse: owner/repo@version
+            # Check for local path first
+            IF source.startsWith("./") OR source.startsWith("/"):
+                # Local path - resolve to absolute
+                IF source.startsWith("./"):
+                    local_path = resolve_relative_path(source)
+                ELSE:
+                    local_path = source
+
+                # Validate path exists
+                IF NOT directory_exists(local_path):
+                    THROW "Local source path does not exist: {local_path}"
+
+                RETURN {
+                    is_local: true,
+                    local_path: local_path,
+                    # Remote fields set to null for local sources
+                    owner: null,
+                    repo: null,
+                    version: null
+                }
+
+            # Parse remote: owner/repo@version
             match = source.match(/^([^\/]+)\/([^@]+)@(.+)$/)
 
             IF NOT match:
-                THROW "Invalid source format: {source}. Expected: owner/repo@version"
+                THROW "Invalid source format: {source}. Expected: owner/repo@version or local path (./ or /path)"
 
             RETURN {
+                is_local: false,
+                local_path: null,
                 owner: match[1],
                 repo: match[2],
                 version: match[3]
             }
 
+      examples:
+        - input: "hiivmind/hiivmind-blueprint-lib@v2.0.0"
+          output: |
+            { is_local: false, owner: "hiivmind", repo: "hiivmind-blueprint-lib", version: "v2.0.0" }
+
+        - input: "./"
+          output: |
+            { is_local: true, local_path: "/current/working/directory" }
+
+        - input: "/home/user/git/my-types"
+          output: |
+            { is_local: true, local_path: "/home/user/git/my-types" }
+
     url_construction:
-      description: Construct raw GitHub URL from components
+      description: Construct GitHub API path and raw URL from components
       effect: |
-        FUNCTION construct_base_url(owner, repo, version):
-            RETURN "https://raw.githubusercontent.com/{owner}/{repo}/{version}/"
+        FUNCTION construct_paths(owner, repo, version, path):
+            RETURN {
+                api_path: "repos/{owner}/{repo}/contents/{path}?ref={version}",
+                raw_url: "https://raw.githubusercontent.com/{owner}/{repo}/{version}/{path}"
+            }
 
     fetching:
-      description: Fetch YAML content from URL
-      effect: |
-        FUNCTION fetch(url):
-            # Use WebFetch tool
-            response = CALL WebFetch with:
-                url: url
-                prompt: "Return the raw YAML content"
+      description: Fetch YAML content from local path or GitHub repository
 
-            IF response.status >= 400:
-                THROW "Failed to fetch types: {response.status} {url}"
+      local_method:
+        description: Read directly from local filesystem (fastest, no network)
+        effect: |
+          FUNCTION fetch_local(local_path, path):
+              full_path = "{local_path}/{path}"
 
-            # Handle redirects
-            IF response.redirect_url:
-                RETURN fetch(response.redirect_url)
+              IF NOT file_exists(full_path):
+                  RETURN { success: false, error: "File not found: {full_path}" }
 
-            RETURN parse_yaml(response.content)
+              result = CALL Read with:
+                  file_path: full_path
+
+              IF result.error:
+                  RETURN { success: false, error: result.error }
+
+              RETURN { success: true, content: parse_yaml(result.content) }
+
+        advantages:
+          - No network latency
+          - Works offline
+          - No authentication required
+          - Instant feedback during development
+
+      gh_api_method:
+        description: Use gh api for authenticated access (supports private repos)
+        effect: |
+          FUNCTION fetch_gh_api(owner, repo, path, version):
+              result = CALL Bash with:
+                  command: "gh api repos/{owner}/{repo}/contents/{path}?ref={version} --jq '.content' | base64 -d"
+
+              IF result.exit_code != 0:
+                  RETURN { success: false, error: result.stderr }
+
+              RETURN { success: true, content: parse_yaml(result.stdout) }
+
+        advantages:
+          - Works with private repositories
+          - Respects GitHub rate limits
+          - Uses existing gh authentication
+
+      raw_url_method:
+        description: Use raw.githubusercontent.com for public repos when gh unavailable
+        effect: |
+          FUNCTION fetch_raw_url(owner, repo, path, version):
+              url = "https://raw.githubusercontent.com/{owner}/{repo}/{version}/{path}"
+              response = CALL WebFetch with:
+                  url: url
+                  prompt: "Return the raw YAML content"
+
+              IF response.status >= 400:
+                  RETURN { success: false, error: "{response.status} {url}" }
+
+              # Handle redirects
+              IF response.redirect_url:
+                  RETURN fetch_raw_url_direct(response.redirect_url)
+
+              RETURN { success: true, content: parse_yaml(response.content) }
+
+        advantages:
+          - Works without gh CLI installed
+          - Good fallback for public repos
+          - Simple HTTP fetch
+
+      combined_fetch:
+        description: Unified fetch supporting local paths and remote with fallback
+        effect: |
+          FUNCTION fetch(source_parts, path):
+              # Local path: direct file read (fastest)
+              IF source_parts.is_local:
+                  result = fetch_local(source_parts.local_path, path)
+                  IF result.success:
+                      LOG "Fetched locally: {source_parts.local_path}/{path}"
+                      RETURN result.content
+
+                  THROW "Failed to fetch local: {source_parts.local_path}/{path}\n  Error: {result.error}"
+
+              # Remote: try gh api first, then raw URL fallback
+              owner = source_parts.owner
+              repo = source_parts.repo
+              version = source_parts.version
+
+              result = fetch_gh_api(owner, repo, path, version)
+              IF result.success:
+                  LOG "Fetched via gh api: {owner}/{repo}/{path}@{version}"
+                  RETURN result.content
+
+              # Fall back to raw URL (public repos only)
+              LOG "gh api failed, trying raw URL fallback"
+              result = fetch_raw_url(owner, repo, path, version)
+              IF result.success:
+                  LOG "Fetched via raw URL: {owner}/{repo}/{path}@{version}"
+                  RETURN result.content
+
+              THROW "Failed to fetch: {owner}/{repo}/{path}@{version}\n  gh api: {result.error}\n  raw URL: {result.error}"
 
       fetch_order:
         - "consequences/index.yaml - type lookup table"
         - "preconditions/index.yaml - type lookup table"
         - "Individual definition files on demand (lazy loading)"
 
+      method_selection:
+        description: Which method is used based on source type
+        table: |
+          | Source Type        | Primary Method | Fallback Method |
+          |--------------------|----------------|-----------------|
+          | Local path (./)    | local_method   | none (error)    |
+          | Local path (/)     | local_method   | none (error)    |
+          | Remote (owner/repo)| gh_api_method  | raw_url_method  |
+
     index_format:
-      description: Structure of type index files
+      description: Structure of type index files (consolidated v2.0 format)
       example: |
         # consequences/index.yaml
-        schema_version: "1.1"
+        schema_version: "2.0"
+        definition_file: consequences.yaml  # All types in one file
 
-        type_lookup:
-          set_flag: core/state
-          set_state: core/state
-          clone_repo: extensions/git
-          # ... all types
+        # Optional remote extensions
+        remote_sources:
+          # - url: https://raw.githubusercontent.com/.../consequences.yaml
+          #   types: [custom_type_1, custom_type_2]
 
-        categories:
-          core/state:
-            description: State mutation operations
-            types: [set_flag, set_state, append_state, ...]
+        types:
+          set_flag:
+            category: core/state
+            brief: Set a boolean flag
+            required_params: [flag, value]
+          clone_repo:
+            category: extensions/git
+            brief: Clone git repository
+            required_params: [url, dest]
+          # ... all types with metadata
+
+        stats:
+          total_types: 45
+          core_types: 31
+          extension_types: 14
+
+      fields:
+        - name: schema_version
+          required: true
+          description: Schema version (semver major.minor)
+        - name: definition_file
+          required: true
+          description: Path to consolidated definition file (relative to index)
+        - name: remote_sources
+          required: false
+          description: Optional list of remote type extensions
+        - name: types
+          required: true
+          description: Type registry with category, brief, and required_params
+        - name: stats
+          required: false
+          description: Statistics for quick reference
 
     registry_building:
-      description: Build TypeRegistry from index files
+      description: Build TypeRegistry from index files (v2.0 format)
       effect: |
-        FUNCTION build_registry(consequences_index, preconditions_index, base_url):
+        FUNCTION build_registry(consequences_index, preconditions_index, source_parts):
             registry = {
-                consequences: {},
-                preconditions: {},
-                base_url: base_url
+                consequences: {
+                    _index: consequences_index  # Cache index for lazy loading
+                },
+                preconditions: {
+                    _index: preconditions_index
+                },
+                source: source_parts  # {owner, repo, version} for fetching
             }
 
-            # Build type lookup from indexes
-            FOR each type_name, category IN consequences_index.type_lookup:
+            # Build type lookup from v2.0 index format
+            # Index now has types with {category, brief, required_params}
+            FOR each type_name, type_info IN consequences_index.types:
                 registry.consequences[type_name] = {
-                    category: category,
+                    category: type_info.category,
+                    brief: type_info.brief,
+                    required_params: type_info.required_params,
                     loaded: false  # Lazy load full definition
                 }
 
-            FOR each type_name, category IN preconditions_index.type_lookup:
+            FOR each type_name, type_info IN preconditions_index.types:
                 registry.preconditions[type_name] = {
-                    category: category,
+                    category: type_info.category,
+                    brief: type_info.brief,
+                    required_params: type_info.required_params,
                     loaded: false
                 }
 
@@ -154,28 +348,41 @@ resolution:
 
       result_structure: |
         type_registry:
-          schema_version: "1.1"
+          schema_version: "2.0"
 
           consequences:
+            _index:
+              definition_file: consequences.yaml
+              # ... cached index metadata
             set_flag:
               category: core/state
+              brief: Set a boolean flag
+              required_params: [flag, value]
               loaded: false
             clone_repo:
               category: extensions/git
+              brief: Clone git repository
+              required_params: [url, dest]
               loaded: false
             # ... all consequence types
 
           preconditions:
+            _index:
+              definition_file: preconditions.yaml
             file_exists:
               category: core/filesystem
+              brief: Check if arbitrary file exists
+              required_params: [path]
               loaded: false
             flag_set:
               category: core/state
+              brief: Check if a boolean flag is true
+              required_params: [flag]
               loaded: false
             # ... all precondition types
 
     lazy_loading:
-      description: Load full type definitions on first use
+      description: Load full type definitions on first use (consolidated file approach)
       effect: |
         FUNCTION get_type_definition(registry, type_name, kind):
             # kind is "consequences" or "preconditions"
@@ -185,15 +392,379 @@ resolution:
                 THROW "Unknown {kind} type: {type_name}"
 
             IF NOT entry.loaded:
-                # Construct path: core/state -> consequences/core/state.yaml
-                category_path = entry.category
-                url = registry.base_url + "{kind}/" + category_path + ".yaml"
+                # Get definition_file from cached index
+                # Consolidated format: all types in one file referenced by index
+                definition_file = registry[kind]._index.definition_file
+                path = "{kind}/" + definition_file
+                # e.g., "consequences/consequences.yaml" or "preconditions/preconditions.yaml"
 
-                definitions = fetch(url)
-                entry.definition = definitions.types[type_name]
-                entry.loaded = true
+                # Fetch consolidated file (routes to local/gh api/raw URL based on source type)
+                # registry.source contains parsed source parts with is_local flag
+                definitions = fetch(registry.source, path)
+
+                # Cache all definitions from this file (since they're consolidated)
+                FOR each name, def IN definitions.types:
+                    IF name IN registry[kind]:
+                        registry[kind][name].definition = def
+                        registry[kind][name].loaded = true
 
             RETURN entry.definition
+
+      note: |
+        The v2.0 consolidated format stores all type definitions in a single file
+        per kind (e.g., consequences/consequences.yaml) rather than separate files
+        per category. This reduces fetch count from O(categories) to O(1) per kind.
+
+        For local sources, fetching is instant (direct file read).
+        For remote sources, uses gh api with raw URL fallback.
+
+    selective_loading:
+      description: Workflow-first selective type loading for optimized fetching
+      rationale: |
+        For workflows using only a few types (e.g., 5-10 out of 77 total), we can
+        analyze the workflow first to identify needed types, then use a single yq
+        query to extract only those types from the consolidated file.
+
+      workflow_analysis:
+        description: Extract all type references from a workflow
+        effect: |
+          FUNCTION extract_workflow_types(workflow):
+              consequences = Set()
+              preconditions = Set()
+
+              # Entry preconditions
+              FOR each precondition IN workflow.entry_preconditions:
+                  extract_precondition_types(precondition, preconditions)
+
+              # All nodes
+              FOR each node IN workflow.nodes:
+                  IF node.type == "action":
+                      FOR each action IN node.actions:
+                          consequences.add(action.type)
+
+                  ELSE IF node.type == "conditional":
+                      extract_precondition_types(node.condition, preconditions)
+
+                  ELSE IF node.type == "user_prompt":
+                      FOR each handler IN node.on_response:
+                          IF handler.consequence:
+                              FOR each c IN handler.consequence:
+                                  consequences.add(c.type)
+
+                  ELSE IF node.type == "validation_gate":
+                      # Validation gates have validations array with preconditions
+                      FOR each validation IN node.validations:
+                          extract_precondition_types(validation.condition, preconditions)
+                          IF validation.on_failure:
+                              FOR each c IN validation.on_failure:
+                                  consequences.add(c.type)
+
+              RETURN {consequences, preconditions}
+
+          FUNCTION extract_precondition_types(precondition, set):
+              set.add(precondition.type)
+              # Recurse into composites (all_of, any_of, xor_of, none_of)
+              IF precondition.conditions:
+                  FOR each nested IN precondition.conditions:
+                      extract_precondition_types(nested, set)
+
+      yq_query_construction:
+        description: Build single yq query to extract multiple types from consolidated file
+        effect: |
+          FUNCTION build_selective_yq_query(type_names, root_key):
+              # Build OR chain for yq key matching (yq v4 syntax)
+              # e.g., .key == "set_flag" or .key == "clone_repo"
+              conditions = type_names.map(n => '.key == "' + n + '"').join(" or ")
+              RETURN ".{root_key} | with_entries(select({conditions}))"
+
+        examples:
+          - input:
+              type_names: ["set_flag", "clone_repo"]
+              root_key: "consequences"
+            output: '.consequences | with_entries(select(.key == "set_flag" or .key == "clone_repo"))'
+
+          - input:
+              type_names: ["file_exists", "flag_set", "all_of"]
+              root_key: "preconditions"
+            output: '.preconditions | with_entries(select(.key == "file_exists" or .key == "flag_set" or .key == "all_of"))'
+
+      selective_fetch:
+        description: Fetch only needed types using yq filtering - supports local, gh api, and raw URL
+        effect: |
+          FUNCTION fetch_selective_types(source_parts, type_names, kind):
+              # Build yq query for selective extraction
+              query = build_selective_yq_query(type_names, kind)
+
+              # kind is "consequences" or "preconditions"
+              # Get definition file path from index
+              path = "{kind}/{kind}.yaml"  # e.g., "consequences/consequences.yaml"
+
+              # Route to appropriate method based on source type
+              IF source_parts.is_local:
+                  RETURN fetch_selective_local(source_parts.local_path, path, query)
+              ELSE:
+                  # Try gh api first, fall back to raw URL
+                  result = fetch_selective_gh_api(source_parts, path, query)
+                  IF result.success:
+                      RETURN result
+
+                  result = fetch_selective_raw_url(source_parts, path, query)
+                  IF result.success:
+                      RETURN result
+
+                  THROW "Failed to fetch selective types from all sources"
+
+        local_method:
+          description: Read local file and apply yq filter directly
+          effect: |
+            FUNCTION fetch_selective_local(local_path, path, query):
+                full_path = "{local_path}/{path}"
+
+                IF NOT file_exists(full_path):
+                    RETURN { success: false, error: "File not found: {full_path}" }
+
+                # Apply yq filter directly to local file
+                result = CALL Bash with:
+                    command: |
+                        yq eval '{query}' {full_path}
+
+                IF result.exit_code != 0:
+                    RETURN { success: false, error: result.stderr }
+
+                RETURN { success: true, content: parse_yaml(result.stdout) }
+
+          example_command: |
+            yq eval '.consequences | with_entries(select(.key == "set_flag" or .key == "clone_repo"))' \
+                /home/user/git/my-types/consequences/consequences.yaml
+
+        gh_api_method:
+          description: Fetch via gh api and pipe through yq filter
+          effect: |
+            FUNCTION fetch_selective_gh_api(source_parts, path, query):
+                owner = source_parts.owner
+                repo = source_parts.repo
+                version = source_parts.version
+
+                # Fetch with gh api and pipe through yq filter
+                result = CALL Bash with:
+                    command: |
+                        gh api repos/{owner}/{repo}/contents/{path}?ref={version} \
+                            --jq '.content' | base64 -d | yq eval '{query}' -
+
+                IF result.exit_code != 0:
+                    RETURN { success: false, error: result.stderr }
+
+                RETURN { success: true, content: parse_yaml(result.stdout) }
+
+          example_command: |
+            gh api repos/hiivmind/hiivmind-blueprint-lib/contents/consequences/consequences.yaml?ref=v2.0.0 \
+                --jq '.content' | base64 -d | yq eval '.consequences | with_entries(select(.key == "set_flag"))' -
+
+        raw_url_method:
+          description: Fetch via raw URL, write to temp file, apply yq filter
+          effect: |
+            FUNCTION fetch_selective_raw_url(source_parts, path, query):
+                owner = source_parts.owner
+                repo = source_parts.repo
+                version = source_parts.version
+
+                url = "https://raw.githubusercontent.com/{owner}/{repo}/{version}/{path}"
+
+                # Fetch content via WebFetch
+                response = CALL WebFetch with:
+                    url: url
+                    prompt: "Return the raw YAML content"
+
+                IF response.status >= 400:
+                    RETURN { success: false, error: "{response.status} {url}" }
+
+                # Handle redirects
+                IF response.redirect_url:
+                    response = CALL WebFetch with:
+                        url: response.redirect_url
+                        prompt: "Return the raw YAML content"
+
+                # Write to temp file and apply yq filter
+                temp_file = write_temp_file(response.content)
+                result = CALL Bash with:
+                    command: |
+                        yq eval '{query}' {temp_file}
+
+                IF result.exit_code != 0:
+                    RETURN { success: false, error: result.stderr }
+
+                RETURN { success: true, content: parse_yaml(result.stdout) }
+
+          note: |
+            The raw URL method requires writing to a temp file because WebFetch
+            returns content that needs local yq processing. This adds slight
+            overhead compared to gh api piping, but provides public repo fallback.
+
+        method_comparison: |
+          | Method     | Network Hops | Auth Required | yq Location | Use Case              |
+          |------------|--------------|---------------|-------------|-----------------------|
+          | Local      | 0            | No            | Local       | Development, monorepos|
+          | gh api     | 1            | Yes (gh)      | Local pipe  | Private repos         |
+          | Raw URL    | 1 + temp     | No            | Local file  | Public fallback       |
+
+        note: |
+          All three methods apply the yq filter locally after fetching content.
+          This ensures consistent behavior regardless of source type, and reduces
+          network transfer size for workflows using few types.
+
+      main_algorithm:
+        description: Complete selective loading algorithm (supports local and remote sources)
+        effect: |
+          FUNCTION load_types_selective(definitions_block, workflow):
+              # 1. Parse source (returns {is_local, local_path} or {owner, repo, version})
+              source = definitions_block.source
+              parts = parse_source(source)
+
+              # 2. Fetch index files (lightweight, always needed)
+              # Uses unified fetch that routes to local/gh api/raw URL based on source type
+              consequences_index = fetch(parts, "consequences/index.yaml")
+              preconditions_index = fetch(parts, "preconditions/index.yaml")
+
+              # 3. Analyze workflow to find needed types
+              needed = extract_workflow_types(workflow)
+
+              # 4. Validate all needed types exist in indexes
+              FOR each type_name IN needed.consequences:
+                  IF type_name NOT IN consequences_index.types:
+                      THROW "Unknown consequence type: {type_name}"
+
+              FOR each type_name IN needed.preconditions:
+                  IF type_name NOT IN preconditions_index.types:
+                      THROW "Unknown precondition type: {type_name}"
+
+              # 5. Selective fetch with yq filtering
+              # Routes to local/gh api/raw URL based on source_parts.is_local
+              consequence_defs = fetch_selective_types(
+                  parts, needed.consequences, "consequences"
+              )
+
+              precondition_defs = fetch_selective_types(
+                  parts, needed.preconditions, "preconditions"
+              )
+
+              # 6. Build minimal registry with only needed types
+              registry = {
+                  consequences: {},
+                  preconditions: {},
+                  source: parts
+              }
+
+              FOR each type_name IN needed.consequences:
+                  registry.consequences[type_name] = {
+                      category: consequences_index.types[type_name].category,
+                      brief: consequences_index.types[type_name].brief,
+                      required_params: consequences_index.types[type_name].required_params,
+                      definition: consequence_defs[type_name],
+                      loaded: true  # Already loaded
+                  }
+
+              FOR each type_name IN needed.preconditions:
+                  registry.preconditions[type_name] = {
+                      category: preconditions_index.types[type_name].category,
+                      brief: preconditions_index.types[type_name].brief,
+                      required_params: preconditions_index.types[type_name].required_params,
+                      definition: precondition_defs[type_name],
+                      loaded: true
+                  }
+
+              # 7. Handle extensions (if any)
+              IF definitions_block.extensions:
+                  FOR each ext IN definitions_block.extensions:
+                      ext_registry = load_types_selective({ source: ext }, workflow)
+                      registry = merge_registry(registry, ext_registry)
+
+              RETURN registry
+
+        source_type_examples:
+          - source: "hiivmind/hiivmind-blueprint-lib@v2.0.0"
+            description: Remote GitHub - uses gh api with raw URL fallback
+            flow: parse_source → fetch(parts, path) → fetch_gh_api → fetch_selective_gh_api
+
+          - source: "./"
+            description: Local current directory - direct file read
+            flow: parse_source → fetch(parts, path) → fetch_local → fetch_selective_local
+
+          - source: "/home/user/git/my-types"
+            description: Local absolute path - direct file read
+            flow: parse_source → fetch(parts, path) → fetch_local → fetch_selective_local
+
+    hybrid_loading:
+      description: Automatically choose optimal loading strategy based on workflow complexity
+      threshold: 30  # types
+
+      rationale: |
+        - Below threshold: Selective is faster (smaller network transfer, targeted extraction)
+        - Above threshold: Lazy is faster (single fetch amortized across many types)
+
+        The threshold of 30 types (~40% of 77 total types) balances:
+        - Workflow analysis overhead vs. fetch size savings
+        - yq query complexity vs. full file parsing
+
+      effect: |
+        FUNCTION load_types_hybrid(definitions_block, workflow):
+            # Analyze workflow to count needed types
+            needed = extract_workflow_types(workflow)
+            total = needed.consequences.size + needed.preconditions.size
+
+            # Choose strategy based on type count
+            IF total > 30:
+                LOG "Using lazy loading strategy ({total} types needed)"
+                RETURN load_types(definitions_block)  # Lazy loading approach
+            ELSE:
+                LOG "Using selective loading strategy ({total} types needed)"
+                RETURN load_types_selective(definitions_block, workflow)
+
+      integration_point: |
+        The execution engine calls load_types_hybrid() when initializing a workflow,
+        passing both the definitions block and the parsed workflow. This allows
+        automatic strategy selection without workflow author intervention.
+
+    strategy_comparison:
+      description: Trade-offs between loading strategies
+
+      lazy_loading:
+        upfront_cost: Low (indexes only, ~500 lines total)
+        first_use_cost: High (entire consolidated file, ~2500 lines for consequences)
+        subsequent_use_cost: Zero (cached)
+        best_for: Large workflows using many types (>30)
+        network_fetches: 2 (indexes) + 1-2 (on first type use per kind)
+
+      selective_loading:
+        upfront_cost: Medium (indexes + workflow analysis + selective fetch)
+        first_use_cost: None (types pre-loaded)
+        subsequent_use_cost: Zero (already loaded)
+        best_for: Small workflows using few types (<30)
+        network_fetches: 2 (indexes) + 2 (selective extracts)
+
+      comparison_table: |
+        | Workflow Size | Types Used | Recommended Strategy | Network Transfer |
+        |---------------|------------|----------------------|------------------|
+        | Small         | 1-10       | Selective            | ~500 lines       |
+        | Medium        | 10-30      | Selective            | ~1000 lines      |
+        | Large         | 30-50      | Lazy                 | ~2500 lines      |
+        | Very Large    | 50+        | Lazy                 | ~2500 lines      |
+
+      example_savings: |
+        Workflow using 4 types (set_flag, read_file, config_exists, flag_set):
+
+        Lazy loading:
+          - Fetch consequences/index.yaml (~250 lines)
+          - Fetch preconditions/index.yaml (~250 lines)
+          - On first consequence use: fetch consequences/consequences.yaml (~2500 lines)
+          - On first precondition use: fetch preconditions/preconditions.yaml (~1200 lines)
+          - Total: ~4200 lines
+
+        Selective loading:
+          - Fetch consequences/index.yaml (~250 lines)
+          - Fetch preconditions/index.yaml (~250 lines)
+          - Fetch 2 consequences via yq filter (~50 lines)
+          - Fetch 2 preconditions via yq filter (~40 lines)
+          - Total: ~590 lines (86% reduction)
 
     extension_loading:
       description: Load additional type sources
@@ -255,10 +826,6 @@ resolution:
                 IF node.type == "conditional":
                     validate_precondition_type(node.condition, registry)
 
-                IF node.type == "validation_gate":
-                    FOR each validation IN node.validations:
-                        validate_precondition_type(validation, registry)
-
             # Check entry preconditions
             FOR each precondition IN workflow.entry_preconditions:
                 validate_precondition_type(precondition, registry)
@@ -273,18 +840,56 @@ resolution:
                     validate_precondition_type(cond, registry)
 
     error_messages:
-      description: Provide clear, actionable error messages
+      description: Provide clear, actionable error messages for all source types
 
       examples:
-        - error: "Failed to resolve type definitions"
+        - error: "Failed to resolve type definitions (remote)"
+          source_type: remote
           context: |
             Source: hiivmind/hiivmind-blueprint-lib@v2.0.0
-            URL: https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/consequences/index.yaml
-            Error: 404 Not Found
+
+            Tried:
+            1. gh api repos/hiivmind/hiivmind-blueprint-lib/contents/consequences/index.yaml?ref=v2.0.0 → (error)
+            2. https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/consequences/index.yaml → (error)
 
             Suggestions:
+            - For private repos: Verify gh auth status (gh auth status)
             - Check the version exists: https://github.com/hiivmind/hiivmind-blueprint-lib/tags
             - Verify network connectivity
+
+        - error: "Failed to resolve type definitions (local)"
+          source_type: local
+          context: |
+            Source: ./lib/types
+
+            Tried:
+            1. /home/user/project/lib/types/consequences/index.yaml → File not found
+
+            Suggestions:
+            - Verify the path exists: ls -la ./lib/types
+            - Check for required files: consequences/index.yaml, preconditions/index.yaml
+            - Ensure proper directory structure with index.yaml files
+
+        - error: "Local source path does not exist"
+          source_type: local
+          context: |
+            Source: /home/user/git/my-types
+
+            The specified local path does not exist or is not a directory.
+
+            Suggestions:
+            - Verify the path: ls -la /home/user/git/my-types
+            - Check spelling and case sensitivity
+            - Use absolute path or ./ relative path
+
+        - error: "Invalid source format"
+          context: |
+            Source: invalid-source
+
+            Expected formats:
+            - Remote: owner/repo@version (e.g., hiivmind/hiivmind-blueprint-lib@v2.0.0)
+            - Local relative: ./ or ./path (e.g., ./lib/types)
+            - Local absolute: /path (e.g., /home/user/git/my-types)
 
         - error: "Unknown consequence type"
           context: |
@@ -302,5 +907,17 @@ resolution:
                   extensions:
                     - mycorp/docker-types@v1.0.0
             - Define a custom consequence in your plugin
+
+        - error: "yq filter failed"
+          context: |
+            Failed to extract types using yq filter.
+
+            Query: .consequences | with_entries(select(.key == "set_flag"))
+            File: /path/to/consequences/consequences.yaml
+
+            Suggestions:
+            - Verify yq is installed: yq --version (requires yq v4+)
+            - Check YAML syntax in the source file
+            - Ensure the file contains the expected root key (consequences/preconditions)
 
     since: "2.0.0"
