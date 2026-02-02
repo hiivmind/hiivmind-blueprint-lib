@@ -445,7 +445,7 @@ resolution:
           - No legacy logging/display configs present
         when_skipped:
           - Hardcoded defaults are used (no remote fetch)
-          - level: "normal", display_enabled: true, log_enabled: true, etc.
+          - level: "normal, display_enabled: true, log_enabled: true, etc."
         note: |
           The unified output section has hardcoded defaults that work without
           loading the section. Only load if custom config is specified or
