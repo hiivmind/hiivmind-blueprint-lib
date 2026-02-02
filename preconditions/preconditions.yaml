@@ -1,9 +1,9 @@
-# Core Composite Preconditions
-# Logical combinators for precondition composition
+# Blueprint Precondition Type Definitions
+# v3.0.0 - Consolidated types for reduced over-specification
 
 schema_version: "1.0"
-category: core/composite
-description: Logical composition of multiple preconditions
+category: core
+description: Precondition type definitions for workflow conditions
 
 preconditions:
   # ==========================================================================
@@ -168,11 +168,15 @@ preconditions:
         Evaluates a boolean expression string with access to state variables.
         Supports comparisons, logical operators, and built-in functions.
         Use for complex conditions that don't fit standard precondition types.
+
+        This is the recommended replacement for count_equals, count_above,
+        and count_below - use len() function instead.
       notes:
         - "Field access via dot notation: source_type, computed.count"
         - "Comparisons: ==, !=, >, <, >=, <="
         - "Logical: &&, ||, !"
         - "Functions: len(), contains(), startswith(), endswith()"
+        - "Use len(field) for array length checks (replaces count_* types)"
         - Use sparingly; prefer typed preconditions when possible
 
     parameters:
@@ -199,577 +203,111 @@ preconditions:
     since: "1.0.0"
 
   # ==========================================================================
-  # category: core/filesystems
-  # ==========================================================================
-
-  # --------------------------------------------------------------------------
-  # config_exists
-  # --------------------------------------------------------------------------
-  config_exists:
-    category: core/filesystems
-    description:
-      brief: Check if corpus config.yaml exists
-      detail: |
-        Evaluates to true if the corpus configuration file exists at data/config.yaml.
-        This is the primary entry gate for most corpus skills.
-      notes:
-        - Path is always data/config.yaml relative to corpus root
-        - Does not validate config content, only existence
-
-    parameters: []
-
-    evaluation:
-      effect: |
-        return file_exists("data/config.yaml")
-      reads:
-        - "data/config.yaml"
-      functions:
-        - file_exists
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # index_exists
-  # --------------------------------------------------------------------------
-  index_exists:
-    category: core/filesystems
-    description:
-      brief: Check if corpus index.md exists
-      detail: |
-        Evaluates to true if the corpus index file exists at data/index.md.
-        Used to determine if build has been run.
-      notes:
-        - Path is always data/index.md relative to corpus root
-        - Does not validate index content
-
-    parameters: []
-
-    evaluation:
-      effect: |
-        return file_exists("data/index.md")
-      reads:
-        - "data/index.md"
-      functions:
-        - file_exists
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # index_is_placeholder - corpus-specific
-  # --------------------------------------------------------------------------
-  index_is_placeholder:
-    category: core/filesystems
-    description:
-      brief: Check if index contains placeholder text
-      detail: |
-        Evaluates to true if the index file contains placeholder text indicating
-        the corpus has not been built yet. Looks for "Run hiivmind-corpus-build".
-      notes:
-        - Returns false if index doesn't exist
-        - Uses string search, not full content analysis
-
-    parameters: []
-
-    evaluation:
-      effect: |
-        if not file_exists("data/index.md"):
-          return false
-        content = read_file("data/index.md")
-        return "Run hiivmind-corpus-build" in content
-      reads:
-        - "data/index.md"
-      functions:
-        - file_exists
-        - read_file
-        - contains
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # file_exists
-  # --------------------------------------------------------------------------
-  file_exists:
-    category: core/filesystems
-    description:
-      brief: Check if arbitrary file exists
-      detail: |
-        Evaluates to true if the specified file exists at the given path.
-        Path is relative to corpus root and supports ${} interpolation.
-      notes:
-        - Path is relative to corpus/project root
-        - Supports ${} interpolation from state
-
-    parameters:
-      - name: path
-        type: string
-        required: true
-        description: File path to check (relative to root)
-        interpolatable: true
-
-    evaluation:
-      effect: |
-        resolved_path = interpolate(path)
-        return file_exists(resolved_path)
-      reads:
-        - "${path}"
-      functions:
-        - file_exists
-        - interpolate
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # directory_exists
-  # --------------------------------------------------------------------------
-  directory_exists:
-    category: core/filesystems
-    description:
-      brief: Check if directory exists
-      detail: |
-        Evaluates to true if the specified directory exists at the given path.
-        Path is relative to corpus root and supports ${} interpolation.
-      notes:
-        - Path is relative to corpus/project root
-        - Returns false if path is a file
-        - Supports ${} interpolation from state
-
-    parameters:
-      - name: path
-        type: string
-        required: true
-        description: Directory path to check
-        interpolatable: true
-
-    evaluation:
-      effect: |
-        resolved_path = interpolate(path)
-        return directory_exists(resolved_path)
-      reads:
-        - "${path}"
-      functions:
-        - directory_exists
-        - interpolate
-
-    since: "1.0.0"
-
-  # ==========================================================================
-  # category: core/logging
-  # ==========================================================================
-
-  # --------------------------------------------------------------------------
-  # log_initialized
-  # --------------------------------------------------------------------------
-  log_initialized:
-    category: core/logging
-    description:
-      brief: Check if logging has been initialized
-      detail: |
-        Evaluates to true if init_log has been called and logging is ready.
-        Checks the log_initialized flag in state.
-      notes:
-        - Required before log_node, log_event, etc.
-        - Set by init_log consequence
-        - Use as entry gate for logging phases
-
-    parameters: []
-
-    evaluation:
-      effect: |
-        return state.flags.log_initialized == true
-      reads:
-        - "state.flags.log_initialized"
-      functions: []
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # log_level_enabled
-  # --------------------------------------------------------------------------
-  log_level_enabled:
-    category: core/logging
-    description:
-      brief: Check if log level allows specific threshold
-      detail: |
-        Evaluates to true if the current log level configuration allows
-        logging at the specified level. Uses level hierarchy:
-        trace > debug > info > warn > error
-      notes:
-        - Level hierarchy from verbose to quiet
-        - trace includes all levels
-        - error only includes error level
-        - Resolved from logging config cascade
-
-    parameters:
-      - name: level
-        type: string
-        required: true
-        description: Minimum level to check
-        enum:
-          - trace
-          - debug
-          - info
-          - warn
-          - error
-        interpolatable: false
-
-    evaluation:
-      effect: |
-        level_hierarchy = ["error", "warn", "info", "debug", "trace"]
-        current_level = get_log_config("level")
-        current_index = level_hierarchy.index(current_level)
-        check_index = level_hierarchy.index(level)
-        return current_index >= check_index
-      reads:
-        - "state.logging.level"
-      functions:
-        - get_log_config
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # log_finalized
-  # --------------------------------------------------------------------------
-  log_finalized:
-    category: core/logging
-    description:
-      brief: Check if logging has been finalized
-      detail: |
-        Evaluates to true if finalize_log has been called.
-        Used to prevent double-finalization or gate write_log.
-      notes:
-        - Set by finalize_log consequence
-        - Prevents duplicate finalization
-        - Required before write_log
-
-    parameters: []
-
-    evaluation:
-      effect: |
-        return state.flags.log_finalized == true
-      reads:
-        - "state.flags.log_finalized"
-      functions: []
-
-    since: "1.0.0"
-
-  # ==========================================================================
   # category: core/state
   # ==========================================================================
 
   # --------------------------------------------------------------------------
-  # flag_set
+  # state_check
   # --------------------------------------------------------------------------
-  flag_set:
+  state_check:
     category: core/state
     description:
-      brief: Check if a boolean flag is true
+      brief: Check state field values with various operators
       detail: |
-        Evaluates to true if the specified flag in state.flags is true.
-        Used for simple boolean conditions in workflow branching.
+        Unified state inspection precondition. The operator parameter determines
+        what type of check is performed on the specified field.
+
+        For flags, use field "flags.flag_name" with operator "true" or "false".
       notes:
-        - Checks state.flags[flag]
-        - Returns false if flag is undefined or false
-        - Flags are typically set via set_flag consequence
-
-    parameters:
-      - name: flag
-        type: string
-        required: true
-        description: Flag name in state.flags namespace
-        pattern: "^[a-zA-Z_][a-zA-Z0-9_]*$"
-        interpolatable: false
-
-    evaluation:
-      effect: |
-        return state.flags[flag] == true
-      reads:
-        - "state.flags.${flag}"
-      functions: []
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # flag_not_set
-  # --------------------------------------------------------------------------
-  flag_not_set:
-    category: core/state
-    description:
-      brief: Check if a boolean flag is false or undefined
-      detail: |
-        Evaluates to true if the specified flag in state.flags is false or undefined.
-        Inverse of flag_set.
-      notes:
-        - Returns true if flag is false, undefined, or null
-        - Use for negative conditions
-
-    parameters:
-      - name: flag
-        type: string
-        required: true
-        description: Flag name in state.flags namespace
-        pattern: "^[a-zA-Z_][a-zA-Z0-9_]*$"
-        interpolatable: false
-
-    evaluation:
-      effect: |
-        return state.flags[flag] != true
-      reads:
-        - "state.flags.${flag}"
-      functions: []
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # state_equals
-  # --------------------------------------------------------------------------
-  state_equals:
-    category: core/state
-    description:
-      brief: Check if state field equals specific value
-      detail: |
-        Evaluates to true if the state field at the given path equals
-        the specified value. Supports dot notation for nested fields.
-      notes:
-        - Supports dot notation (e.g., computed.source.type)
-        - Uses strict equality comparison
-        - Value can be any type (string, number, boolean, null)
+        - "operator: equals - field equals value"
+        - "operator: not_equals - field does not equal value"
+        - "operator: null - field is null or undefined"
+        - "operator: not_null - field has a value"
+        - "operator: true - field is boolean true (for flags)"
+        - "operator: false - field is boolean false (for flags)"
+        - Supports dot notation for nested fields
 
     parameters:
       - name: field
         type: string
         required: true
-        description: Field path (dot notation for nested)
+        description: State field path (dot notation for nested, e.g., "flags.initialized")
         pattern: "^[a-zA-Z_][a-zA-Z0-9_.]*$"
+        interpolatable: false
+
+      - name: operator
+        type: string
+        required: true
+        description: "Comparison operator: equals, not_equals, null, not_null, true, false"
+        enum:
+          - equals
+          - not_equals
+          - "null"
+          - not_null
+          - "true"
+          - "false"
         interpolatable: false
 
       - name: value
         type: any
-        required: true
-        description: Expected value
+        required: false
+        description: Value for equals/not_equals operators
         interpolatable: false
 
     evaluation:
       effect: |
         actual = get_state_value(field)
-        return actual == value
+
+        if operator == "equals":
+          return actual == value
+
+        elif operator == "not_equals":
+          return actual != value
+
+        elif operator == "null":
+          return actual == null
+
+        elif operator == "not_null":
+          return actual != null
+
+        elif operator == "true":
+          return actual == true
+
+        elif operator == "false":
+          return actual != true
       reads:
         - "state.${field}"
       functions:
         - get_state_value
 
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # state_not_null
-  # --------------------------------------------------------------------------
-  state_not_null:
-    category: core/state
-    description:
-      brief: Check if state field has a value
-      detail: |
-        Evaluates to true if the state field at the given path is not null
-        or undefined. Used to verify computed values exist.
-      notes:
-        - Returns true for any non-null value including empty strings
-        - Supports dot notation for nested paths
-
-    parameters:
-      - name: field
-        type: string
-        required: true
-        description: Field path
-        pattern: "^[a-zA-Z_][a-zA-Z0-9_.]*$"
-        interpolatable: false
-
-    evaluation:
-      effect: |
-        return get_state_value(field) != null
-      reads:
-        - "state.${field}"
-      functions:
-        - get_state_value
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # state_is_null
-  # --------------------------------------------------------------------------
-  state_is_null:
-    category: core/state
-    description:
-      brief: Check if state field is null or undefined
-      detail: |
-        Evaluates to true if the state field at the given path is null
-        or undefined. Inverse of state_not_null.
-      notes:
-        - Returns true for null or undefined
-        - Returns false for empty strings or zero
-
-    parameters:
-      - name: field
-        type: string
-        required: true
-        description: Field path
-        pattern: "^[a-zA-Z_][a-zA-Z0-9_.]*$"
-        interpolatable: false
-
-    evaluation:
-      effect: |
-        return get_state_value(field) == null
-      reads:
-        - "state.${field}"
-      functions:
-        - get_state_value
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # count_equals
-  # --------------------------------------------------------------------------
-  count_equals:
-    category: core/state
-    description:
-      brief: Check if array length equals value
-      detail: |
-        Evaluates to true if the length of the array at the specified
-        field path equals the given count.
-      notes:
-        - Field must contain an array
-        - Returns false if field is null or not an array
-
-    parameters:
-      - name: field
-        type: string
-        required: true
-        description: Field containing array
-        pattern: "^[a-zA-Z_][a-zA-Z0-9_.]*$"
-        interpolatable: false
-
-      - name: count
-        type: number
-        required: true
-        description: Expected length
-        interpolatable: false
-
-    evaluation:
-      effect: |
-        array = get_state_value(field)
-        if array == null or not is_array(array):
-          return false
-        return len(array) == count
-      reads:
-        - "state.${field}"
-      functions:
-        - get_state_value
-        - len
-        - is_array
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # count_above
-  # --------------------------------------------------------------------------
-  count_above:
-    category: core/state
-    description:
-      brief: Check if array length exceeds threshold
-      detail: |
-        Evaluates to true if the length of the array at the specified
-        field path is greater than the minimum value (exclusive).
-      notes:
-        - Uses > comparison (min is exclusive)
-        - Returns false if field is null or not an array
-
-    parameters:
-      - name: field
-        type: string
-        required: true
-        description: Field containing array
-        pattern: "^[a-zA-Z_][a-zA-Z0-9_.]*$"
-        interpolatable: false
-
-      - name: min
-        type: number
-        required: true
-        description: Minimum length (exclusive)
-        interpolatable: false
-
-    evaluation:
-      effect: |
-        array = get_state_value(field)
-        if array == null or not is_array(array):
-          return false
-        return len(array) > min
-      reads:
-        - "state.${field}"
-      functions:
-        - get_state_value
-        - len
-        - is_array
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # count_below
-  # --------------------------------------------------------------------------
-  count_below:
-    category: core/state
-    description:
-      brief: Check if array length is below threshold
-      detail: |
-        Evaluates to true if the length of the array at the specified
-        field path is less than the maximum value (exclusive).
-      notes:
-        - Uses < comparison (max is exclusive)
-        - Returns false if field is null or not an array
-
-    parameters:
-      - name: field
-        type: string
-        required: true
-        description: Field containing array
-        pattern: "^[a-zA-Z_][a-zA-Z0-9_.]*$"
-        interpolatable: false
-
-      - name: max
-        type: number
-        required: true
-        description: Maximum length (exclusive)
-        interpolatable: false
-
-    evaluation:
-      effect: |
-        array = get_state_value(field)
-        if array == null or not is_array(array):
-          return false
-        return len(array) < max
-      reads:
-        - "state.${field}"
-      functions:
-        - get_state_value
-        - len
-        - is_array
-
-    since: "1.0.0"
+    since: "3.0.0"
+    replaces:
+      - flag_set
+      - flag_not_set
+      - state_equals
+      - state_not_null
+      - state_is_null
 
   # ==========================================================================
   # category: core/tools
   # ==========================================================================
 
   # --------------------------------------------------------------------------
-  # tool_available
+  # tool_check
   # --------------------------------------------------------------------------
-  tool_available:
+  tool_check:
     category: core/tools
     description:
-      brief: Check if command-line tool is installed
+      brief: Check tool availability, version, auth, or daemon status
       detail: |
-        Evaluates to true if the specified command-line tool is available
-        in the system PATH. Uses `which` to check availability.
+        Unified tool inspection precondition. The capability parameter determines
+        what aspect of the tool is checked.
       notes:
-        - Checks system PATH for tool
-        - "Common tools: git, yq, jq, python3, curl"
-        - Does not check version, only availability
+        - "capability: available - tool exists in PATH"
+        - "capability: version_gte - tool version >= args.min_version"
+        - "capability: authenticated - tool is authenticated (for gh, aws, etc.)"
+        - "capability: daemon_ready - tool's daemon is running (for docker, etc.)"
+        - Returns true for tools that don't need auth/daemon
 
     parameters:
       - name: tool
@@ -779,149 +317,217 @@ preconditions:
         pattern: "^[a-zA-Z0-9_-]+$"
         interpolatable: false
 
-    evaluation:
-      effect: |
-        exit_code = shell("which ${tool} >/dev/null 2>&1")
-        return exit_code == 0
-      reads: []
-      functions:
-        - shell
-        - which
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # tool_version_gte
-  # --------------------------------------------------------------------------
-  tool_version_gte:
-    category: core/tools
-    description:
-      brief: Check if tool version meets minimum requirement
-      detail: |
-        Evaluates to true if the installed tool version is >= min_version.
-        Uses tool's --version output and extracts version number for comparison.
-        Falls back to tool_available if version cannot be determined.
-      notes:
-        - Compares semantic versions (major.minor or major.minor.patch)
-        - Falls back to existence check if version pattern unknown
-        - Uses tool registry for version extraction patterns
-
-    parameters:
-      - name: tool
+      - name: capability
         type: string
         required: true
-        description: Tool name (command name)
-        pattern: "^[a-zA-Z0-9_-]+$"
+        description: "Capability to check: available, version_gte, authenticated, daemon_ready"
+        enum:
+          - available
+          - version_gte
+          - authenticated
+          - daemon_ready
         interpolatable: false
 
-      - name: min_version
-        type: string
-        required: true
-        description: Minimum required version (e.g., "2.0" or "2.0.0")
-        pattern: "^\\d+\\.\\d+(\\.\\d+)?$"
+      - name: args
+        type: object
+        required: false
+        description: "Capability-specific args: {min_version: '2.0'} for version_gte"
         interpolatable: false
 
     evaluation:
       effect: |
-        if not tool_available(tool):
-          return false
-        version_output = shell(tool + " --version 2>&1")
-        installed_version = extract_version(version_output, tool)
-        if installed_version == null:
-          return true  # Can't determine version, assume OK
-        return compare_versions(installed_version, min_version) >= 0
+        if capability == "available":
+          exit_code = shell("which ${tool} >/dev/null 2>&1")
+          return exit_code == 0
+
+        elif capability == "version_gte":
+          if not tool_available(tool):
+            return false
+          version_output = shell(tool + " --version 2>&1")
+          installed_version = extract_version(version_output, tool)
+          if installed_version == null:
+            return true  # Can't determine version, assume OK
+          return compare_versions(installed_version, args.min_version) >= 0
+
+        elif capability == "authenticated":
+          if not tool_available(tool):
+            return false
+          auth_check = get_auth_check(tool)  # From registry
+          if auth_check == null:
+            return true  # No auth required
+          exit_code = shell(auth_check + " >/dev/null 2>&1")
+          return exit_code == 0
+
+        elif capability == "daemon_ready":
+          if not tool_available(tool):
+            return false
+          daemon_check = get_daemon_check(tool)  # From registry
+          if daemon_check == null:
+            return true  # No daemon required
+          exit_code = shell(daemon_check)
+          return exit_code == 0
       reads: []
       functions:
         - shell
         - tool_available
         - extract_version
         - compare_versions
-
-    since: "2.0.0"
-
-  # --------------------------------------------------------------------------
-  # tool_authenticated
-  # --------------------------------------------------------------------------
-  tool_authenticated:
-    category: core/tools
-    description:
-      brief: Check if tool requiring authentication is authenticated
-      detail: |
-        Evaluates to true if the specified tool that requires authentication
-        is both available AND properly authenticated. Returns true for tools
-        that don't require authentication.
-      notes:
-        - Checks tool availability first
-        - Runs tool-specific auth check command
-        - "Auth tools: gh, aws, gcloud, az"
-        - Returns true if tool doesn't require auth
-
-    parameters:
-      - name: tool
-        type: string
-        required: true
-        description: Tool name (command name)
-        pattern: "^[a-zA-Z0-9_-]+$"
-        interpolatable: false
-
-    evaluation:
-      effect: |
-        if not tool_available(tool):
-          return false
-        auth_check = get_auth_check(tool)  # From registry
-        if auth_check == null:
-          return true  # No auth required
-        exit_code = shell(auth_check + " >/dev/null 2>&1")
-        return exit_code == 0
-      reads: []
-      functions:
-        - shell
-        - tool_available
         - get_auth_check
-
-    since: "2.0.0"
-
-  # --------------------------------------------------------------------------
-  # tool_daemon_ready
-  # --------------------------------------------------------------------------
-  tool_daemon_ready:
-    category: core/tools
-    description:
-      brief: Check if tool's required daemon is running
-      detail: |
-        Evaluates to true if the specified daemon-based tool is available
-        AND its required daemon is running and accessible. Returns true for
-        tools that don't require a daemon.
-      notes:
-        - Checks tool availability first
-        - Runs tool-specific daemon check
-        - "Daemon tools: docker, podman"
-        - Returns true if tool doesn't require daemon
-
-    parameters:
-      - name: tool
-        type: string
-        required: true
-        description: Tool name (command name)
-        pattern: "^[a-zA-Z0-9_-]+$"
-        interpolatable: false
-
-    evaluation:
-      effect: |
-        if not tool_available(tool):
-          return false
-        daemon_check = get_daemon_check(tool)  # From registry
-        if daemon_check == null:
-          return true  # No daemon required
-        exit_code = shell(daemon_check)
-        return exit_code == 0
-      reads: []
-      functions:
-        - shell
-        - tool_available
         - get_daemon_check
 
-    since: "2.0.0"
+    since: "3.0.0"
+    replaces:
+      - tool_available
+      - tool_version_gte
+      - tool_authenticated
+      - tool_daemon_ready
+
+  # ==========================================================================
+  # category: core/filesystems
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # path_check
+  # --------------------------------------------------------------------------
+  path_check:
+    category: core/filesystems
+    description:
+      brief: Check file or directory existence and properties
+      detail: |
+        Unified filesystem precondition for checking paths. The check parameter
+        determines what is verified about the path.
+
+        Replaces config_exists, index_exists, index_is_placeholder, file_exists,
+        and directory_exists.
+      notes:
+        - "check: exists - path exists (file or directory)"
+        - "check: is_file - path exists and is a file"
+        - "check: is_directory - path exists and is a directory"
+        - "check: contains_text - file contains specified text (args.pattern)"
+        - Path supports ${} interpolation
+
+    parameters:
+      - name: path
+        type: string
+        required: true
+        description: File or directory path (relative to root)
+        interpolatable: true
+
+      - name: check
+        type: string
+        required: true
+        description: "Check type: exists, is_file, is_directory, contains_text"
+        enum:
+          - exists
+          - is_file
+          - is_directory
+          - contains_text
+        interpolatable: false
+
+      - name: args
+        type: object
+        required: false
+        description: "Check-specific args: {pattern: 'text'} for contains_text"
+        interpolatable: true
+
+    evaluation:
+      effect: |
+        resolved_path = interpolate(path)
+
+        if check == "exists":
+          return path_exists(resolved_path)
+
+        elif check == "is_file":
+          return file_exists(resolved_path)
+
+        elif check == "is_directory":
+          return directory_exists(resolved_path)
+
+        elif check == "contains_text":
+          if not file_exists(resolved_path):
+            return false
+          content = read_file(resolved_path)
+          return args.pattern in content
+      reads:
+        - "${path}"
+      functions:
+        - path_exists
+        - file_exists
+        - directory_exists
+        - read_file
+        - interpolate
+
+    since: "3.0.0"
+    replaces:
+      - config_exists
+      - index_exists
+      - index_is_placeholder
+      - file_exists
+      - directory_exists
+
+  # ==========================================================================
+  # category: core/logging
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # log_state
+  # --------------------------------------------------------------------------
+  log_state:
+    category: core/logging
+    description:
+      brief: Check logging lifecycle state
+      detail: |
+        Unified logging state precondition. The aspect parameter determines
+        what part of the logging lifecycle is checked.
+      notes:
+        - "aspect: initialized - init_log has been called"
+        - "aspect: finalized - finalize_log has been called"
+        - "aspect: level_enabled - current log level includes args.level"
+        - Level hierarchy: error < warn < info < debug < trace
+
+    parameters:
+      - name: aspect
+        type: string
+        required: true
+        description: "Logging aspect to check: initialized, finalized, level_enabled"
+        enum:
+          - initialized
+          - finalized
+          - level_enabled
+        interpolatable: false
+
+      - name: args
+        type: object
+        required: false
+        description: "Aspect-specific args: {level: 'debug'} for level_enabled"
+        interpolatable: false
+
+    evaluation:
+      effect: |
+        if aspect == "initialized":
+          return state.flags.log_initialized == true
+
+        elif aspect == "finalized":
+          return state.flags.log_finalized == true
+
+        elif aspect == "level_enabled":
+          level_hierarchy = ["error", "warn", "info", "debug", "trace"]
+          current_level = get_log_config("level")
+          current_index = level_hierarchy.index(current_level)
+          check_index = level_hierarchy.index(args.level)
+          return current_index >= check_index
+      reads:
+        - "state.flags.log_initialized"
+        - "state.flags.log_finalized"
+        - "state.logging.level"
+      functions:
+        - get_log_config
+
+    since: "3.0.0"
+    replaces:
+      - log_initialized
+      - log_level_enabled
+      - log_finalized
 
   # ==========================================================================
   # category: core/python
@@ -964,6 +570,9 @@ preconditions:
   # category: core/network
   # ==========================================================================
 
+  # --------------------------------------------------------------------------
+  # network_available
+  # --------------------------------------------------------------------------
   network_available:
     category: core/network
     description:
@@ -1000,139 +609,96 @@ preconditions:
   # ==========================================================================
   # category: core/git
   # ==========================================================================
+
   # --------------------------------------------------------------------------
-  # source_exists
+  # source_check
   # --------------------------------------------------------------------------
-  source_exists:
+  source_check:
     category: core/git
     description:
-      brief: Check if source ID exists in config.yaml
+      brief: Check source repository status
       detail: |
-        Evaluates to true if a source with the specified ID is defined
-        in the corpus configuration file (data/config.yaml).
+        Unified source repository precondition. The aspect parameter determines
+        what is checked about the source.
       notes:
-        - Checks config.sources array for matching ID
-        - Does not verify source is cloned
-        - ID is case-sensitive
+        - "aspect: exists - source ID is defined in config.yaml"
+        - "aspect: cloned - .source/{id}/ directory exists"
+        - "aspect: has_updates - git source has new remote commits (network op)"
+        - ID supports ${} interpolation
 
     parameters:
-      - name: id
+      - name: source_id
         type: string
         required: true
         description: Source identifier
         pattern: "^[a-zA-Z0-9_-]+$"
         interpolatable: true
 
+      - name: aspect
+        type: string
+        required: true
+        description: "Aspect to check: exists, cloned, has_updates"
+        enum:
+          - exists
+          - cloned
+          - has_updates
+        interpolatable: false
+
     evaluation:
       effect: |
-        config = load_yaml("data/config.yaml")
-        resolved_id = interpolate(id)
-        return config.sources.any(s => s.id == resolved_id)
+        resolved_id = interpolate(source_id)
+
+        if aspect == "exists":
+          config = load_yaml("data/config.yaml")
+          return config.sources.any(s => s.id == resolved_id)
+
+        elif aspect == "cloned":
+          return directory_exists(".source/" + resolved_id)
+
+        elif aspect == "has_updates":
+          source_path = ".source/" + resolved_id
+
+          # Fetch latest
+          shell("git -C " + source_path + " fetch --quiet")
+
+          # Compare
+          local_sha = shell("git -C " + source_path + " rev-parse HEAD")
+          remote_sha = shell("git -C " + source_path + " rev-parse @{u}")
+
+          return local_sha != remote_sha
       reads:
         - "data/config.yaml"
+        - ".source/${source_id}"
       functions:
         - load_yaml
-        - interpolate
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # source_cloned
-  # --------------------------------------------------------------------------
-  source_cloned:
-    category: core/git
-    description:
-      brief: Check if source has been cloned
-      detail: |
-        Evaluates to true if the source has been cloned to the .source/
-        directory. Checks for directory existence at .source/{id}/.
-      notes:
-        - Checks .source/{id} directory existence
-        - Does not verify source content or integrity
-        - Works for any source type (git, local, web)
-
-    parameters:
-      - name: id
-        type: string
-        required: true
-        description: Source identifier
-        pattern: "^[a-zA-Z0-9_-]+$"
-        interpolatable: true
-
-    evaluation:
-      effect: |
-        resolved_id = interpolate(id)
-        return directory_exists(".source/" + resolved_id)
-      reads:
-        - ".source/${id}"
-      functions:
         - directory_exists
-        - interpolate
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # source_has_updates
-  # --------------------------------------------------------------------------
-  source_has_updates:
-    category: core/git
-    description:
-      brief: Check if git source has upstream changes
-      detail: |
-        Evaluates to true if the git source has commits on the remote
-        that are not present locally. Performs a fetch before comparing.
-      notes:
-        - Only works with git source types
-        - Performs network operation (git fetch)
-        - Compares local HEAD with upstream tracking branch
-
-    parameters:
-      - name: id
-        type: string
-        required: true
-        description: Source identifier (must be git type)
-        pattern: "^[a-zA-Z0-9_-]+$"
-        interpolatable: true
-
-    evaluation:
-      effect: |
-        resolved_id = interpolate(id)
-        source_path = ".source/" + resolved_id
-
-        # Fetch latest
-        shell("git -C " + source_path + " fetch --quiet")
-
-        # Compare
-        local_sha = shell("git -C " + source_path + " rev-parse HEAD")
-        remote_sha = shell("git -C " + source_path + " rev-parse @{u}")
-
-        return local_sha != remote_sha
-      reads:
-        - ".source/${id}"
-      functions:
         - shell
         - interpolate
 
-    since: "1.0.0"
+    since: "3.0.0"
+    replaces:
+      - source_exists
+      - source_cloned
+      - source_has_updates
 
   # ==========================================================================
   # category: core/web_fetch
   # ==========================================================================
 
   # --------------------------------------------------------------------------
-  # fetch_succeeded
+  # fetch_check
   # --------------------------------------------------------------------------
-  fetch_succeeded:
+  fetch_check:
     category: core/web_fetch
     description:
-      brief: Check if a previous web fetch succeeded
+      brief: Check web fetch result status
       detail: |
-        Evaluates to true if a previous web_fetch operation stored in state
-        completed successfully with a 2xx status code.
+        Unified web fetch result precondition. The aspect parameter determines
+        what is checked about a previous fetch result stored in state.
       notes:
-        - Checks state field for fetch result object
-        - Expects status field in range 200-299
-        - Field must contain result from web_fetch consequence
+        - "aspect: succeeded - fetch result has 2xx status"
+        - "aspect: has_content - fetch result has non-empty content"
+        - Checks result stored by web_ops consequence
 
     parameters:
       - name: from
@@ -1142,42 +708,13 @@ preconditions:
         pattern: "^[a-zA-Z_][a-zA-Z0-9_.]*$"
         interpolatable: false
 
-    evaluation:
-      effect: |
-        result = get_state_value(from)
-        if result == null:
-          return false
-        status = result.status
-        return status >= 200 and status < 300
-      reads:
-        - "state.${from}"
-      functions:
-        - get_state_value
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # fetch_returned_content
-  # --------------------------------------------------------------------------
-  fetch_returned_content:
-    category: core/web_fetch
-    description:
-      brief: Check if fetch returned non-empty content
-      detail: |
-        Evaluates to true if a previous web_fetch operation returned
-        non-empty content. Checks that content field is not null and
-        has length > 0.
-      notes:
-        - More specific than fetch_succeeded
-        - Verifies actual content was received
-        - Useful for detecting empty responses
-
-    parameters:
-      - name: from
+      - name: aspect
         type: string
         required: true
-        description: State field containing fetch result
-        pattern: "^[a-zA-Z_][a-zA-Z0-9_.]*$"
+        description: "Aspect to check: succeeded, has_content"
+        enum:
+          - succeeded
+          - has_content
         interpolatable: false
 
     evaluation:
@@ -1185,12 +722,21 @@ preconditions:
         result = get_state_value(from)
         if result == null:
           return false
-        content = result.content
-        return content != null and len(content) > 0
+
+        if aspect == "succeeded":
+          status = result.status
+          return status >= 200 and status < 300
+
+        elif aspect == "has_content":
+          content = result.content
+          return content != null and len(content) > 0
       reads:
         - "state.${from}"
       functions:
         - get_state_value
         - len
 
-    since: "1.0.0"
+    since: "3.0.0"
+    replaces:
+      - fetch_succeeded
+      - fetch_returned_content

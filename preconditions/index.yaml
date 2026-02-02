@@ -1,7 +1,8 @@
 # Precondition Definitions Index
 # Registry of all precondition types with metadata for quick reference
+# v3.0.0 - Consolidated types
 
-schema_version: "2.0"
+schema_version: "3.0"
 definition_file: preconditions.yaml
 
 # Remote extension definitions (public URLs)
@@ -42,118 +43,43 @@ types:
     category: core/expression
     brief: Evaluate arbitrary boolean expression
     required_params: [expression]
+    note: Use len() for array counts (replaces count_equals, count_above, count_below)
 
   # ==========================================================================
-  # Core - Filesystem (5 types)
+  # Core - Filesystem (1 type) - CONSOLIDATED in v3.0
   # ==========================================================================
-  config_exists:
+  path_check:
     category: core/filesystems
-    brief: Check if corpus config.yaml exists
-    required_params: []
-
-  index_exists:
-    category: core/filesystems
-    brief: Check if corpus index.md exists
-    required_params: []
-
-  index_is_placeholder:
-    category: core/filesystems
-    brief: Check if index contains placeholder text
-    required_params: []
-
-  file_exists:
-    category: core/filesystems
-    brief: Check if arbitrary file exists
-    required_params: [path]
-
-  directory_exists:
-    category: core/filesystems
-    brief: Check if directory exists
-    required_params: [path]
+    brief: Check path existence and type
+    required_params: [path, check]
+    replaces: [config_exists, index_exists, index_is_placeholder, file_exists, directory_exists]
 
   # ==========================================================================
-  # Core - Logging (3 types)
+  # Core - Logging (1 type) - CONSOLIDATED in v3.0
   # ==========================================================================
-  log_initialized:
+  log_state:
     category: core/logging
-    brief: Check if logging has been initialized
-    required_params: []
-
-  log_level_enabled:
-    category: core/logging
-    brief: Check if log level allows specific threshold
-    required_params: [level]
-
-  log_finalized:
-    category: core/logging
-    brief: Check if logging has been finalized
-    required_params: []
+    brief: Check logging lifecycle state
+    required_params: [aspect]
+    replaces: [log_initialized, log_level_enabled, log_finalized]
 
   # ==========================================================================
-  # Core - State (8 types)
+  # Core - State (1 type) - CONSOLIDATED in v3.0
   # ==========================================================================
-  flag_set:
+  state_check:
     category: core/state
-    brief: Check if a boolean flag is true
-    required_params: [flag]
-
-  flag_not_set:
-    category: core/state
-    brief: Check if a boolean flag is false or undefined
-    required_params: [flag]
-
-  state_equals:
-    category: core/state
-    brief: Check if state field equals specific value
-    required_params: [field, value]
-
-  state_not_null:
-    category: core/state
-    brief: Check if state field has a value
-    required_params: [field]
-
-  state_is_null:
-    category: core/state
-    brief: Check if state field is null or undefined
-    required_params: [field]
-
-  count_equals:
-    category: core/state
-    brief: Check if array length equals value
-    required_params: [field, count]
-
-  count_above:
-    category: core/state
-    brief: Check if array length exceeds threshold
-    required_params: [field, min]
-
-  count_below:
-    category: core/state
-    brief: Check if array length is below threshold
-    required_params: [field, max]
+    brief: Check state field values with various operators
+    required_params: [field, operator]
+    replaces: [flag_set, flag_not_set, state_equals, state_not_null, state_is_null]
 
   # ==========================================================================
-  # Core - Tools (5 types)
+  # Core - Tools (2 types) - tool_check CONSOLIDATED in v3.0
   # ==========================================================================
-  tool_available:
+  tool_check:
     category: core/tools
-    brief: Check if command-line tool is installed
-    required_params: [tool]
-
-  tool_version_gte:
-    category: core/tools
-    brief: Check if tool version meets minimum requirement
-    required_params: [tool, min_version]
-
-  tool_authenticated:
-    category: core/tools
-    brief: Check if tool requiring authentication is authenticated
-    required_params: [tool]
-
-  tool_daemon_ready:
-    category: core/tools
-    brief: Check if tool's required daemon is running
-    required_params: [tool]
+    brief: Check tool availability and capabilities
+    required_params: [tool, capability]
+    replaces: [tool_available, tool_version_gte, tool_authenticated, tool_daemon_ready]
 
   python_module_available:
     category: core/python
@@ -169,38 +95,30 @@ types:
     required_params: []
 
   # ==========================================================================
-  # Core - Git (3 types)
+  # Core - Git (1 type) - CONSOLIDATED in v3.0
   # ==========================================================================
-  source_exists:
+  source_check:
     category: core/git
-    brief: Check if source ID exists in config.yaml
-    required_params: [id]
-
-  source_cloned:
-    category: core/git
-    brief: Check if source has been cloned
-    required_params: [id]
-
-  source_has_updates:
-    category: core/git
-    brief: Check if git source has upstream changes
-    required_params: [id]
+    brief: Check source repository state
+    required_params: [source_id, aspect]
+    replaces: [source_exists, source_cloned, source_has_updates]
 
   # ==========================================================================
-  # Core - Web Fetch (2 types)
+  # Core - Web Fetch (1 type) - CONSOLIDATED in v3.0
   # ==========================================================================
-  fetch_succeeded:
+  fetch_check:
     category: core/web_fetch
-    brief: Check if a previous web fetch succeeded
-    required_params: [from]
+    brief: Check web fetch result state
+    required_params: [from, aspect]
+    replaces: [fetch_succeeded, fetch_returned_content]
 
-  fetch_returned_content:
-    category: core/web_fetch
-    brief: Check if fetch returned non-empty content
-    required_params: [from]
+# Eliminated types (use evaluate_expression instead)
+# - count_equals -> evaluate_expression: "len(field) == N"
+# - count_above  -> evaluate_expression: "len(field) > N"
+# - count_below  -> evaluate_expression: "len(field) < N"
 
 # Statistics
 stats:
-  total_types: 32
-  core_types: 32
-  extension_types: 0
+  total_types: 14
+  consolidated_from: 27
+  eliminated: 3  # count_equals, count_above, count_below

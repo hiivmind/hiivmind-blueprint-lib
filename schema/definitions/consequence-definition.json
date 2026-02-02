@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/consequence-definition.json",
-  "$comment": "Schema version 2.0 - Converted to object pattern (type is now object key)",
+  "$comment": "Schema version 3.0 - Consolidated types with operation/format parameters",
   "title": "Consequence Definition Schema",
   "description": "Schema for YAML consequence definition files",
   "type": "object",
@@ -66,6 +66,13 @@
         "since": {
           "$ref": "../common.json#/$defs/semver",
           "description": "Version when this consequence was introduced"
+        },
+        "replaces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of deprecated type names this type replaces"
         }
       }
     },

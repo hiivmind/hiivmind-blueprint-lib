@@ -1,5 +1,6 @@
 # Consequence Examples
 # Documentary usage patterns for consequence types
+# v3.0.0 - Updated for consolidated types
 #
 # These examples are for human reference, not automated testing.
 
@@ -31,7 +32,8 @@ examples:
                 - type: create_checkpoint
                   name: pre_deploy
                 - type: run_command
-                  command: "./deploy.sh"
+                  interpreter: bash
+                  script: "./deploy.sh"
               on_success: verify
               on_failure: rollback
 
@@ -95,6 +97,16 @@ examples:
         explanation: |
           Inline pseudocode for one-off transformations that don't
           warrant a reusable consequence type.
+
+    invoke_skill:
+      - title: "Invoke another skill"
+        yaml: |
+          - type: invoke_skill
+            skill: hiivmind-corpus-build
+            args: "--force"
+        explanation: |
+          Delegates to another skill using Claude's Skill tool.
+          Typically used as last action before ending.
 
   # ==========================================================================
   # core/evaluation - Expression evaluation and computation
@@ -214,19 +226,21 @@ examples:
   # core/interaction - User display and feedback
   # ==========================================================================
   core/interaction:
-    display_message:
-      - title: "Show progress update"
+    display:
+      - title: "Show text message"
         yaml: |
-          - type: display_message
-            message: "Processing source: ${computed.source_id}"
+          - type: display
+            format: text
+            content: "Processing source: ${computed.source_id}"
         explanation: |
           Displays interpolated message to user.
           Supports markdown formatting.
 
       - title: "Multi-line status message"
         yaml: |
-          - type: display_message
-            message: |
+          - type: display
+            format: markdown
+            content: |
               ## Source Added Successfully
 
               - **ID**: ${computed.source_id}
@@ -235,19 +249,28 @@ examples:
         explanation: |
           Multi-line markdown message with YAML pipe syntax.
 
-    display_table:
       - title: "Show tabular data"
         yaml: |
-          - type: display_table
+          - type: display
+            format: table
             title: "Configured Sources"
             headers:
               - ID
               - Type
               - Path
-            rows: "${computed.sources_table}"
+            content: "${computed.sources_table}"
         explanation: |
           Renders data as a markdown table.
-          Rows reference computed array from state.
+          Content references computed array from state.
+
+      - title: "Show JSON data"
+        yaml: |
+          - type: display
+            format: json
+            title: "Configuration"
+            content: "${computed.config}"
+        explanation: |
+          Pretty-prints content as JSON with syntax highlighting.
 
   # ==========================================================================
   # core/logging - Workflow execution logging
@@ -278,24 +301,25 @@ examples:
           Records node execution in log history.
           Typically auto-injected by engine.
 
-    log_event:
-      - title: "Log domain-specific event"
+    log_entry:
+      - title: "Log info event"
         yaml: |
-          - type: log_event
+          - type: log_entry
+            level: info
+            message: "Source added successfully"
             event_type: source_added
-            data:
+            context:
               source_id: "${computed.source_id}"
               source_type: "${source_type}"
               file_count: "${computed.file_count}"
-            level: info
         explanation: |
           Logs structured event for auditing.
-          Data can be any structured object.
+          Context can be any structured object.
 
-    log_warning:
-      - title: "Log potential issue"
+      - title: "Log warning"
         yaml: |
-          - type: log_warning
+          - type: log_entry
+            level: warning
             message: "Large repository may slow indexing"
             context:
               file_count: "${computed.file_count}"
@@ -303,10 +327,10 @@ examples:
         explanation: |
           Logs warning without stopping workflow.
 
-    log_error:
       - title: "Log error with context"
         yaml: |
-          - type: log_error
+          - type: log_entry
+            level: error
             message: "Clone failed"
             error_type: git_error
             context:
@@ -377,20 +401,6 @@ examples:
           Emits annotations for errors/warnings.
 
   # ==========================================================================
-  # core/skill - Skill invocation
-  # ==========================================================================
-  core/skill:
-    invoke_skill:
-      - title: "Invoke another skill"
-        yaml: |
-          - type: invoke_skill
-            skill: hiivmind-corpus-build
-            args: "--force"
-        explanation: |
-          Delegates to another skill using Claude's Skill tool.
-          Typically used as last action before ending.
-
-  # ==========================================================================
   # core/state - State mutation
   # ==========================================================================
   core/state:
@@ -403,10 +413,11 @@ examples:
         explanation: |
           Sets a boolean flag in state.flags namespace.
 
-    set_state:
+    mutate_state:
       - title: "Set state field"
         yaml: |
-          - type: set_state
+          - type: mutate_state
+            operation: set
             field: source_type
             value: git
         explanation: |
@@ -414,35 +425,36 @@ examples:
 
       - title: "Set nested state with interpolation"
         yaml: |
-          - type: set_state
+          - type: mutate_state
+            operation: set
             field: computed.full_url
             value: "https://github.com/${computed.owner}/${computed.repo}"
         explanation: |
           Sets nested field using interpolated value.
 
-    append_state:
       - title: "Append to array"
         yaml: |
-          - type: append_state
+          - type: mutate_state
+            operation: append
             field: computed.processed_files
             value: "${computed.current_file}"
         explanation: |
           Appends value to array field.
           Creates array if it doesn't exist.
 
-    clear_state:
       - title: "Reset field"
         yaml: |
-          - type: clear_state
+          - type: mutate_state
+            operation: clear
             field: computed.temp_data
         explanation: |
           Resets field to null.
           Useful for clearing computed values between iterations.
 
-    merge_state:
       - title: "Merge object into state"
         yaml: |
-          - type: merge_state
+          - type: mutate_state
+            operation: merge
             field: computed.config
             value:
               updated_at: "${computed.timestamp}"
@@ -477,38 +489,39 @@ examples:
   # extensions/file-system - File operations
   # ==========================================================================
   extensions/file-system:
-    read_file:
+    local_file_ops:
       - title: "Read configuration file"
         yaml: |
-          - type: read_file
+          - type: local_file_ops
+            operation: read
             path: "data/config.yaml"
             store_as: computed.config_content
         explanation: |
           Reads file content into state.
           Uses Claude's Read tool.
 
-    write_file:
       - title: "Write processed output"
         yaml: |
-          - type: write_file
+          - type: local_file_ops
+            operation: write
             path: "${computed.output_path}"
             content: "${computed.processed_content}"
         explanation: |
           Writes content to file.
           Creates parent directories if needed.
 
-    create_directory:
       - title: "Create output directory"
         yaml: |
-          - type: create_directory
+          - type: local_file_ops
+            operation: mkdir
             path: "${computed.output_dir}"
         explanation: |
           Creates directory with mkdir -p behavior.
 
-    delete_file:
       - title: "Remove temporary file"
         yaml: |
-          - type: delete_file
+          - type: local_file_ops
+            operation: delete
             path: "${computed.temp_file}"
         explanation: |
           Deletes file if it exists.
@@ -518,39 +531,41 @@ examples:
   # extensions/git - Git operations
   # ==========================================================================
   extensions/git:
-    clone_repo:
+    git_ops_local:
       - title: "Clone with branch selection"
         yaml: |
-          - type: clone_repo
-            url: "${computed.repo_url}"
-            dest: ".source/${computed.source_id}"
-            branch: "${user_responses.branch}"
-            depth: 1
+          - type: git_ops_local
+            operation: clone
+            args:
+              url: "${computed.repo_url}"
+              dest: ".source/${computed.source_id}"
+              branch: "${user_responses.branch}"
+              depth: 1
         explanation: |
           Clones repository using interpolated values.
           Shallow clone (depth 1) recommended for documentation.
 
-    get_sha:
       - title: "Get commit SHA for tracking"
         yaml: |
-          - type: get_sha
+          - type: git_ops_local
+            operation: get-sha
             repo_path: ".source/${computed.source_id}"
             store_as: computed.commit_sha
         explanation: |
           Gets HEAD commit SHA for version tracking.
 
-    git_pull:
       - title: "Update existing clone"
         yaml: |
-          - type: git_pull
+          - type: git_ops_local
+            operation: pull
             repo_path: ".source/${computed.source_id}"
         explanation: |
           Pulls latest changes using fast-forward only.
 
-    git_fetch:
       - title: "Fetch to check for updates"
         yaml: |
-          - type: git_fetch
+          - type: git_ops_local
+            operation: fetch
             repo_path: ".source/${computed.source_id}"
         explanation: |
           Fetches remote refs without modifying working directory.
@@ -581,10 +596,10 @@ examples:
   # extensions/scripting - Script execution
   # ==========================================================================
   extensions/scripting:
-    run_script:
+    run_command:
       - title: "Run script with auto-detected interpreter"
         yaml: |
-          - type: run_script
+          - type: run_command
             script: "scripts/process.py"
             args:
               - "--input"
@@ -594,10 +609,10 @@ examples:
           Runs script, auto-detecting interpreter from extension.
           .py -> python3, .sh -> bash, .js -> node
 
-    run_python:
       - title: "Run Python script with venv"
         yaml: |
-          - type: run_python
+          - type: run_command
+            interpreter: python
             script: "scripts/process.py"
             venv: ".venv"
             args:
@@ -606,10 +621,10 @@ examples:
         explanation: |
           Runs Python script with virtual environment activation.
 
-    run_bash:
       - title: "Run bash script with environment"
         yaml: |
-          - type: run_bash
+          - type: run_command
+            interpreter: bash
             script: "scripts/build.sh"
             env:
               BUILD_DIR: "${computed.build_path}"
@@ -622,10 +637,11 @@ examples:
   # extensions/web - Web fetch and caching
   # ==========================================================================
   extensions/web:
-    web_fetch:
+    web_ops:
       - title: "Fetch web page content"
         yaml: |
-          - type: web_fetch
+          - type: web_ops
+            operation: fetch
             url: "${computed.doc_url}"
             store_as: computed.page_content
             prompt: "Extract the main documentation content"
@@ -635,7 +651,8 @@ examples:
 
       - title: "Fetch with error tolerance"
         yaml: |
-          - type: web_fetch
+          - type: web_ops
+            operation: fetch
             url: "${computed.optional_url}"
             store_as: computed.optional_content
             allow_failure: true
@@ -643,12 +660,12 @@ examples:
           Fetches URL but doesn't fail on HTTP errors.
           Result still stored with status code.
 
-    cache_web_content:
       - title: "Save fetched content to cache"
         yaml: |
-          - type: cache_web_content
+          - type: web_ops
+            operation: cache
             from: computed.page_content
             dest: ".cache/${computed.cache_filename}"
-            store_path_as: computed.cached_path
+            store_as: computed.cached_path
         explanation: |
           Saves fetched content to local file cache.

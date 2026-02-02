@@ -1,7 +1,8 @@
 # Consequence Definitions Index
 # Registry of all consequence types with metadata for quick reference
+# v3.0.0 - Consolidated types
 
-schema_version: "2.0"
+schema_version: "3.0"
 definition_file: consequences.yaml
 
 # Remote extension definitions (public URLs)
@@ -54,25 +55,16 @@ types:
     required_params: [expression, store_as]
 
   # ==========================================================================
-  # Core - Interaction (2 types)
+  # Core - Interaction (1 type) - CONSOLIDATED in v3.0
   # ==========================================================================
-  display_message:
-    category: core/interaction
-    brief: Show message to user
-    required_params: [message]
-
-  display_table:
-    category: core/interaction
-    brief: Show tabular data to user
-    required_params: [headers, rows]
-
   display:
     category: core/interaction
-    brief: Display content to user (alias for display_message)
-    required_params: [content]
+    brief: Display content to user in various formats
+    required_params: [format, content]
+    replaces: [display_message, display_table]
 
   # ==========================================================================
-  # Core - Logging (10 types)
+  # Core - Logging (9 types) - log_entry CONSOLIDATED in v3.0
   # ==========================================================================
   init_log:
     category: core/logging
@@ -84,20 +76,11 @@ types:
     brief: Record node execution in history
     required_params: [node, outcome]
 
-  log_event:
+  log_entry:
     category: core/logging
-    brief: Log domain-specific event
-    required_params: [event_type]
-
-  log_warning:
-    category: core/logging
-    brief: Add warning message to log
-    required_params: [message]
-
-  log_error:
-    category: core/logging
-    brief: Add error with context to log
-    required_params: [message]
+    brief: Log event with configurable severity level
+    required_params: [level, message]
+    replaces: [log_event, log_warning, log_error]
 
   log_session_snapshot:
     category: core/logging
@@ -124,33 +107,24 @@ types:
     brief: Format output for CI environments
     required_params: []
 
+  install_tool:
+    category: core/logging
+    brief: Install a CLI tool if not already available
+    required_params: [tool]
+
   # ==========================================================================
-  # Core - State (5 types)
+  # Core - State (2 types) - mutate_state CONSOLIDATED in v3.0
   # ==========================================================================
   set_flag:
     category: core/state
     brief: Set a boolean flag
     required_params: [flag, value]
 
-  set_state:
+  mutate_state:
     category: core/state
-    brief: Set any state field
-    required_params: [field, value]
-
-  append_state:
-    category: core/state
-    brief: Append value to array field
-    required_params: [field, value]
-
-  clear_state:
-    category: core/state
-    brief: Reset field to null
-    required_params: [field]
-
-  merge_state:
-    category: core/state
-    brief: Merge object into state field
-    required_params: [field, value]
+    brief: Mutate state field with various operations
+    required_params: [operation, field]
+    replaces: [set_state, append_state, clear_state, merge_state]
 
   # ==========================================================================
   # Core - Utility (2 types)
@@ -189,92 +163,42 @@ types:
     required_params: [action]
 
   # ==========================================================================
-  # Extensions - File System (4 types)
+  # Core - File System (1 type) - CONSOLIDATED in v3.0
   # ==========================================================================
-  read_file:
-    category: extensions/file-system
-    brief: Read arbitrary file content
-    required_params: [path, store_as]
-
-  write_file:
-    category: extensions/file-system
-    brief: Write content to file
-    required_params: [path, content]
-
-  create_directory:
-    category: extensions/file-system
-    brief: Create directory including parents
-    required_params: [path]
-
-  delete_file:
-    category: extensions/file-system
-    brief: Delete file if exists
-    required_params: [path]
+  local_file_ops:
+    category: core/filesystems
+    brief: File system operations (read, write, mkdir, delete)
+    required_params: [operation, path]
+    replaces: [read_file, write_file, create_directory, delete_file]
 
   # ==========================================================================
-  # Extensions - Git (4 types)
+  # Core - Git (1 type) - CONSOLIDATED in v3.0
   # ==========================================================================
-  clone_repo:
-    category: extensions/git
-    brief: Clone git repository
-    required_params: [url, dest]
-
-  get_sha:
-    category: extensions/git
-    brief: Get HEAD commit SHA
-    required_params: [repo_path, store_as]
-
-  git_pull:
-    category: extensions/git
-    brief: Pull latest changes
-    required_params: [repo_path]
-
-  git_fetch:
-    category: extensions/git
-    brief: Fetch remote refs
-    required_params: [repo_path]
+  git_ops_local:
+    category: core/git
+    brief: Git operations (clone, pull, fetch, get-sha)
+    required_params: [operation]
+    replaces: [clone_repo, git_pull, git_fetch, get_sha]
 
   # ==========================================================================
-  # Extensions - Web (2 types)
+  # Core - Web (1 type) - CONSOLIDATED in v3.0
   # ==========================================================================
-  web_fetch:
-    category: extensions/web
-    brief: Fetch URL content
-    required_params: [url, store_as]
-
-  cache_web_content:
-    category: extensions/web
-    brief: Save fetched content to cache
-    required_params: [from, dest]
+  web_ops:
+    category: core/web
+    brief: Web operations (fetch, cache)
+    required_params: [operation, url]
+    replaces: [web_fetch, cache_web_content]
 
   # ==========================================================================
-  # Extensions - Scripting (3 types)
+  # Core - Scripting (1 type) - CONSOLIDATED in v3.0
   # ==========================================================================
-  run_script:
-    category: extensions/scripting
-    brief: Execute script with auto-detected interpreter
-    required_params: [script]
-
-  run_python:
-    category: extensions/scripting
-    brief: Execute Python script
-    required_params: [script]
-
-  run_bash:
-    category: extensions/scripting
-    brief: Execute Bash script
-    required_params: [script]
-
-  # ==========================================================================
-  # Extensions - Package (1 type)
-  # ==========================================================================
-  install_tool:
-    category: extensions/package
-    brief: Install a CLI tool if not already available
-    required_params: [tool]
+  run_command:
+    category: core/scripting
+    brief: Execute script with specified interpreter
+    required_params: [interpreter, script]
+    replaces: [run_script, run_python, run_bash]
 
 # Statistics
 stats:
-  total_types: 45
-  core_types: 31
-  extension_types: 14
+  total_types: 31
+  consolidated_from: 43

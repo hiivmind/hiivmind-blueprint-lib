@@ -1,9 +1,9 @@
-# Core Control Flow Consequences
-# Checkpoints, rollback, and agent spawning
+# Blueprint Consequence Type Definitions
+# v3.0.0 - Consolidated types for reduced over-specification
 
 schema_version: "1.0"
-category: core/control
-description: Control flow, checkpoints, and agent spawning operations
+category: core
+description: Consequence type definitions for workflow actions
 
 consequences:
   # ==========================================================================
@@ -148,6 +148,7 @@ consequences:
   # invoke_skill
   # --------------------------------------------------------------------------
   invoke_skill:
+    category: core/control
     description:
       brief: Invoke another skill and wait for completion
       detail: |
@@ -351,89 +352,88 @@ consequences:
   # ==========================================================================
 
   # --------------------------------------------------------------------------
-  # display_message
+  # display
   # --------------------------------------------------------------------------
-  display_message:
+  display:
     category: core/interaction
     description:
-      brief: Show message to user
+      brief: Display content to user in various formats
       detail: |
-        Displays an informational message to the user. Supports markdown
-        formatting and ${} interpolation from state. Used for progress
-        updates, summaries, and notifications.
+        Displays content to the user. Supports multiple formats including
+        plain text, markdown tables, JSON, and more. Supports ${} interpolation
+        from state in both content and title.
       notes:
-        - Supports multiline messages using YAML | syntax
+        - "format: text - plain text or markdown"
+        - "format: table - requires headers and content as array of rows"
+        - "format: json - pretty-prints content as JSON"
+        - "format: markdown - alias for text"
         - All ${} placeholders interpolated from state
-        - Markdown formatting is preserved
         - No state changes occur
 
     parameters:
-      - name: message
+      - name: format
         type: string
+        required: false
+        default: text
+        description: "Output format: text, table, json, markdown"
+        enum:
+          - text
+          - table
+          - json
+          - markdown
+        interpolatable: false
+
+      - name: content
+        type: any
         required: true
-        description: Message text with ${} interpolation
+        description: Content to display (string for text, array for table rows)
         interpolatable: true
 
-    payload:
-      kind: side_effect
-      tool: null
-      effect: |
-        interpolated = interpolate(message, state)
-        display_to_user(interpolated)
-      state_writes: []
-      state_reads: []
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # display_table
-  # --------------------------------------------------------------------------
-  display_table:
-    category: core/interaction
-    description:
-      brief: Show tabular data to user
-      detail: |
-        Displays data in a formatted table. Headers define columns, and
-        rows can be provided inline or referenced from state. Renders as
-        a markdown table.
-      notes:
-        - Rows can be state reference (${computed.table_data}) or inline array
-        - Each row should be an array matching header count
-        - Renders as markdown table
-
-    parameters:
       - name: title
         type: string
         required: false
-        description: Table title (displayed above table)
+        description: Optional title (displayed above content)
         interpolatable: true
 
       - name: headers
         type: array
-        required: true
-        description: Column header labels
+        required: false
+        description: Column headers (required for table format)
+        items: { type: string }
         interpolatable: false
-
-      - name: rows
-        type: any
-        required: true
-        description: Row data - state reference or inline array
-        interpolatable: true
 
     payload:
       kind: side_effect
       tool: null
       effect: |
-        resolved_rows = interpolate(rows, state)
-        table = format_markdown_table(headers, resolved_rows)
-        if title:
-          display_to_user("### " + interpolate(title) + "\n\n" + table)
-        else:
-          display_to_user(table)
+        resolved_content = interpolate(content, state)
+
+        if format == "table":
+          table = format_markdown_table(headers, resolved_content)
+          if title:
+            display_to_user("### " + interpolate(title) + "\n\n" + table)
+          else:
+            display_to_user(table)
+
+        elif format == "json":
+          json_str = json_dumps(resolved_content, indent=2)
+          if title:
+            display_to_user("### " + interpolate(title) + "\n\n```json\n" + json_str + "\n```")
+          else:
+            display_to_user("```json\n" + json_str + "\n```")
+
+        else:  # text or markdown
+          if title:
+            display_to_user("### " + interpolate(title) + "\n\n" + resolved_content)
+          else:
+            display_to_user(resolved_content)
       state_writes: []
       state_reads: []
 
-    since: "1.0.0"
+    since: "3.0.0"
+    replaces:
+      - display_message
+      - display_table
 
   # ==========================================================================
   # category: core/logging
@@ -615,83 +615,40 @@ consequences:
     since: "1.0.0"
 
   # --------------------------------------------------------------------------
-  # log_event
+  # log_entry
   # --------------------------------------------------------------------------
-  log_event:
+  log_entry:
     category: core/logging
     description:
-      brief: Log domain-specific event
+      brief: Log event, warning, or error with context
       detail: |
-        Logs a structured domain-specific event. Primary mechanism for
-        plugins to add custom logging without defining new consequences.
-        Events are stored with type, timestamp, and arbitrary data.
+        Unified logging consequence that handles events, warnings, and errors.
+        The level parameter determines how the entry is stored and displayed.
+        Events go to state.log.events, warnings to state.log.warnings,
+        errors to state.log.errors.
       notes:
-        - Level configurable per-event via level parameter
-        - Default level is "info"
-        - Data can be any structured object
+        - "level: info/debug - logged as event"
+        - "level: warning - logged as warning"
+        - "level: error - logged as error"
+        - Context can be any structured object
+        - error_type and recoverable only used for error level
 
     parameters:
-      - name: event_type
-        type: string
-        required: true
-        description: Domain-specific event identifier
-        interpolatable: true
-
-      - name: data
-        type: object
-        required: false
-        description: Event payload (arbitrary structure)
-        interpolatable: true
-
       - name: level
         type: string
-        required: false
-        default: "info"
-        description: Minimum level to record
+        required: true
+        description: "Log level: debug, info, warning, error"
         enum:
           - debug
           - info
-          - warn
+          - warning
           - error
         interpolatable: false
 
-    payload:
-      kind: state_mutation
-      tool: null
-      effect: |
-        effective_level = level ?? "info"
-        if logging.level >= effective_level:
-          state.log.events.push({
-            type: event_type,
-            timestamp: now_iso8601(),
-            data: data ?? {}
-          })
-      state_writes:
-        - "log.events"
-      state_reads: []
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # log_warning
-  # --------------------------------------------------------------------------
-  log_warning:
-    category: core/logging
-    description:
-      brief: Add warning message to log
-      detail: |
-        Adds a warning message to the log. Warnings indicate potential
-        issues that don't prevent execution but should be noted.
-      notes:
-        - Requires logging level >= warn
-        - Node auto-detected from current_node if not specified
-        - Context provides debugging information
-
-    parameters:
       - name: message
         type: string
         required: true
-        description: Warning message
+        description: Log message
         interpolatable: true
 
       - name: context
@@ -700,68 +657,16 @@ consequences:
         description: Additional context for debugging
         interpolatable: true
 
-      - name: node
+      - name: event_type
         type: string
         required: false
-        description: Node that generated warning (auto-detected)
-        interpolatable: true
-
-    payload:
-      kind: state_mutation
-      tool: null
-      effect: |
-        if logging.level >= "warn":
-          state.log.warnings.push({
-            message: message,
-            timestamp: now_iso8601(),
-            node: node ?? current_node.id,
-            context: context ?? {}
-          })
-      state_writes:
-        - "log.warnings"
-      state_reads: []
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # log_error
-  # --------------------------------------------------------------------------
-  log_error:
-    category: core/logging
-    description:
-      brief: Add error with context to log
-      detail: |
-        Adds an error to the log with detailed context. Errors indicate
-        failures that may affect the workflow outcome. Includes error
-        type classification and recoverability flag.
-      notes:
-        - Requires logging level >= error
-        - error_type helps classify the failure
-        - recoverable indicates if workflow continued
-
-    parameters:
-      - name: message
-        type: string
-        required: true
-        description: Error message
+        description: Domain-specific event type (for info/debug levels)
         interpolatable: true
 
       - name: error_type
         type: string
         required: false
-        description: Error classification
-        interpolatable: true
-
-      - name: context
-        type: object
-        required: false
-        description: Error details for debugging
-        interpolatable: true
-
-      - name: node
-        type: string
-        required: false
-        description: Node that generated error (auto-detected)
+        description: Error classification (for error level)
         interpolatable: true
 
       - name: recoverable
@@ -771,24 +676,56 @@ consequences:
         description: Whether workflow continued after this error
         interpolatable: false
 
+      - name: node
+        type: string
+        required: false
+        description: Node that generated entry (auto-detected)
+        interpolatable: true
+
     payload:
       kind: state_mutation
       tool: null
       effect: |
-        if logging.level >= "error":
-          state.log.errors.push({
-            message: message,
-            error_type: error_type ?? "unknown",
-            timestamp: now_iso8601(),
-            node: node ?? current_node.id,
-            context: context ?? {},
-            recoverable: recoverable ?? false
-          })
+        if level == "error":
+          if logging.level >= "error":
+            state.log.errors.push({
+              message: message,
+              error_type: error_type ?? "unknown",
+              timestamp: now_iso8601(),
+              node: node ?? current_node.id,
+              context: context ?? {},
+              recoverable: recoverable ?? false
+            })
+
+        elif level == "warning":
+          if logging.level >= "warn":
+            state.log.warnings.push({
+              message: message,
+              timestamp: now_iso8601(),
+              node: node ?? current_node.id,
+              context: context ?? {}
+            })
+
+        else:  # info or debug
+          effective_level = level ?? "info"
+          if logging.level >= effective_level:
+            state.log.events.push({
+              type: event_type ?? "log",
+              timestamp: now_iso8601(),
+              message: message,
+              data: context ?? {}
+            })
       state_writes:
+        - "log.events"
+        - "log.warnings"
         - "log.errors"
       state_reads: []
 
-    since: "1.0.0"
+    since: "3.0.0"
+    replaces:
+      - log_event
+      - log_warning
+      - log_error
 
   # --------------------------------------------------------------------------
   # log_session_snapshot
@@ -1183,21 +1120,34 @@ consequences:
     since: "1.0.0"
 
   # --------------------------------------------------------------------------
-  # set_state
+  # mutate_state
   # --------------------------------------------------------------------------
-  set_state:
+  mutate_state:
     category: core/state
     description:
-      brief: Set any state field
+      brief: Perform state mutations (set, append, clear, merge)
       detail: |
-        Sets a state field to a specified value. Supports dot notation for
-        nested field access and ${} interpolation in values.
+        Unified state mutation consequence. The operation parameter determines
+        what type of mutation is performed on the specified field.
       notes:
-        - Use computed.* prefix for derived values
-        - Supports nested paths via dot notation
-        - Value can include ${field} interpolation
+        - "operation: set - set field to value"
+        - "operation: append - append value to array field"
+        - "operation: clear - set field to null"
+        - "operation: merge - shallow merge object into field"
+        - Value supports ${} interpolation
 
     parameters:
+      - name: operation
+        type: string
+        required: true
+        description: "Mutation type: set, append, clear, merge"
+        enum:
+          - set
+          - append
+          - clear
+          - merge
+        interpolatable: false
+
       - name: field
         type: string
         required: true
@@ -1207,142 +1157,40 @@ consequences:
 
       - name: value
         type: any
-        required: true
-        description: Value to set (supports ${} interpolation)
+        required: false
+        description: Value for set/append/merge (ignored for clear)
         interpolatable: true
 
     payload:
       kind: state_mutation
       tool: null
       effect: |
-        path_parts = split(field, ".")
-        target = state
-        for part in path_parts[:-1]:
-          target = target[part]
-        target[path_parts[-1]] = interpolate(value)
-      state_writes:
-        - "${field}"
-      state_reads: []
+        if operation == "set":
+          set_state_value(field, interpolate(value))
 
-    since: "1.0.0"
+        elif operation == "append":
+          array = get_state_value(field) ?? []
+          array.push(interpolate(value))
+          set_state_value(field, array)
 
-  # --------------------------------------------------------------------------
-  # append_state
-  # --------------------------------------------------------------------------
-  append_state:
-    category: core/state
-    description:
-      brief: Append value to array field
-      detail: |
-        Appends a value to an array field in state. Creates the array if it
-        doesn't exist. Useful for building up lists during workflow execution.
-      notes:
-        - Array is created if field doesn't exist
-        - Value can be any type (object, string, etc.)
+        elif operation == "clear":
+          set_state_value(field, null)
 
-    parameters:
-      - name: field
-        type: string
-        required: true
-        description: Array field path
-        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
-        interpolatable: false
-
-      - name: value
-        type: any
-        required: true
-        description: Value to append (supports ${} interpolation)
-        interpolatable: true
-
-    payload:
-      kind: state_mutation
-      tool: null
-      effect: |
-        array = get_state_value(field) ?? []
-        array.push(interpolate(value))
-        set_state_value(field, array)
+        elif operation == "merge":
+          existing = get_state_value(field) ?? {}
+          merged = Object.assign(existing, interpolate(value))
+          set_state_value(field, merged)
       state_writes:
         - "${field}"
       state_reads:
         - "${field}"
 
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # clear_state
-  # --------------------------------------------------------------------------
-  clear_state:
-    category: core/state
-    description:
-      brief: Reset field to null
-      detail: |
-        Resets a state field to null/empty. Useful for clearing computed
-        values between iterations or resetting state for retry.
-      notes:
-        - Sets field to null (not undefined)
-        - Does not delete the field, just clears its value
-
-    parameters:
-      - name: field
-        type: string
-        required: true
-        description: Field to clear
-        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
-        interpolatable: false
-
-    payload:
-      kind: state_mutation
-      tool: null
-      effect: |
-        set_state_value(field, null)
-      state_writes:
-        - "${field}"
-      state_reads: []
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # merge_state
-  # --------------------------------------------------------------------------
-  merge_state:
-    category: core/state
-    description:
-      brief: Merge object into state field
-      detail: |
-        Merges an object into an existing state field. Existing properties
-        are overwritten, new properties are added. Useful for partial updates.
-      notes:
-        - Shallow merge (Object.assign semantics)
-        - Creates target field if it doesn't exist
-        - Values support ${} interpolation
-
-    parameters:
-      - name: field
-        type: string
-        required: true
-        description: Object field to merge into
-        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
-        interpolatable: false
-
-      - name: value
-        type: object
-        required: true
-        description: Object to merge (supports ${} interpolation in values)
-        interpolatable: true
-
-    payload:
-      kind: state_mutation
-      tool: null
-      effect: |
-        existing = get_state_value(field) ?? {}
-        merged = Object.assign(existing, interpolate(value))
-        set_state_value(field, merged)
-      state_writes:
-        - "${field}"
-      state_reads:
-        - "${field}"
-
-    since: "1.0.0"
+    since: "3.0.0"
+    replaces:
+      - set_state
+      - append_state
+      - clear_state
+      - merge_state
 
   # ==========================================================================
   # category: core/utility
@@ -1429,41 +1277,6 @@ consequences:
         - "${from}"
 
     since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # display (alias for display_message with content parameter)
-  # --------------------------------------------------------------------------
-  display:
-    category: core/interaction
-    description:
-      brief: Display content to user (alias for display_message)
-      detail: |
-        Displays content to the user. This is an alias for display_message
-        that uses 'content' as the parameter name instead of 'message'.
-        Supports markdown formatting and ${} interpolation from state.
-      notes:
-        - Supports multiline content using YAML | syntax
-        - All ${} placeholders interpolated from state
-        - Markdown formatting is preserved
-        - No state changes occur
-
-    parameters:
-      - name: content
-        type: string
-        required: true
-        description: Content text with ${} interpolation
-        interpolatable: true
-
-    payload:
-      kind: side_effect
-      tool: null
-      effect: |
-        interpolated = interpolate(content, state)
-        display_to_user(interpolated)
-      state_writes: []
-      state_reads: []
-
-    since: "2.0.0"
 
   # ==========================================================================
   # category: core/intent
@@ -1598,13 +1411,23 @@ consequences:
       brief: Match 3VL flags against rule table
       detail: |
         Matches 3VL flags against a rule table and ranks candidate actions.
-        Uses 3-valued logic scoring: hard matches (+2), soft matches (+1),
-        exclusions (candidate removed). Determines if there's a clear winner.
+        Uses Kleene 3-valued logic with proper U (unknown) handling:
+        - Rule U = "don't care" (wildcard) - condition is skipped
+        - State U = uncertain - counts as soft match if rule expects T/F
+        - Hard match: both state and rule are T, or both are F
+        - Soft match: state is U but rule expects T/F (uncertain satisfaction)
+        - Exclusion: state T vs rule F, or state F vs rule T (contradiction)
+
+        Ranking: (-hard_matches, +soft_matches, +effective_conditions)
+        This prefers rules with more definite matches, fewer uncertain matches,
+        and fewer effective conditions (more specific rules win ties).
       notes:
-        - "Hard match: state and rule both T or both F (+2)"
-        - "Soft match: one is U, other is T/F (+1)"
-        - "Exclusion: T vs F or F vs T (candidate removed)"
-        - Clear winner requires 2+ point lead
+        - "Rule U = don't care (wildcard, skip this condition)"
+        - "State U vs Rule T/F = soft match (uncertain satisfaction)"
+        - "Hard match: state T + rule T, or state F + rule F"
+        - "Exclusion: state T + rule F, or state F + rule T"
+        - "Effective conditions = non-U conditions in rule"
+        - Clear winner determined by full ranking tuple
 
     parameters:
       - name: flags
@@ -1634,44 +1457,63 @@ consequences:
 
         for rule in rules:
           hard_matches = 0
-          condition_count = len(rule.conditions)
+          soft_matches = 0
+          effective_conditions = 0  # Non-U conditions in rule
           excluded = False
 
           for condition_key, rule_val in rule.conditions:
             state_val = flags[condition_key] ?? "U"
 
+            # Rule says "don't care" - skip this condition entirely
+            if rule_val == "U":
+              continue
+
+            # Count effective (non-U) conditions in rule
+            effective_conditions += 1
+
             if (state_val == "T" and rule_val == "T") or \
                (state_val == "F" and rule_val == "F"):
               hard_matches += 1          # Definite match
-            elif (state_val == "T" and rule_val == "F") or \
-                 (state_val == "F" and rule_val == "T"):
+            elif state_val == "U":
+              soft_matches += 1          # Uncertain satisfaction
+            else:
+              # state T vs rule F, or state F vs rule T
               excluded = True            # Contradiction
               break
-            # else: U involved = unknown = no contribution
 
           if not excluded:
             candidates.append({
               rule: rule,
+              hard_matches: hard_matches,
+              soft_matches: soft_matches,
+              effective_conditions: effective_conditions,
+              # Legacy compatibility fields
               score: hard_matches,
-              condition_count: condition_count
+              condition_count: effective_conditions
             })
 
-        # Sort by: hard matches (desc), then condition count (asc)
-        candidates.sort(by: (-score, +condition_count))
+        # Sort by: hard matches (desc), soft matches (asc), effective conditions (asc)
+        # More hard matches = better, fewer soft matches = more certain,
+        # fewer conditions = more specific rule
+        candidates.sort(by: (-hard_matches, +soft_matches, +effective_conditions))
 
-        # Determine if clear winner
+        # Determine if clear winner using full ranking tuple
         if len(candidates) == 0:
           clear_winner = False
           winner = null
+          tied_at_top = []
         elif len(candidates) == 1:
           clear_winner = True
           winner = candidates[0].rule
+          tied_at_top = []
         else:
           top = candidates[0]
 
-          # Count how many candidates tie with the top
+          # Count how many candidates tie with the top using full tuple
           tied_at_top = [c for c in candidates
-                        if c.score == top.score and c.condition_count == top.condition_count]
+                        if c.hard_matches == top.hard_matches and \
+                           c.soft_matches == top.soft_matches and \
+                           c.effective_conditions == top.effective_conditions]
 
           if len(tied_at_top) == 1:
             clear_winner = True
@@ -1695,6 +1537,7 @@ consequences:
       state_reads: []
 
     since: "1.0.0"
+    updated: "2.1.0"
 
   # --------------------------------------------------------------------------
   # dynamic_route
@@ -1737,242 +1580,133 @@ consequences:
   # ==========================================================================
 
   # --------------------------------------------------------------------------
-  # read_file
+  # local_file_ops
   # --------------------------------------------------------------------------
-  read_file:
+  local_file_ops:
     category: extensions/file-system
     description:
-      brief: Read arbitrary file content
+      brief: Perform file system operations (read, write, mkdir, delete)
       detail: |
-        Reads the contents of a file and stores it in state. Supports
-        ${} interpolation in the path. Fails if file doesn't exist.
+        Unified file system consequence for read, write, mkdir, and delete
+        operations. The operation parameter determines what action is performed.
       notes:
-        - Path supports ${} interpolation
-        - Fails if file doesn't exist
-        - Content stored as string
+        - "operation: read - read file content into state"
+        - "operation: write - write content to file (creates parent dirs)"
+        - "operation: mkdir - create directory (like mkdir -p)"
+        - "operation: delete - delete file if exists"
+        - Path and content support ${} interpolation
 
     parameters:
+      - name: operation
+        type: string
+        required: true
+        description: "File operation: read, write, mkdir, delete"
+        enum:
+          - read
+          - write
+          - mkdir
+          - delete
+        interpolatable: false
+
       - name: path
         type: string
         required: true
-        description: File path to read
+        description: File or directory path
+        interpolatable: true
+
+      - name: content
+        type: string
+        required: false
+        description: Content for write operation
         interpolatable: true
 
       - name: store_as
         type: string
-        required: true
-        description: State field for content
+        required: false
+        description: State field for read operation result
         pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
         interpolatable: false
 
     payload:
       kind: tool_call
-      tool: Read
+      tool: null
       effect: |
-        content = Read(interpolate(path))
-        set_state_value(store_as, content)
+        resolved_path = interpolate(path)
+
+        if operation == "read":
+          content = Read(resolved_path)
+          set_state_value(store_as, content)
+
+        elif operation == "write":
+          resolved_content = interpolate(content)
+          mkdir -p dirname(resolved_path)
+          Write(resolved_path, resolved_content)
+
+        elif operation == "mkdir":
+          mkdir -p resolved_path
+
+        elif operation == "delete":
+          rm -f resolved_path
       state_writes:
         - "${store_as}"
       state_reads: []
 
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # write_file
-  # --------------------------------------------------------------------------
-  write_file:
-    category: extensions/file-system
-    description:
-      brief: Write content to file
-      detail: |
-        Writes content to a file. Creates parent directories if needed.
-        Overwrites existing content. Both path and content support
-        ${} interpolation.
-      notes:
-        - Creates parent directories if needed
-        - Overwrites existing content
-        - Path and content support interpolation
-
-    parameters:
-      - name: path
-        type: string
-        required: true
-        description: File path to write
-        interpolatable: true
-
-      - name: content
-        type: string
-        required: true
-        description: Content to write
-        interpolatable: true
-
-    payload:
-      kind: tool_call
-      tool: Write
-      effect: |
-        resolved_path = interpolate(path)
-        resolved_content = interpolate(content)
-        mkdir -p dirname(resolved_path)
-        Write(resolved_path, resolved_content)
-      state_writes: []
-      state_reads: []
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # create_directory
-  # --------------------------------------------------------------------------
-  create_directory:
-    category: extensions/file-system
-    description:
-      brief: Create directory including parents
-      detail: |
-        Creates a directory at the specified path. Creates parent
-        directories if they don't exist (like mkdir -p). Does not
-        fail if directory already exists.
-      notes:
-        - Creates parent directories (mkdir -p behavior)
-        - No error if directory already exists
-        - Path supports ${} interpolation
-
-    parameters:
-      - name: path
-        type: string
-        required: true
-        description: Directory path to create
-        interpolatable: true
-
-    payload:
-      kind: tool_call
-      tool: Bash
-      effect: |
-        mkdir -p interpolate(path)
-      state_writes: []
-      state_reads: []
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # delete_file
-  # --------------------------------------------------------------------------
-  delete_file:
-    category: extensions/file-system
-    description:
-      brief: Delete file if exists
-      detail: |
-        Deletes a file at the specified path. Does not fail if file
-        doesn't exist. Does not delete directories.
-      notes:
-        - No error if file doesn't exist
-        - Does not delete directories
-        - Path supports ${} interpolation
-
-    parameters:
-      - name: path
-        type: string
-        required: true
-        description: File to delete
-        interpolatable: true
-
-    payload:
-      kind: tool_call
-      tool: Bash
-      effect: |
-        rm -f interpolate(path)
-      state_writes: []
-      state_reads: []
-
-    since: "1.0.0"
+    since: "3.0.0"
+    replaces:
+      - read_file
+      - write_file
+      - create_directory
+      - delete_file
 
   # ==========================================================================
   # category: extensions/git
   # ==========================================================================
 
   # --------------------------------------------------------------------------
-  # clone_repo
+  # git_ops_local
   # --------------------------------------------------------------------------
-  clone_repo:
+  git_ops_local:
     category: extensions/git
     description:
-      brief: Clone git repository
+      brief: Perform git operations (clone, pull, fetch, get-sha)
       detail: |
-        Clones a git repository to the specified destination. Supports
-        shallow clones (recommended for documentation indexing) and
-        branch selection.
+        Unified git operations consequence for local repository operations.
+        The operation parameter determines what git command is executed.
       notes:
-        - Creates destination directory
-        - Shallow clone (depth 1) recommended for documentation
-        - Fails if destination exists (use git_pull for updates)
+        - "operation: clone - clone repository to dest"
+        - "operation: pull - pull latest changes (fast-forward only)"
+        - "operation: fetch - fetch remote refs"
+        - "operation: get-sha - get HEAD commit SHA"
+        - Args object contains operation-specific parameters
 
     parameters:
-      - name: url
+      - name: operation
         type: string
         required: true
-        description: Repository URL
-        interpolatable: true
-
-      - name: dest
-        type: string
-        required: true
-        description: Destination path
-        interpolatable: true
-
-      - name: branch
-        type: string
-        required: false
-        description: Branch to clone (default branch if not specified)
-        interpolatable: true
-
-      - name: depth
-        type: number
-        required: false
-        default: 1
-        description: Shallow clone depth
+        description: "Git operation: clone, pull, fetch, get-sha"
+        enum:
+          - clone
+          - pull
+          - fetch
+          - get-sha
         interpolatable: false
 
-    payload:
-      kind: tool_call
-      tool: Bash
-      effect: |
-        cmd = "git clone"
-        if depth:
-          cmd += " --depth " + depth
-        if branch:
-          cmd += " --branch " + interpolate(branch)
-        cmd += " " + interpolate(url) + " " + interpolate(dest)
-        Bash(cmd)
-      state_writes: []
-      state_reads: []
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # get_sha
-  # --------------------------------------------------------------------------
-  get_sha:
-    category: extensions/git
-    description:
-      brief: Get HEAD commit SHA
-      detail: |
-        Retrieves the HEAD commit SHA from a git repository. Returns
-        the full 40-character SHA. Useful for tracking which version
-        was indexed.
-      notes:
-        - Returns full 40-character SHA
-        - Fails if path is not a git repository
-        - Use after clone or pull to record version
-
-    parameters:
       - name: repo_path
         type: string
-        required: true
-        description: Path to git repository
+        required: false
+        description: Path to git repository (for pull, fetch, get-sha)
+        interpolatable: true
+
+      - name: args
+        type: object
+        required: false
+        description: "Operation-specific args: {url, dest, branch, depth} for clone"
         interpolatable: true
 
       - name: store_as
         type: string
-        required: true
-        description: State field for SHA
+        required: false
+        description: State field for result (for get-sha)
         pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
         interpolatable: false
 
@@ -1980,113 +1714,78 @@ consequences:
       kind: tool_call
       tool: Bash
       effect: |
-        sha = Bash("git -C " + interpolate(repo_path) + " rev-parse HEAD").trim()
-        set_state_value(store_as, sha)
+        if operation == "clone":
+          url = interpolate(args.url)
+          dest = interpolate(args.dest)
+          cmd = "git clone"
+          if args.depth:
+            cmd += " --depth " + args.depth
+          if args.branch:
+            cmd += " --branch " + interpolate(args.branch)
+          cmd += " " + url + " " + dest
+          Bash(cmd)
+
+        elif operation == "pull":
+          Bash("git -C " + interpolate(repo_path) + " pull --ff-only")
+
+        elif operation == "fetch":
+          Bash("git -C " + interpolate(repo_path) + " fetch")
+
+        elif operation == "get-sha":
+          sha = Bash("git -C " + interpolate(repo_path) + " rev-parse HEAD").trim()
+          set_state_value(store_as, sha)
       state_writes:
         - "${store_as}"
       state_reads: []
 
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # git_pull
-  # --------------------------------------------------------------------------
-  git_pull:
-    category: extensions/git
-    description:
-      brief: Pull latest changes
-      detail: |
-        Pulls the latest changes from the remote repository using
-        fast-forward only. Fails if there are local changes that
-        would be overwritten or if fast-forward is not possible.
-      notes:
-        - Uses fast-forward only to avoid merge conflicts
-        - Fails if local changes would be overwritten
-        - Fails if fast-forward not possible
-
-    parameters:
-      - name: repo_path
-        type: string
-        required: true
-        description: Path to git repository
-        interpolatable: true
-
-    payload:
-      kind: tool_call
-      tool: Bash
-      effect: |
-        Bash("git -C " + interpolate(repo_path) + " pull --ff-only")
-      state_writes: []
-      state_reads: []
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # git_fetch
-  # --------------------------------------------------------------------------
-  git_fetch:
-    category: extensions/git
-    description:
-      brief: Fetch remote refs
-      detail: |
-        Fetches remote refs without modifying the working directory.
-        Useful for checking if updates are available before pulling.
-      notes:
-        - Updates remote tracking branches
-        - Does not modify working directory
-        - Use before comparing local vs remote SHA
-
-    parameters:
-      - name: repo_path
-        type: string
-        required: true
-        description: Path to git repository
-        interpolatable: true
-
-    payload:
-      kind: tool_call
-      tool: Bash
-      effect: |
-        Bash("git -C " + interpolate(repo_path) + " fetch")
-      state_writes: []
-      state_reads: []
-
-    since: "1.0.0"
+    since: "3.0.0"
+    replaces:
+      - clone_repo
+      - git_pull
+      - git_fetch
+      - get_sha
 
   # ==========================================================================
   # category: extensions/web
   # ==========================================================================
 
   # --------------------------------------------------------------------------
-  # web_fetch
+  # web_ops
   # --------------------------------------------------------------------------
-  web_fetch:
+  web_ops:
     category: extensions/web
     description:
-      brief: Fetch URL content
+      brief: Perform web operations (fetch, cache)
       detail: |
-        Fetches content from a URL using Claude's WebFetch tool. HTML is
-        automatically converted to markdown. Supports optional prompt for
-        extraction guidance and allow_failure for graceful HTTP error handling.
+        Unified web operations consequence for fetching and caching web content.
+        The operation parameter determines what action is performed.
       notes:
-        - Uses Claude's WebFetch tool
-        - HTML converted to markdown automatically
-        - Prompt guides extraction if specified
-        - With allow_failure, HTTP errors populate result but don't fail
+        - "operation: fetch - fetch URL content using WebFetch"
+        - "operation: cache - save fetched content to file"
+        - HTML is automatically converted to markdown for fetch
+        - allow_failure prevents HTTP errors from failing the action
 
     parameters:
+      - name: operation
+        type: string
+        required: true
+        description: "Web operation: fetch, cache"
+        enum:
+          - fetch
+          - cache
+        interpolatable: false
+
       - name: url
         type: string
-        required: true
-        description: URL to fetch
+        required: false
+        description: URL to fetch (for fetch operation)
         interpolatable: true
 
-      - name: store_as
+      - name: prompt
         type: string
-        required: true
-        description: State field for result
-        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
-        interpolatable: false
+        required: false
+        description: Prompt for WebFetch tool to guide extraction
+        interpolatable: true
 
       - name: allow_failure
         type: boolean
@@ -2095,111 +1794,91 @@ consequences:
         description: If true, 4xx/5xx doesn't fail action
         interpolatable: false
 
-      - name: prompt
-        type: string
-        required: false
-        description: Prompt for WebFetch tool to guide extraction
-        interpolatable: true
-
-    payload:
-      kind: tool_call
-      tool: WebFetch
-      effect: |
-        result = WebFetch(
-          url: interpolate(url),
-          prompt: interpolate(prompt) ?? "Extract the main content"
-        )
-        stored_result = {
-          status: result.status,
-          content: result.content,
-          url: interpolate(url)
-        }
-        if not allow_failure and result.status >= 400:
-          throw Error("HTTP " + result.status)
-        set_state_value(store_as, stored_result)
-      state_writes:
-        - "${store_as}"
-      state_reads: []
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # cache_web_content
-  # --------------------------------------------------------------------------
-  cache_web_content:
-    category: extensions/web
-    description:
-      brief: Save fetched content to cache
-      detail: |
-        Saves the content from a web fetch result to a cache file.
-        Creates parent directories if needed. Optionally stores the
-        cache path in state for later reference.
-      notes:
-        - Creates parent directories if needed
-        - Extracts content field from fetch result
-        - Optional store_path_as records where file was written
-
-    parameters:
       - name: from
         type: string
-        required: true
-        description: State field with fetch result
+        required: false
+        description: State field with fetch result (for cache operation)
         pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
         interpolatable: false
 
       - name: dest
         type: string
-        required: true
-        description: Destination file path
+        required: false
+        description: Destination file path (for cache operation)
         interpolatable: true
 
-      - name: store_path_as
+      - name: store_as
         type: string
         required: false
-        description: State field to store the written path
+        description: State field for result
         pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
         interpolatable: false
 
     payload:
-      kind: composite
-      tool: null
+      kind: tool_call
+      tool: WebFetch
       effect: |
-        fetch_result = get_state_value(from)
-        content = fetch_result.content
-        resolved_dest = interpolate(dest)
-        mkdir -p dirname(resolved_dest)
-        write_file(resolved_dest, content)
-        if store_path_as:
-          set_state_value(store_path_as, resolved_dest)
+        if operation == "fetch":
+          result = WebFetch(
+            url: interpolate(url),
+            prompt: interpolate(prompt) ?? "Extract the main content"
+          )
+          stored_result = {
+            status: result.status,
+            content: result.content,
+            url: interpolate(url)
+          }
+          if not allow_failure and result.status >= 400:
+            throw Error("HTTP " + result.status)
+          set_state_value(store_as, stored_result)
+
+        elif operation == "cache":
+          fetch_result = get_state_value(from)
+          content = fetch_result.content
+          resolved_dest = interpolate(dest)
+          mkdir -p dirname(resolved_dest)
+          write_file(resolved_dest, content)
+          if store_as:
+            set_state_value(store_as, resolved_dest)
       state_writes:
-        - "${store_path_as}"
+        - "${store_as}"
       state_reads:
         - "${from}"
 
-    since: "1.0.0"
+    since: "3.0.0"
+    replaces:
+      - web_fetch
+      - cache_web_content
 
   # ==========================================================================
   # category: extensions/scripting
   # ==========================================================================
 
   # --------------------------------------------------------------------------
-  # run_script
+  # run_command
   # --------------------------------------------------------------------------
-  run_script:
+  run_command:
     category: extensions/scripting
     description:
-      brief: Execute script with auto-detected interpreter
+      brief: Execute script with specified interpreter
       detail: |
-        Executes a script file from the repository. Automatically detects the
-        interpreter from the file extension (.py -> python3, .sh -> bash, .js -> node).
-        Supports argument interpolation and output capture.
+        Unified command execution consequence. Executes a script with the
+        specified interpreter (or auto-detects from extension).
       notes:
-        - Interpreter auto-detected from extension
-        - Script path relative to repo root
+        - "interpreter: bash, python, node, ruby, or auto"
+        - "auto mode detects from extension: .py->python3, .sh->bash, .js->node"
         - Args support ${} interpolation
-        - Use store_as to capture stdout
+        - Can activate Python venv before execution
+        - Can set environment variables
 
     parameters:
+      - name: interpreter
+        type: string
+        required: false
+        default: auto
+        description: "Interpreter: auto, bash, python, node, ruby"
+        interpolatable: false
+
       - name: script
         type: string
         required: true
@@ -2225,27 +1904,59 @@ consequences:
         description: Working directory for script execution
         interpolatable: true
 
+      - name: venv
+        type: string
+        required: false
+        description: Python virtual environment path to activate
+        interpolatable: true
+
+      - name: env
+        type: object
+        required: false
+        description: Environment variables to set
+        interpolatable: true
+
     payload:
       kind: tool_call
       tool: Bash
       effect: |
         script_path = interpolate(script)
-        extension = script_path.split('.').pop()
 
-        interpreter = match extension:
-          "py" -> "python3"
-          "sh" -> "bash"
-          "bash" -> "bash"
-          "js" -> "node"
-          "ts" -> "npx ts-node"
-          "rb" -> "ruby"
-          _ -> null  # Use shebang
+        # Determine interpreter
+        if interpreter == "auto" or interpreter == null:
+          extension = script_path.split('.').pop()
+          interp = match extension:
+            "py" -> "python3"
+            "sh" -> "bash"
+            "bash" -> "bash"
+            "js" -> "node"
+            "ts" -> "npx ts-node"
+            "rb" -> "ruby"
+            _ -> null  # Use shebang
+        else:
+          interp = interpreter
 
-        cmd = interpreter ? interpreter + " " : "./"
+        # Build command
+        cmd = ""
+
+        # Add environment variables
+        if env:
+          for key, value in env:
+            cmd += key + "=" + interpolate(value) + " "
+
+        # Add venv activation
+        if venv:
+          cmd += "source " + interpolate(venv) + "/bin/activate && "
+
+        # Add interpreter
+        cmd += interp ? interp + " " : "./"
         cmd += script_path
+
+        # Add arguments
         if args:
           cmd += " " + args.map(interpolate).join(" ")
 
+        # Add working directory
         if working_directory:
           cmd = "cd " + interpolate(working_directory) + " && " + cmd
 
@@ -2256,130 +1967,11 @@ consequences:
         - "${store_as}"
       state_reads: []
 
-    since: "1.1.0"
-
-  # --------------------------------------------------------------------------
-  # run_python
-  # --------------------------------------------------------------------------
-  run_python:
-    category: extensions/scripting
-    description:
-      brief: Execute Python script
-      detail: |
-        Executes a Python script with python3. Supports virtual environment
-        activation, argument passing, and output capture.
-      notes:
-        - Uses python3 interpreter
-        - Optional venv activation
-        - Args support ${} interpolation
-
-    parameters:
-      - name: script
-        type: string
-        required: true
-        description: Path to Python script
-        interpolatable: true
-
-      - name: args
-        type: array
-        required: false
-        description: Arguments to pass
-        interpolatable: true
-
-      - name: venv
-        type: string
-        required: false
-        description: Virtual environment path to activate
-        interpolatable: true
-
-      - name: store_as
-        type: string
-        required: false
-        description: State field for captured output
-        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
-        interpolatable: false
-
-    payload:
-      kind: tool_call
-      tool: Bash
-      effect: |
-        cmd = ""
-        if venv:
-          cmd = "source " + interpolate(venv) + "/bin/activate && "
-        cmd += "python3 " + interpolate(script)
-        if args:
-          cmd += " " + args.map(interpolate).join(" ")
-
-        result = Bash(cmd)
-        if store_as:
-          set_state_value(store_as, result.stdout.trim())
-      state_writes:
-        - "${store_as}"
-      state_reads: []
-
-    since: "1.1.0"
-
-  # --------------------------------------------------------------------------
-  # run_bash
-  # --------------------------------------------------------------------------
-  run_bash:
-    category: extensions/scripting
-    description:
-      brief: Execute Bash script
-      detail: |
-        Executes a Bash script. Supports environment variable injection,
-        argument passing, and output capture.
-      notes:
-        - Uses bash interpreter explicitly
-        - Env vars can be set inline
-        - Args support ${} interpolation
-
-    parameters:
-      - name: script
-        type: string
-        required: true
-        description: Path to Bash script
-        interpolatable: true
-
-      - name: args
-        type: array
-        required: false
-        description: Arguments to pass
-        interpolatable: true
-
-      - name: env
-        type: object
-        required: false
-        description: Environment variables to set
-        interpolatable: true
-
-      - name: store_as
-        type: string
-        required: false
-        description: State field for captured output
-        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
-        interpolatable: false
-
-    payload:
-      kind: tool_call
-      tool: Bash
-      effect: |
-        cmd = ""
-        if env:
-          for key, value in env:
-            cmd += key + "=" + interpolate(value) + " "
-        cmd += "bash " + interpolate(script)
-        if args:
-          cmd += " " + args.map(interpolate).join(" ")
-
-        result = Bash(cmd)
-        if store_as:
-          set_state_value(store_as, result.stdout.trim())
-      state_writes:
-        - "${store_as}"
-      state_reads: []
-
-    since: "1.1.0"
+    since: "3.0.0"
+    replaces:
+      - run_script
+      - run_python
+      - run_bash
 
   # ==========================================================================
   # category: extensions/package

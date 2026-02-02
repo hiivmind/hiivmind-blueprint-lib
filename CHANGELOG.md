@@ -5,6 +5,80 @@ All notable changes to hiivmind-blueprint-lib will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-02-02
+
+### BREAKING CHANGES
+
+This release consolidates 38 specific types into 13 general-purpose types, reducing over-specification while maintaining full functionality. **Existing workflows using v2.x type names must be updated.**
+
+See [docs/v3-migration.md](docs/v3-migration.md) for complete migration guide with before/after examples.
+
+#### Consequences Consolidated (19 types → 7 types)
+
+| Removed Types | Consolidated Into |
+|---------------|-------------------|
+| `clone_repo`, `git_pull`, `git_fetch`, `get_sha` | `git_ops_local` |
+| `read_file`, `write_file`, `create_directory`, `delete_file` | `local_file_ops` |
+| `run_script`, `run_python`, `run_bash` | `run_command` |
+| `log_event`, `log_warning`, `log_error` | `log_entry` |
+| `set_state`, `append_state`, `clear_state`, `merge_state` | `mutate_state` |
+| `display_message`, `display_table` | `display` |
+| `web_fetch`, `cache_web_content` | `web_ops` |
+
+#### Preconditions Consolidated (19 types → 6 types)
+
+| Removed Types | Consolidated Into |
+|---------------|-------------------|
+| `flag_set`, `flag_not_set`, `state_equals`, `state_not_null`, `state_is_null` | `state_check` |
+| `tool_available`, `tool_version_gte`, `tool_authenticated`, `tool_daemon_ready` | `tool_check` |
+| `config_exists`, `index_exists`, `index_is_placeholder`, `file_exists`, `directory_exists` | `path_check` |
+| `source_exists`, `source_cloned`, `source_has_updates` | `source_check` |
+| `log_initialized`, `log_level_enabled`, `log_finalized` | `log_state` |
+| `fetch_succeeded`, `fetch_returned_content` | `fetch_check` |
+
+#### Preconditions Eliminated (use `evaluate_expression`)
+
+| Removed Types | Use Instead |
+|---------------|-------------|
+| `count_equals` | `evaluate_expression` with `len(field) == N` |
+| `count_above` | `evaluate_expression` with `len(field) > N` |
+| `count_below` | `evaluate_expression` with `len(field) < N` |
+
+### Added
+
+- **Migration guide**: `docs/v3-migration.md` with complete type mapping tables and before/after examples
+
+### Changed
+
+- **Type count reduced**: 43 consequences → 31, 27 preconditions → 14
+- **Consolidated types use operation/capability/aspect parameters** to specify behavior
+- **Updated examples** to use new consolidated type syntax
+
+## [2.1.0] - 2026-02-02
+
+### Changed
+
+- **`match_3vl_rules` upgraded with Kleene logic lessons**:
+  - Rule `U` now means "don't care" (wildcard) - condition is skipped entirely
+  - State `U` vs Rule `T/F` now counts as soft match (uncertain satisfaction)
+  - New ranking: `(-hard_matches, +soft_matches, +effective_conditions)`
+    - Prefers more definite matches
+    - Penalizes uncertain matches
+    - Prefers more specific rules (fewer effective conditions)
+  - `effective_conditions` = non-U conditions in rule (replaces total `condition_count`)
+  - Added legacy compatibility fields (`score`, `condition_count`) for backward compatibility
+  - Candidate objects now include: `hard_matches`, `soft_matches`, `effective_conditions`
+
+### Notes
+
+This update aligns `match_3vl_rules` with proper Kleene 3-valued logic semantics:
+- `U AND F = F` (definite exclusion)
+- `U AND T = U` (soft match - uncertain)
+- `F AND U = F` (definite exclusion)
+- `U AND U = U` (both uncertain - fallback candidate)
+- `T AND T = T` (hard match)
+- `T AND F = F` (exclusion)
+
 ## [2.0.0] - 2026-01-28
 
 ### BREAKING CHANGES

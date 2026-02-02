@@ -21,7 +21,7 @@ This library introduces a novel approach to workflow execution: **the LLM interp
 Each type definition includes an `effect` field containing pseudocode that the LLM interprets:
 
 ```yaml
-# From consequences/core/state.yaml
+# From consequences/consequences.yaml
 types:
   set_flag:
     description:
@@ -60,19 +60,21 @@ This package provides semantic type definitions and reusable workflows that can 
 ```yaml
 # In your workflow.yaml
 definitions:
-  source: hiivmind/hiivmind-blueprint-lib@v2.0.0
+  source: hiivmind/hiivmind-blueprint-lib@v3.0.0
 
 nodes:
   clone_source:
     type: action
     actions:
-      - type: clone_repo          # Type resolved from external definitions
-        url: "${source.url}"
+      - type: git_ops_local       # Type resolved from external definitions
+        operation: clone
+        args:
+          url: "${source.url}"
 
   # Reference a reusable workflow
   detect_intent:
     type: reference
-    workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+    workflow: hiivmind/hiivmind-blueprint-lib@v3.0.0:intent-detection
     context:
       arguments: "${arguments}"
       intent_flags: "${intent_flags}"
@@ -91,7 +93,7 @@ name: my-workflow
 version: "1.0.0"
 
 definitions:
-  source: hiivmind/hiivmind-blueprint-lib@v2.0.0
+  source: hiivmind/hiivmind-blueprint-lib@v3.0.0
 
 start_node: check_config
 
@@ -99,8 +101,9 @@ nodes:
   check_config:
     type: conditional
     condition:
-      type: file_exists           # Precondition type from library
+      type: path_check            # Precondition type from library
       path: "config.yaml"
+      check: is_file
     branches:
       on_true: load_config
       on_false: create_config
@@ -108,7 +111,8 @@ nodes:
   load_config:
     type: action
     actions:
-      - type: read_file           # Consequence type from library
+      - type: local_file_ops      # Consequence type from library
+        operation: read
         path: "config.yaml"
         store_as: config
     on_success: done
@@ -122,7 +126,7 @@ endings:
 
 ## Workflow Execution Model
 
-Workflows execute in a 3-phase model defined in `execution/traversal.yaml`:
+Workflows execute in a 3-phase model defined in `execution/engine_execution.yaml`:
 
 ### Phase 1: Initialize
 
@@ -201,9 +205,11 @@ The library defines 5 node types for workflow construction:
 clone_source:
   type: action
   actions:
-    - type: clone_repo
-      url: "${computed.repo_url}"
-      path: ".source/${computed.source_id}"
+    - type: git_ops_local
+      operation: clone
+      args:
+        url: "${computed.repo_url}"
+        dest: ".source/${computed.source_id}"
   on_success: verify_clone
   on_failure: handle_clone_error
 ```
@@ -213,8 +219,9 @@ clone_source:
 check_config_exists:
   type: conditional
   condition:
-    type: file_exists
+    type: path_check
     path: "config.yaml"
+    check: is_file
   branches:
     on_true: load_config
     on_false: create_config
@@ -291,37 +298,41 @@ Use `${...}` syntax to reference state values:
 
 ## Type Inventory
 
-### Consequences (43 types)
+All types are consolidated into single files per category for easier loading and reference.
+
+### Consequences (31 types in `consequences/consequences.yaml`)
 
 | Category | Types | Description |
 |----------|-------|-------------|
-| core/state | 5 | State mutation operations |
-| core/evaluation | 2 | Expression evaluation |
-| core/interaction | 2 | User display |
-| core/control | 3 | Control flow, checkpoints |
-| core/skill | 2 | Skill/pattern invocation |
-| core/utility | 2 | Timestamps, hashes |
-| core/intent | 4 | 3VL intent detection |
-| core/logging | 10 | Workflow execution logging |
-| extensions/file-system | 4 | File operations |
-| extensions/git | 4 | Git operations |
-| extensions/web | 2 | Web fetch/cache |
-| extensions/scripting | 3 | Script execution |
+| core/state | 3 | set_flag, mutate_state, inline |
+| core/evaluation | 2 | evaluate, compute |
+| core/interaction | 1 | display (text, table, markdown, json) |
+| core/control | 3 | create_checkpoint, rollback_checkpoint, spawn_agent |
+| core/skill | 2 | invoke_skill, invoke_pattern |
+| core/utility | 2 | set_timestamp, compute_hash |
+| core/intent | 4 | evaluate_keywords, parse_intent_flags, match_3vl_rules, dynamic_route |
+| core/logging | 9 | init_log, log_node, log_entry, log_session_snapshot, finalize_log, write_log, apply_log_retention, output_ci_summary, install_tool |
+| core/filesystems | 1 | local_file_ops (read, write, mkdir, delete) |
+| core/git | 1 | git_ops_local (clone, pull, fetch, get-sha) |
+| core/web | 1 | web_ops (fetch, cache) |
+| core/scripting | 1 | run_command (bash, python, node, etc.) |
 
-### Preconditions (27 types)
+### Preconditions (14 types in `preconditions/preconditions.yaml`)
 
 | Category | Types | Description |
 |----------|-------|-------------|
-| core/filesystem | 5 | File/directory checks |
-| core/state | 8 | State inspection |
-| core/tool | 2 | Tool availability |
-| core/composite | 3 | Logical composition |
-| core/expression | 1 | Arbitrary expressions |
-| core/logging | 3 | Logging lifecycle |
-| extensions/source | 3 | Source repository checks |
-| extensions/web | 2 | Web fetch verification |
+| core/composite | 4 | all_of, any_of, none_of, xor_of |
+| core/expression | 1 | evaluate_expression |
+| core/filesystems | 1 | path_check (exists, is_file, is_directory, contains_text) |
+| core/logging | 1 | log_state (initialized, finalized, level_enabled) |
+| core/state | 1 | state_check (true, false, equals, not_null, null) |
+| core/tools | 1 | tool_check (available, version_gte, authenticated, daemon_ready) |
+| core/network | 1 | network_available |
+| core/python | 1 | python_module_available |
+| core/git | 1 | source_check (exists, cloned, has_updates) |
+| core/web_fetch | 1 | fetch_check (succeeded, has_content) |
 
-### Node Types (5 types)
+### Node Types (5 types in `nodes/workflow_nodes.yaml`)
 
 | Type | Description |
 |------|-------------|
@@ -337,24 +348,71 @@ Use `${...}` syntax to reference state values:
 |----------|-------------|
 | intent-detection | Reusable 3VL intent detection for dynamic routing |
 
+## Three-Valued Logic (3VL) for Intent Detection
+
+The library uses Kleene three-valued logic for intent detection, enabling sophisticated matching when some conditions are uncertain.
+
+### Values
+
+| Value | Meaning | Example |
+|-------|---------|---------|
+| `T` (True) | Condition definitely matches | User input contains keyword |
+| `F` (False) | Condition definitely doesn't match | User input lacks required keyword |
+| `U` (Unknown) | Condition is uncertain or irrelevant | Optional flag not provided |
+
+### Rule Semantics
+
+In rule definitions, `U` means "don't care" — the condition is ignored (wildcard). In runtime state, `U` means the value is uncertain.
+
+### Kleene Logic Truth Table
+
+When matching state against rules:
+
+| State | Rule | Result | Meaning |
+|-------|------|--------|---------|
+| `T` | `T` | **Hard match** | Definite satisfaction |
+| `T` | `U` | **Hard match** | Rule doesn't care, state satisfies |
+| `U` | `T` | **Soft match** | State uncertain, could satisfy |
+| `U` | `U` | **Soft match** | Both uncertain, fallback candidate |
+| `F` | `T` | **Exclusion** | Definite mismatch |
+| `T` | `F` | **Exclusion** | Definite mismatch |
+| `F` | `U` | **Hard match** | Rule doesn't care |
+| `U` | `F` | **Soft match** | Uncertain exclusion |
+| `F` | `F` | **Hard match** | Definite non-satisfaction |
+
+Key insight: `U AND F = F` provides definite exclusion, while `U AND T = U` yields a soft match.
+
+### Ranking Algorithm
+
+When multiple rules match, candidates are ranked by:
+
+```
+(-hard_matches, +soft_matches, +effective_conditions)
+```
+
+1. **More hard matches wins** (negative = descending order)
+2. **Fewer soft matches wins** (penalizes uncertainty)
+3. **More effective conditions wins** (prefers specific rules)
+
+Where `effective_conditions` = number of non-`U` conditions in the rule.
+
+See `match_3vl_rules` consequence type in `consequences/consequences.yaml` for implementation details.
+
 ## Execution Pseudocode Reference
 
-The `execution/` directory contains YAML files that define the execution engine semantics in pseudocode form:
+The `execution/` directory contains the execution engine semantics in pseudocode form:
 
 | File | Purpose |
 |------|---------|
-| `execution/traversal.yaml` | Main 3-phase execution loop |
-| `execution/state.yaml` | State structure and interpolation |
-| `execution/consequence-dispatch.yaml` | How consequences are executed by type |
-| `execution/precondition-dispatch.yaml` | How preconditions are evaluated |
-| `execution/logging.yaml` | Logging configuration hierarchy |
+| `execution/engine_execution.yaml` | Complete execution engine semantics (traversal, state, dispatch, logging) |
 
-The `resolution/` directory defines how types and workflows are loaded:
+The `resolution/` directory defines how types, workflows, and execution semantics are loaded:
 
 | File | Purpose |
 |------|---------|
 | `resolution/type-loader.yaml` | Load types from GitHub URLs |
 | `resolution/workflow-loader.yaml` | Load reusable workflows |
+| `resolution/execution-loader.yaml` | Load execution semantics |
 
 These files are the authoritative source for execution semantics. The LLM interprets them directly when executing workflows.
 
@@ -366,12 +424,12 @@ Types are fetched directly from raw GitHub URLs at runtime:
 
 ```yaml
 definitions:
-  source: hiivmind/hiivmind-blueprint-lib@v2.0.0
+  source: hiivmind/hiivmind-blueprint-lib@v3.0.0
 ```
 
 This resolves to:
 ```
-https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/
+https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v3.0.0/
 ```
 
 The type loader fetches:
@@ -384,7 +442,7 @@ The type loader fetches:
 ```yaml
 detect_intent:
   type: reference
-  workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+  workflow: hiivmind/hiivmind-blueprint-lib@v3.0.0:intent-detection
   context:
     arguments: "${arguments}"
     intent_flags: "${intent_flags}"
@@ -396,9 +454,9 @@ detect_intent:
 
 | Reference | Behavior |
 |-----------|----------|
-| `v2.0.0` | Exact version (recommended for production) |
-| `v2.0` | Latest patch in v2.0.x |
-| `v2` | Latest minor in v2.x.x (for development) |
+| `v3.0.0` | Exact version (recommended for production) |
+| `v3.0` | Latest patch in v3.0.x |
+| `v3` | Latest minor in v3.x.x (for development) |
 | `main` | Latest commit (not recommended) |
 
 ## Extending with Custom Types
@@ -408,11 +466,11 @@ Create your own extension package:
 ```yaml
 # mycorp-blueprint-types/package.yaml
 name: mycorp-blueprint-types
-extends: hiivmind/hiivmind-blueprint-lib@v2
+extends: hiivmind/hiivmind-blueprint-lib@v3
 
 # Reference in workflow
 definitions:
-  source: hiivmind/hiivmind-blueprint-lib@v2.0.0
+  source: hiivmind/hiivmind-blueprint-lib@v3.0.0
   extensions:
     - mycorp/custom-types@v1.0.0
 ```
@@ -421,44 +479,66 @@ definitions:
 
 ```
 hiivmind-blueprint-lib/
-├── package.yaml              # Package manifest
+├── package.yaml                  # Package manifest
+├── CHANGELOG.md                  # Version history
+│
 ├── consequences/
-│   ├── index.yaml            # Master registry
-│   ├── core/                 # 8 core categories
-│   │   ├── state.yaml
-│   │   ├── evaluation.yaml
-│   │   └── ...
-│   ├── extensions/           # 4 extension categories
-│   │   ├── file-system.yaml
-│   │   └── ...
-│   └── schema/
-│       └── consequence-definition.json
+│   ├── index.yaml                # Type registry
+│   └── consequences.yaml         # All 31 consequence types
+│
 ├── preconditions/
-│   ├── index.yaml
-│   ├── core/
-│   ├── extensions/
-│   └── schema/
-│       └── precondition-definition.json
+│   ├── index.yaml                # Type registry
+│   └── preconditions.yaml        # All 14 precondition types
+│
 ├── nodes/
+│   ├── index.yaml                # Type registry
+│   └── workflow_nodes.yaml       # 5 node type definitions
+│
+├── execution/
+│   ├── index.yaml                # Execution semantics registry
+│   └── engine_execution.yaml     # Complete execution engine semantics
+│
+├── resolution/                   # Type & workflow loading
+│   ├── index.yaml
+│   ├── type-loader.yaml          # Load types from GitHub URLs
+│   ├── workflow-loader.yaml      # Load reusable workflows
+│   └── execution-loader.yaml     # Load execution semantics
+│
+├── workflows/                    # Reusable workflow definitions
 │   ├── index.yaml
 │   └── core/
-├── workflows/                 # Reusable workflow definitions
+│       └── intent-detection.yaml # 3VL intent detection workflow
+│
+├── lib/
+│   └── tool-registry.yaml        # Tool availability registry
+│
+├── examples/                     # Usage examples
 │   ├── index.yaml
-│   └── core/
-│       └── intent-detection.yaml
-├── execution/                 # Execution engine semantics (pseudocode)
-│   ├── traversal.yaml        # Main execution loop
-│   ├── state.yaml            # State structure & interpolation
-│   ├── consequence-dispatch.yaml
-│   ├── precondition-dispatch.yaml
-│   └── logging.yaml
-├── resolution/                # Type & workflow loading
-│   ├── type-loader.yaml
-│   └── workflow-loader.yaml
-├── logging/                   # Logging configuration defaults
-│   └── defaults.yaml
-└── schema/
-    └── workflow-definitions.json  # Schema for definitions block
+│   ├── consequences.yaml
+│   ├── preconditions.yaml
+│   ├── nodes.yaml
+│   └── execution.yaml
+│
+└── schema/                       # JSON schemas
+    ├── common.json               # Shared definitions
+    ├── definitions/              # Type definition schemas
+    │   ├── consequence-definition.json
+    │   ├── precondition-definition.json
+    │   ├── node-definition.json
+    │   └── execution-definition.json
+    ├── authoring/                # Workflow authoring schemas
+    │   ├── workflow.json
+    │   ├── node-types.json
+    │   └── intent-mapping.json
+    ├── runtime/                  # Runtime configuration schemas
+    │   └── logging.json
+    ├── config/                   # Configuration schemas
+    │   ├── output-config.json
+    │   └── prompts-config.json
+    └── resolution/               # Resolution schemas
+        ├── index.json
+        ├── type-loader.json
+        └── workflow-loader.json
 ```
 
 ## Versioning Policy
