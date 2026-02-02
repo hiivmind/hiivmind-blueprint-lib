@@ -188,14 +188,13 @@ FUNCTION complete(ending, state):
 
 ## Node Types
 
-The library defines 5 node types for workflow construction:
+The library defines 4 node types for workflow construction:
 
 | Node Type | Purpose | Routing |
 |-----------|---------|---------|
 | `action` | Execute consequences (operations) | `on_success` / `on_failure` |
 | `conditional` | Branch based on a precondition | `branches.on_true` / `branches.on_false` |
 | `user_prompt` | Present AskUserQuestion to user | Routes by `handler_id` from options |
-| `validation_gate` | All preconditions must pass | `on_pass` / `on_fail` |
 | `reference` | Load and execute sub-workflow | `next_node` after completion |
 
 ### Node Examples
@@ -332,14 +331,13 @@ All types are consolidated into single files per category for easier loading and
 | core/git | 1 | source_check (exists, cloned, has_updates) |
 | core/web_fetch | 1 | fetch_check (succeeded, has_content) |
 
-### Node Types (5 types in `nodes/workflow_nodes.yaml`)
+### Node Types (4 types in `nodes/workflow_nodes.yaml`)
 
 | Type | Description |
 |------|-------------|
 | action | Execute operations, route on success/failure |
 | conditional | Branch based on precondition evaluation |
 | user_prompt | Present AskUserQuestion, route on response |
-| validation_gate | Run multiple preconditions, all must pass |
 | reference | Load and execute reference document |
 
 ### Workflows (1 workflow)
@@ -371,16 +369,16 @@ When matching state against rules:
 | State | Rule | Result | Meaning |
 |-------|------|--------|---------|
 | `T` | `T` | **Hard match** | Definite satisfaction |
-| `T` | `U` | **Hard match** | Rule doesn't care, state satisfies |
-| `U` | `T` | **Soft match** | State uncertain, could satisfy |
-| `U` | `U` | **Soft match** | Both uncertain, fallback candidate |
-| `F` | `T` | **Exclusion** | Definite mismatch |
 | `T` | `F` | **Exclusion** | Definite mismatch |
-| `F` | `U` | **Hard match** | Rule doesn't care |
-| `U` | `F` | **Soft match** | Uncertain exclusion |
+| `T` | `U` | **Skip** | Rule doesn't care (wildcard) |
+| `F` | `T` | **Exclusion** | Definite mismatch |
 | `F` | `F` | **Hard match** | Definite non-satisfaction |
+| `F` | `U` | **Skip** | Rule doesn't care (wildcard) |
+| `U` | `T` | **Soft match** | State uncertain, could satisfy |
+| `U` | `F` | **Soft match** | State uncertain, could exclude |
+| `U` | `U` | **Skip** | Rule doesn't care (wildcard) |
 
-Key insight: `U AND F = F` provides definite exclusion, while `U AND T = U` yields a soft match.
+Key insight: When rule=`U`, the condition is **skipped entirely** (doesn't count toward any counter). When state=`U` and rule=`T`/`F`, it's a **soft match** (uncertain satisfaction).
 
 ### Ranking Algorithm
 
