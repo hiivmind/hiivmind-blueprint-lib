@@ -243,9 +243,10 @@ examples:
         is true. If zero or multiple are true, routes to on_false.
 
   # ==========================================================================
-  # reference - Load and execute reference document or remote workflow
+  # reference - Load and execute reference document or workflow
   # ==========================================================================
   reference:
+    # --- Local document references (inline mode) ---
     - title: "Execute git clone procedure (local doc)"
       yaml: |
         clone_repository:
@@ -273,6 +274,7 @@ examples:
       explanation: |
         Executes the entire build-index.md document.
 
+    # --- Remote workflow references (inline mode) ---
     - title: "Remote workflow for intent detection"
       yaml: |
         detect_intent:
@@ -302,6 +304,154 @@ examples:
         The next_node uses variable interpolation to route dynamically
         based on the workflow output.
 
+    # --- Local workflow file references ---
+    - title: "Local workflow file (direct path)"
+      yaml: |
+        load_skill:
+          type: reference
+          workflow: ./subflows/load-skill.yaml
+          input:
+            skill_path: "${args.path}"
+          next_node: analyze_structure
+      explanation: |
+        References a local workflow file directly by path. Bypasses index
+        resolution. Useful for development and monorepos.
+
+    - title: "Local indexed workflow"
+      yaml: |
+        validate_config:
+          type: reference
+          workflow: ./:validation-pipeline
+          context:
+            config_path: "${computed.config_file}"
+          next_node: process_config
+      explanation: |
+        References a workflow from local workflows/index.yaml.
+        Uses ./:workflow-name format for index-based resolution.
+
+    # --- Spawn mode (isolated execution) ---
+    - title: "Spawn mode with input/output mapping"
+      yaml: |
+        load_skill:
+          type: reference
+          mode: spawn
+          workflow: ./subflows/load-skill.yaml
+          input:
+            skill_path: "${args.path}"
+          output_mapping:
+            state.loaded.content: output.skill_content
+            state.loaded.name: output.skill_name
+          transitions:
+            on_success: analyze_structure
+            on_failure: error_load
+      explanation: |
+        Spawn mode copies state, runs in isolation. On success, only
+        output_mapping values merge back. On failure, parent state unchanged.
+
+    - title: "Spawn mode with error mapping"
+      yaml: |
+        load_skill:
+          type: reference
+          mode: spawn
+          workflow: ./subflows/load-skill.yaml
+          input:
+            skill_path: "${args.path}"
+          output_mapping:
+            state.loaded.content: output.skill_content
+            state.loaded.name: output.skill_name
+          transitions:
+            on_success: analyze_structure
+            on_failure: error_generic
+          error_mapping:
+            error_prereqs: error_prerequisites
+            error_locate: ask_user_for_path
+            error_parse: error_invalid_yaml
+      explanation: |
+        Error mapping routes to specific recovery nodes based on which
+        error ending the sub-workflow reached.
+
+    - title: "Spawn mode for safe validation"
+      yaml: |
+        try_parse_config:
+          type: reference
+          mode: spawn
+          workflow: ./subflows/parse-config.yaml
+          input:
+            config_content: "${computed.raw_config}"
+          output_mapping:
+            state.computed.parsed_config: output.parsed
+            state.computed.config_schema: output.schema_version
+          transitions:
+            on_success: apply_config
+            on_failure: show_parse_error
+      explanation: |
+        Use spawn mode for operations that may fail, protecting parent state.
+
+    # --- Complete subflow definition example ---
+    - title: "Subflow definition with input/output schemas"
+      yaml: |
+        # subflows/load-skill.yaml
+        name: load-skill
+        version: 1.0.0
+        description: Load and validate a skill file
+
+        input_schema:
+          skill_path:
+            type: string
+            required: false
+            description: Path to skill file
+
+        output_schema:
+          skill_content:
+            type: string
+            description: Raw skill file content
+          skill_name:
+            type: string
+            description: Name from skill frontmatter
+
+        start_node: check_prerequisites
+        nodes:
+          check_prerequisites:
+            type: conditional
+            condition:
+              type: tool_available
+              tool: yq
+            branches:
+              on_true: locate_skill
+              on_false: error_prereqs
+
+          locate_skill:
+            type: action
+            actions:
+              - type: read_file
+                path: "${skill_path}"
+                store_as: file_content
+              - type: parse_yaml_frontmatter
+                content: "${computed.file_content}"
+                store_as: frontmatter
+            on_success: success
+            on_failure: error_locate
+
+        endings:
+          success:
+            type: success
+            message: "Skill loaded successfully"
+            output:
+              skill_content: "${computed.file_content}"
+              skill_name: "${computed.frontmatter.name}"
+          error_prereqs:
+            type: failure
+            category: prerequisites
+            message: "yq tool required but not available"
+          error_locate:
+            type: failure
+            category: not_found
+            message: "Could not locate or read skill file"
+      explanation: |
+        Complete subflow definition showing input_schema, output_schema,
+        and output field in endings for returning values to caller.
+
+    # --- Other examples ---
     - title: "Override logging for sub-workflow"
       yaml: |
         detect_intent:

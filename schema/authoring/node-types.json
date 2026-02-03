@@ -134,28 +134,90 @@
     },
     "reference_node": {
       "type": "object",
-      "required": ["doc", "next_node"],
       "properties": {
         "type": { "const": "reference" },
         "description": { "type": "string" },
         "doc": {
           "type": "string",
-          "description": "Path to pattern document"
+          "description": "Path to reference document (mutually exclusive with workflow)"
+        },
+        "workflow": {
+          "type": "string",
+          "description": "Workflow reference: owner/repo@version:name (remote), ./path/file.yaml (local file), or ./:name (local indexed)"
         },
         "section": {
           "type": "string",
-          "description": "Specific section to execute"
+          "description": "Specific section to execute (doc references only)"
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["inline", "spawn"],
+          "default": "inline",
+          "description": "Execution mode: inline shares state, spawn isolates state"
         },
         "context": {
           "type": "object",
-          "description": "Variables to pass to the pattern",
+          "description": "Variables to pass to the referenced workflow/document",
           "additionalProperties": true
+        },
+        "input": {
+          "type": "object",
+          "description": "Explicit inputs for sub-workflow (alternative to context, preferred for spawn mode)",
+          "additionalProperties": true
+        },
+        "output_mapping": {
+          "type": "object",
+          "description": "Maps sub-workflow outputs to parent state (spawn mode only)",
+          "additionalProperties": { "type": "string" }
         },
         "next_node": {
           "$ref": "../common.json#/$defs/node_reference",
-          "description": "Node to transition to after reference executes"
+          "description": "Node to transition to after reference executes (legacy, use transitions for spawn mode)"
+        },
+        "transitions": {
+          "type": "object",
+          "description": "Explicit success/failure routing (required for spawn mode)",
+          "required": ["on_success", "on_failure"],
+          "properties": {
+            "on_success": {
+              "$ref": "../common.json#/$defs/node_reference",
+              "description": "Node to transition to on successful execution"
+            },
+            "on_failure": {
+              "$ref": "../common.json#/$defs/node_reference",
+              "description": "Node to transition to on failed execution"
+            }
+          },
+          "additionalProperties": false
+        },
+        "error_mapping": {
+          "type": "object",
+          "description": "Maps specific sub-workflow error endings to recovery nodes",
+          "additionalProperties": { "$ref": "../common.json#/$defs/node_reference" }
         }
-      }
+      },
+      "oneOf": [
+        { "required": ["doc"] },
+        { "required": ["workflow"] }
+      ],
+      "anyOf": [
+        { "required": ["next_node"] },
+        { "required": ["transitions"] }
+      ],
+      "allOf": [
+        {
+          "$comment": "spawn mode requires transitions, not next_node",
+          "if": {
+            "properties": { "mode": { "const": "spawn" } }
+          },
+          "then": {
+            "required": ["transitions"],
+            "properties": {
+              "next_node": { "not": {} }
+            }
+          }
+        }
+      ]
     },
     "prompt": {
       "type": "object",

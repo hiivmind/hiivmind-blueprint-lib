@@ -29,11 +29,12 @@ resolution:
         - Dependencies are validated before execution
 
     reference_format:
-      description: Reference format supporting both remote GitHub repos and local paths
+      description: Reference format supporting remote GitHub repos, local paths, and direct file references
       patterns:
         remote: "{owner}/{repo}@{version}:{workflow-name}"
-        local_relative: '"./" or "./{path}:{workflow-name}"'
-        local_absolute: '"/absolute/path:{workflow-name}"'
+        local_indexed: '"./" or "./{path}:{workflow-name}"'
+        local_file: '"./path/to/workflow.yaml" (direct file path)'
+        local_absolute: '"/absolute/path:{workflow-name}" or "/absolute/path/workflow.yaml"'
 
       examples:
         - source: "hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection"
@@ -43,18 +44,29 @@ resolution:
           type: remote
           description: Private or public GitHub repository
         - source: "./:intent-detection"
-          type: local
-          description: Workflow from current directory
+          type: local_indexed
+          description: Workflow from current directory via index
         - source: "./lib/workflows:validation"
-          type: local
-          description: Workflow from relative path
+          type: local_indexed
+          description: Workflow from relative path via index
+        - source: "./subflows/load-skill.yaml"
+          type: local_file
+          description: Direct file path (bypasses index)
+        - source: "./lib/workflows/intent-detection.yaml"
+          type: local_file
+          description: Direct file path to specific workflow
         - source: "/home/user/git/my-workflows:intent-detection"
-          type: local
-          description: Workflow from absolute path
+          type: local_indexed
+          description: Absolute path with index-based resolution
+        - source: "/home/user/git/my-workflows/validation.yaml"
+          type: local_file
+          description: Absolute path to specific workflow file
 
       detection:
-        is_local: |
-          ref.startsWith("./") OR ref.startsWith("/")
+        is_local_file: |
+          (ref.startsWith("./") OR ref.startsWith("/")) AND ref.endsWith(".yaml")
+        is_local_indexed: |
+          (ref.startsWith("./") OR ref.startsWith("/")) AND ref.contains(":") AND NOT ref.endsWith(".yaml")
         is_remote: |
           ref.matches(/^[^\/]+\/[^@]+@[^:]+:.+$/)
 
@@ -65,6 +77,9 @@ resolution:
         - Offline: No network required for local paths
         - Speed: No network latency for local file reads
 
+        Direct file paths (ending in .yaml) bypass index resolution entirely.
+        This is simpler for workflows that don't need versioning or discovery.
+
       version_formats:
         - format: "@v2.0.0"
           behavior: Exact version (recommended for production)
@@ -74,25 +89,50 @@ resolution:
           behavior: Latest minor in v2.x.x (development)
 
     loading_algorithm:
-      description: Main loading function for workflow references (supports local and remote)
+      description: Main loading function for workflow references (supports local file, local indexed, and remote)
       effect: |
         FUNCTION load_workflow(workflow_ref):
-            # 1. Parse reference (returns {is_local, local_path, workflow_name} or {owner, repo, version, workflow_name})
+            # 1. Parse reference - determines source type and extracts components
             parts = parse_workflow_reference(workflow_ref)
 
-            # 2. Fetch workflow index (routes to local/gh api/raw URL based on source type)
+            # 2. Route based on source type
+            IF parts.is_local_file:
+                # Direct file path: ./subflows/load-skill.yaml
+                # Bypass index resolution entirely
+                RETURN load_workflow_direct(parts.file_path)
+
+            ELSE IF parts.is_local_indexed:
+                # Local indexed: ./:workflow-name or ./path:workflow-name
+                RETURN load_workflow_indexed(parts, is_local=true)
+
+            ELSE:
+                # Remote: owner/repo@version:workflow-name
+                RETURN load_workflow_indexed(parts, is_local=false)
+
+        FUNCTION load_workflow_direct(file_path):
+            # Direct file loading - no index resolution
+            IF NOT file_exists(file_path):
+                THROW "Workflow file not found: {file_path}"
+
+            workflow = parse_yaml(read_file(file_path))
+            validate_workflow(workflow)
+            RETURN workflow
+
+        FUNCTION load_workflow_indexed(parts, is_local):
+            # Index-based resolution
+            # 1. Fetch workflow index
             index = fetch(parts, "workflows/index.yaml")
 
-            # 3. Verify workflow exists
+            # 2. Verify workflow exists
             IF parts.workflow_name NOT IN index.workflows:
-                THROW "Workflow not found: {parts.workflow_name} in {workflow_ref}"
+                THROW "Workflow not found: {parts.workflow_name} in {parts.base_ref}"
 
-            # 4. Fetch workflow content
+            # 3. Fetch workflow content
             workflow_info = index.workflows[parts.workflow_name]
             workflow_path = "workflows/" + workflow_info.path
             workflow = fetch(parts, workflow_path)
 
-            # 5. Validate workflow
+            # 4. Validate workflow
             validate_workflow(workflow)
 
             RETURN workflow
@@ -205,17 +245,40 @@ resolution:
           | Remote (owner/repo)| gh_api_method  | raw_url_method  |
 
     reference_parsing:
-      description: Parse workflow reference into components (supports local and remote)
+      description: Parse workflow reference into components (supports local file, local indexed, and remote)
       effect: |
         FUNCTION parse_workflow_reference(ref):
-            # Check for local path first (path:workflow-name format)
+            # Check for local path first
             IF ref.startsWith("./") OR ref.startsWith("/"):
-                # Local: path:workflow-name
+
+                # Check for direct file path (ends with .yaml)
+                IF ref.endsWith(".yaml"):
+                    # Direct file reference: ./subflows/load-skill.yaml
+                    # Resolve path
+                    IF ref.startsWith("./"):
+                        file_path = resolve_relative_path(ref)
+                    ELSE:
+                        file_path = ref
+
+                    RETURN {
+                        is_local_file: true,
+                        is_local_indexed: false,
+                        is_remote: false,
+                        file_path: file_path,
+                        workflow_name: null,  # Not used for direct files
+                        local_path: null,
+                        owner: null,
+                        repo: null,
+                        version: null,
+                        base_ref: file_path
+                    }
+
+                # Local indexed: path:workflow-name format
                 # Find the last colon to split path and workflow name
                 last_colon = ref.lastIndexOf(":")
 
                 IF last_colon == -1:
-                    THROW "Invalid local reference: {ref}. Expected: path:workflow-name"
+                    THROW "Invalid local reference: {ref}. Expected: path:workflow-name or path/to/workflow.yaml"
 
                 path_part = ref.substring(0, last_colon)
                 workflow_name = ref.substring(last_colon + 1)
@@ -231,10 +294,12 @@ resolution:
                     THROW "Local source path does not exist: {local_path}"
 
                 RETURN {
-                    is_local: true,
+                    is_local_file: false,
+                    is_local_indexed: true,
+                    is_remote: false,
+                    file_path: null,
                     local_path: local_path,
                     workflow_name: workflow_name,
-                    # Remote fields set to null for local sources
                     owner: null,
                     repo: null,
                     version: null,
@@ -245,10 +310,13 @@ resolution:
             match = ref.match(/^([^\/]+)\/([^@]+)@([^:]+):(.+)$/)
 
             IF NOT match:
-                THROW "Invalid workflow reference format: {ref}. Expected: owner/repo@version:workflow-name or local path"
+                THROW "Invalid workflow reference format: {ref}. Expected: owner/repo@version:workflow-name, path:workflow-name, or path/to/workflow.yaml"
 
             RETURN {
-                is_local: false,
+                is_local_file: false,
+                is_local_indexed: false,
+                is_remote: true,
+                file_path: null,
                 local_path: null,
                 owner: match[1],
                 repo: match[2],
@@ -260,25 +328,62 @@ resolution:
       examples:
         - input: "hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection"
           output: |
-            { is_local: false, owner: "hiivmind", repo: "hiivmind-blueprint-lib", version: "v2.0.0", workflow_name: "intent-detection" }
+            { is_remote: true, owner: "hiivmind", repo: "hiivmind-blueprint-lib", version: "v2.0.0", workflow_name: "intent-detection" }
 
         - input: "./:intent-detection"
           output: |
-            { is_local: true, local_path: "/current/working/directory", workflow_name: "intent-detection" }
+            { is_local_indexed: true, local_path: "/current/working/directory", workflow_name: "intent-detection" }
+
+        - input: "./subflows/load-skill.yaml"
+          output: |
+            { is_local_file: true, file_path: "/current/working/directory/subflows/load-skill.yaml" }
 
         - input: "/home/user/git/my-workflows:validation"
           output: |
-            { is_local: true, local_path: "/home/user/git/my-workflows", workflow_name: "validation" }
+            { is_local_indexed: true, local_path: "/home/user/git/my-workflows", workflow_name: "validation" }
+
+        - input: "/home/user/git/my-workflows/validation.yaml"
+          output: |
+            { is_local_file: true, file_path: "/home/user/git/my-workflows/validation.yaml" }
 
     local_references:
-      description: Use doc parameter for local workflow references
-      example: |
-        detect_intent:
-          type: reference
-          doc: "lib/workflows/intent-detection.yaml"
-          context:
-            arguments: "${arguments}"
-          next_node: execute_dynamic_route
+      description: Options for local workflow references
+      examples:
+        - title: Direct file path (recommended for local workflows)
+          yaml: |
+            load_skill:
+              type: reference
+              workflow: ./subflows/load-skill.yaml
+              input:
+                skill_path: "${args.path}"
+              next_node: analyze_structure
+          notes: |
+            Direct file paths (ending in .yaml) bypass index resolution.
+            Simplest approach for workflows that don't need versioning.
+
+        - title: Local indexed workflow
+          yaml: |
+            detect_intent:
+              type: reference
+              workflow: ./:intent-detection
+              context:
+                arguments: "${arguments}"
+              next_node: execute_dynamic_route
+          notes: |
+            Uses workflows/index.yaml for resolution. Good for workflows
+            that may be versioned or need discovery.
+
+        - title: Document reference (for markdown procedures)
+          yaml: |
+            clone_repo:
+              type: reference
+              doc: "lib/patterns/git-clone.md"
+              section: "Clone Steps"
+              context:
+                repo_url: "${computed.repo_url}"
+              next_node: verify_clone
+          notes: |
+            Use 'doc' for markdown documents, 'workflow' for YAML workflows.
 
     workflow_index_format:
       description: Structure of workflow index files
@@ -551,8 +656,22 @@ resolution:
 
             Expected formats:
             - Remote: owner/repo@version:workflow-name (e.g., hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection)
-            - Local relative: ./:workflow-name or ./path:workflow-name
-            - Local absolute: /path:workflow-name
+            - Local file: ./path/to/workflow.yaml (direct file path)
+            - Local indexed: ./:workflow-name or ./path:workflow-name
+            - Absolute file: /path/to/workflow.yaml
+            - Absolute indexed: /path:workflow-name
+
+        - error: "Direct workflow file not found"
+          source_type: local_file
+          context: |
+            Reference: ./subflows/load-skill.yaml
+
+            File not found: /home/user/project/subflows/load-skill.yaml
+
+            Suggestions:
+            - Verify the file path: ls -la ./subflows/
+            - Check spelling and case sensitivity
+            - Ensure the file has .yaml extension
 
         - error: "Workflow dependency missing"
           context: |
@@ -569,3 +688,4 @@ resolution:
             - Add an extension with the missing type
 
     since: "2.1.0"
+    direct_file_since: "3.1.0"

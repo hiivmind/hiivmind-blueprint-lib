@@ -471,28 +471,34 @@ nodes:
 
   reference:
     description:
-      brief: Loads and executes a reference document or remote workflow
+      brief: Loads and executes a reference document or workflow with configurable state isolation
       detail: |
-        A reference node delegates execution to either a local reference document
-        or a remote workflow. This enables complex multi-step procedures to be
+        A reference node delegates execution to a local document, local workflow file,
+        or remote workflow. This enables complex multi-step procedures to be
         documented separately while remaining callable from workflows.
 
         For local documents: typically markdown files containing detailed procedure
         instructions. Context variables are available for interpolation.
 
+        For local workflows: direct .yaml file paths (e.g., ./subflows/load-skill.yaml)
+        that bypass index-based resolution. Useful for monorepos and development.
+
         For remote workflows: fetched from GitHub repositories, enabling distributed
         composable workflow ecosystems. See resolution/workflow-loader.yaml for
         the loading protocol.
 
-        State is SHARED between parent and referenced workflow/document.
+        Execution mode determines state handling:
+        - inline (default): State is SHARED with parent workflow
+        - spawn: State is COPIED, execution is isolated, only output_mapping returns
       notes:
-        - Must specify either 'doc' (local) or 'workflow' (remote), not both
-        - For local: doc path is relative to plugin root
-        - For remote: uses owner/repo@version:workflow-name format
+        - Must specify either 'doc' (local doc) or 'workflow' (local/remote workflow)
+        - For doc, path is relative to plugin root
+        - For workflow, use owner/repo@version:name (remote) or ./path/file.yaml (local)
         - Section parameter only applies to doc references
-        - Context variables are merged into state for sub-execution
-        - State is shared (unlike invoke_skill which isolates state)
-        - next_node supports variable interpolation for dynamic routing
+        - context/input variables are merged into sub-execution state
+        - Inline mode shares state; spawn mode isolates state
+        - Either next_node (legacy) or transitions (new) required for routing
+        - Spawn mode requires transitions for success/failure distinction
 
     fields:
       - name: type
@@ -500,6 +506,11 @@ nodes:
         required: true
         value: "reference"
         description: Node type discriminator
+
+      - name: description
+        type: string
+        required: false
+        description: Human-readable purpose for debugging and documentation
 
       - name: doc
         type: string
@@ -513,8 +524,10 @@ nodes:
         type: string
         required_unless: doc
         description: |
-          Remote workflow reference in format: owner/repo@version:workflow-name
-          Example: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+          Workflow reference. Supports three formats:
+          - Remote: owner/repo@version:workflow-name (e.g., hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection)
+          - Local file: ./path/to/workflow.yaml (direct file path, bypasses index)
+          - Local indexed: ./:workflow-name (uses workflows/index.yaml)
           Mutually exclusive with 'doc'.
           See resolution/workflow-loader.yaml for loading protocol.
 
@@ -526,6 +539,19 @@ nodes:
           If omitted, the entire document is executed.
           Only applicable when using 'doc' (not 'workflow').
 
+      - name: mode
+        type: string
+        required: false
+        enum: ["inline", "spawn"]
+        default: "inline"
+        description: |
+          Execution mode determining state handling:
+          - inline (default): State is SHARED with parent. Sub-workflow reads and
+            writes directly to parent state. Simple, but changes are permanent.
+          - spawn: State is COPIED at invocation. Sub-workflow executes in isolation.
+            Only values specified in output_mapping are merged back on success.
+            On failure, parent state is UNCHANGED.
+
       - name: context
         type: object
         required: false
@@ -533,26 +559,85 @@ nodes:
           Variables to make available within the referenced document/workflow.
           These can be referenced using ${} interpolation syntax.
           For workflows, maps to workflow inputs.
+          Prefer 'input' for spawn mode (clearer semantics).
         additionalProperties:
           type: any
           interpolatable: true
 
+      - name: input
+        type: object
+        required: false
+        description: |
+          Explicit inputs for the sub-workflow (alternative to context).
+          Preferred for spawn mode as it clearly defines the interface.
+          Values are interpolated and passed to the sub-workflow.
+          For subflows with input_schema, validates against declared inputs.
+        additionalProperties:
+          type: any
+          interpolatable: true
+
+      - name: output_mapping
+        type: object
+        required: false
+        description: |
+          Maps sub-workflow outputs back to parent state. Only used with spawn mode.
+          Keys are parent state paths, values are sub-workflow output paths.
+          On success, these mappings are applied; on failure, parent state unchanged.
+          For subflows with output_schema, validates against declared outputs.
+        additionalProperties:
+          type: string
+        example:
+          state.loaded.content: "output.skill_content"
+          state.loaded.name: "output.skill_name"
+
       - name: next_node
         type: node_reference
-        required: true
+        required_unless: transitions
         description: |
           Node or ending to route to after execution completes.
           Supports variable interpolation (e.g., "${computed.dynamic_target}").
+          Routes regardless of success/failure outcome.
+          Prefer 'transitions' for spawn mode to handle success/failure separately.
+
+      - name: transitions
+        type: object
+        required_unless: next_node
+        description: |
+          Explicit routing for success and failure outcomes.
+          Required for spawn mode to properly handle isolated execution results.
+          Mutually exclusive with next_node.
+        properties:
+          - name: on_success
+            type: node_reference
+            required: true
+            description: Node or ending to route to when sub-workflow succeeds
+          - name: on_failure
+            type: node_reference
+            required: true
+            description: Node or ending to route to when sub-workflow fails
+
+      - name: error_mapping
+        type: object
+        required: false
+        description: |
+          Maps specific sub-workflow error endings to recovery nodes.
+          Keys are ending IDs from the sub-workflow, values are nodes to route to.
+          Takes precedence over transitions.on_failure for matched errors.
+          Enables fine-grained error recovery based on failure type.
+        additionalProperties:
+          type: node_reference
+        example:
+          error_prereqs: "error_prerequisites"
+          error_locate: "ask_user_for_path"
 
     execution:
       effect: |
-        # Determine source: remote workflow or local document
+        # Determine source: workflow (local/remote) or document
         if node.workflow:
-          # Remote workflow reference (v2.1+)
-          # See resolution/workflow-loader.yaml for full loading protocol
+          # Workflow reference (local file, local indexed, or remote)
           workflow = load_workflow(node.workflow)
         else if node.doc:
-          # Local file reference
+          # Local document reference
           doc_path = resolve_path(plugin_root, node.doc)
           doc_content = read_file(doc_path)
 
@@ -562,37 +647,166 @@ nodes:
         else:
           throw Error("Reference node requires 'workflow' or 'doc' parameter")
 
-        # Build context with interpolation
-        context = {}
-        if node.context:
+        # Build inputs with interpolation (prefer input over context)
+        inputs = {}
+        if node.input:
+          for key, value in node.input.items():
+            inputs[key] = interpolate(value, state)
+        else if node.context:
           for key, value in node.context.items():
-            context[key] = interpolate(value, state)
+            inputs[key] = interpolate(value, state)
 
-        # Merge context into state (for shared state execution)
-        for key, value in context.items():
-          state[key] = value
+        # Determine execution mode
+        mode = node.mode or "inline"
 
-        # Execute based on source type
-        if node.workflow:
-          # Execute as sub-workflow with shared state
-          # Note: Reference execution shares state (unlike invoke_skill)
-          execute_workflow(workflow, types, state)
+        if mode == "inline":
+          # INLINE MODE: Shared state execution
+          return execute_inline(node, workflow or doc_content, inputs, state)
         else:
-          # Execute document with context
-          execute_document(doc_content, context, state)
+          # SPAWN MODE: Isolated state execution
+          return execute_spawn(node, workflow, inputs, state)
 
-        # Resolve next node (supports dynamic interpolation)
-        target = resolve_routing_target(node.next_node, state)
+      helpers:
+        execute_inline: |
+          FUNCTION execute_inline(node, target, inputs, state):
+            # Merge inputs into shared state
+            for key, value in inputs.items():
+              state[key] = value
 
-        return route_to(target)
+            # Execute with shared state
+            if node.workflow:
+              execute_workflow(target, types, state)
+            else:
+              execute_document(target, inputs, state)
+
+            # Resolve routing (next_node or transitions)
+            if node.next_node:
+              target = resolve_routing_target(node.next_node, state)
+              return route_to(target)
+            else:
+              # Inline mode with transitions - check for success based on ending
+              # Note: For inline, success/failure is determined by ending type
+              if state.execution_result and state.execution_result.success:
+                return route_to(node.transitions.on_success)
+              else:
+                return route_to(node.transitions.on_failure)
+
+        execute_spawn: |
+          FUNCTION execute_spawn(node, workflow, inputs, state):
+            # SPAWN MODE: Copy-on-call semantics with isolated execution
+            # Parent state is UNCHANGED on failure
+
+            # 1. Create isolated state copy
+            isolated_state = deep_copy(state)
+
+            # 2. Merge inputs into isolated state
+            for key, value in inputs.items():
+              isolated_state[key] = value
+
+            # 3. Validate inputs against input_schema if defined
+            if workflow.input_schema:
+              validate_inputs(inputs, workflow.input_schema)
+
+            # 4. Execute in isolated context (conceptually via Task agent)
+            result = execute_workflow_isolated(workflow, types, isolated_state)
+
+            # 5. Handle result based on outcome
+            if result.success:
+              # Extract outputs from isolated state
+              ending = result.ending
+              outputs = {}
+
+              # Get outputs from ending definition if present
+              if ending.output:
+                for key, expr in ending.output.items():
+                  outputs[key] = resolve_value(expr, isolated_state)
+
+              # Apply output_mapping to parent state
+              if node.output_mapping:
+                for parent_path, output_path in node.output_mapping.items():
+                  value = get_nested(outputs, output_path) or get_nested(isolated_state, output_path)
+                  set_nested(state, parent_path, value)
+
+              # Validate outputs against output_schema if defined
+              if workflow.output_schema:
+                validate_outputs(outputs, workflow.output_schema)
+
+              return route_to(node.transitions.on_success)
+
+            else:
+              # Failure: Parent state UNCHANGED
+              ending_id = result.ending_id
+
+              # Check error_mapping for specific recovery
+              if node.error_mapping and node.error_mapping[ending_id]:
+                return route_to(node.error_mapping[ending_id])
+
+              # Default failure routing
+              return route_to(node.transitions.on_failure)
+
+        execute_workflow_isolated: |
+          FUNCTION execute_workflow_isolated(workflow, types, isolated_state):
+            # Execute workflow in isolated context
+            # This conceptually maps to Task agent execution:
+            #
+            # Task agent receives:
+            # - The workflow definition
+            # - A copy of the state
+            # - Type definitions
+            #
+            # Task agent returns:
+            # - success: boolean
+            # - ending_id: string (which ending was reached)
+            # - ending: object (the ending definition)
+            # - state: object (final isolated state, if needed)
+
+            try:
+              execute_workflow(workflow, types, isolated_state)
+              return {
+                success: true,
+                ending_id: isolated_state.reached_ending,
+                ending: workflow.endings[isolated_state.reached_ending],
+                state: isolated_state
+              }
+            catch (error):
+              return {
+                success: false,
+                ending_id: error.ending_id or "error",
+                error: error.message
+              }
+
+        validate_inputs: |
+          FUNCTION validate_inputs(inputs, input_schema):
+            for param_name, param_def in input_schema.items():
+              value = inputs.get(param_name)
+
+              if param_def.required and value is null:
+                if param_def.default is not null:
+                  inputs[param_name] = param_def.default
+                else:
+                  throw Error("Missing required input: {param_name}")
+
+              if value is not null and param_def.type:
+                if not type_matches(value, param_def.type):
+                  throw Error("Input {param_name} has wrong type: expected {param_def.type}")
+
+        validate_outputs: |
+          FUNCTION validate_outputs(outputs, output_schema):
+            for output_name, output_def in output_schema.items():
+              # Output validation is informational, not blocking
+              if output_name not in outputs:
+                LOG_WARN "Expected output not present: {output_name}"
+
       state_reads:
-        - Fields referenced in context values via ${} interpolation
+        - Fields referenced in input/context values via ${} interpolation
+        - All state (for spawn mode copy)
       state_writes:
-        - Depends on workflow/document execution
-        - Remote workflows can read and modify parent state directly
+        - "Inline mode: Depends on workflow/document execution (shared state)"
+        - "Spawn mode: Only fields specified in output_mapping (on success)"
+        - "Spawn mode failure: No writes (parent state unchanged)"
 
     examples:
-      # === Local document references ===
+      # === Local document references (inline mode) ===
       - title: Execute git clone procedure (local doc)
         yaml: |
           clone_repository:
@@ -622,7 +836,7 @@ nodes:
           Executes the entire build-index.md document with source and output
           paths from computed state.
 
-      # === Remote workflow references ===
+      # === Remote workflow references (inline mode) ===
       - title: Remote workflow for intent detection
         yaml: |
           detect_intent:
@@ -671,6 +885,113 @@ nodes:
           has access to computed.matched_action, computed.intent_flags,
           and computed.intent_matches set by the sub-workflow.
 
+      # === Local workflow file references ===
+      - title: Local workflow file (direct path)
+        yaml: |
+          load_skill:
+            type: reference
+            workflow: ./subflows/load-skill.yaml
+            input:
+              skill_path: "${args.path}"
+            next_node: analyze_structure
+        explanation: |
+          References a local workflow file directly by path (bypasses index).
+          Useful for development, monorepos, and when workflows don't need
+          version management. State is shared with parent (inline mode).
+
+      - title: Local indexed workflow
+        yaml: |
+          validate_config:
+            type: reference
+            workflow: ./:validation-pipeline
+            context:
+              config_path: "${computed.config_file}"
+            next_node: process_config
+        explanation: |
+          References a workflow from the local workflows/index.yaml.
+          Uses the format ./:workflow-name for index-based resolution.
+
+      # === Spawn mode (isolated execution) ===
+      - title: Spawn mode with input/output mapping
+        yaml: |
+          load_skill:
+            type: reference
+            mode: spawn
+            workflow: ./subflows/load-skill.yaml
+            input:
+              skill_path: "${args.path}"
+            output_mapping:
+              state.loaded.content: output.skill_content
+              state.loaded.name: output.skill_name
+            transitions:
+              on_success: analyze_structure
+              on_failure: error_load
+        explanation: |
+          Spawn mode creates an isolated state copy. The sub-workflow cannot
+          modify parent state directly. On success, only the output_mapping
+          values are merged back. On failure, parent state is UNCHANGED.
+          This provides clean boundaries and safe failure handling.
+
+      - title: Spawn mode with error mapping for recovery
+        yaml: |
+          load_skill:
+            type: reference
+            mode: spawn
+            workflow: ./subflows/load-skill.yaml
+            input:
+              skill_path: "${args.path}"
+            output_mapping:
+              state.loaded.content: output.skill_content
+              state.loaded.name: output.skill_name
+            transitions:
+              on_success: analyze_structure
+              on_failure: error_generic
+            error_mapping:
+              error_prereqs: error_prerequisites
+              error_locate: ask_user_for_path
+              error_parse: error_invalid_yaml
+        explanation: |
+          Error mapping provides fine-grained recovery routing based on the
+          specific ending reached by the sub-workflow. If the sub-workflow
+          ends at "error_prereqs", routes to error_prerequisites instead
+          of the generic error_generic handler.
+
+      - title: Spawn mode for safe validation
+        yaml: |
+          try_parse_config:
+            type: reference
+            mode: spawn
+            workflow: ./subflows/parse-config.yaml
+            input:
+              config_content: "${computed.raw_config}"
+            output_mapping:
+              state.computed.parsed_config: output.parsed
+              state.computed.config_schema: output.schema_version
+            transitions:
+              on_success: apply_config
+              on_failure: show_parse_error
+        explanation: |
+          Use spawn mode for potentially failing operations where you want
+          to protect parent state. If parsing fails, parent state is unchanged
+          and you can show an error without corrupting workflow state.
+
+      # === Inline mode with transitions (explicit success/failure) ===
+      - title: Inline mode with explicit transitions
+        yaml: |
+          detect_intent:
+            type: reference
+            mode: inline
+            workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+            context:
+              arguments: "${arguments}"
+            transitions:
+              on_success: execute_dynamic_route
+              on_failure: show_main_menu
+        explanation: |
+          Even in inline mode (shared state), you can use transitions for
+          explicit success/failure routing. State is still shared, but
+          routing distinguishes the outcome.
+
       # === State sharing examples ===
       - title: Complex procedure with multiple context values (local doc)
         yaml: |
@@ -707,6 +1028,8 @@ nodes:
       - conditional
     since: "1.0.0"
     workflow_since: "2.1.0"
+    mode_since: "3.1.0"
+    transitions_since: "3.1.0"
 
   # ==========================================================================
   # category: core/user_prompt
