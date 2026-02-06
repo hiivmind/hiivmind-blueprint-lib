@@ -32,7 +32,8 @@ artifacts:
   - preconditions/ # Index and type definitions
   - nodes/ # Node type definitions
   - workflows/ # Reusable workflow definitions
-  - logging/ # Logging configuration defaults
+  - execution/ # Execution engine semantics
+  - resolution/ # Bootstrap loaders and fetch patterns
   - schema/ # JSON Schema definitions
 
 # Compatibility

@@ -4,7 +4,7 @@
 #
 # These examples are for human reference, not automated testing.
 
-schema_version: "1.0"
+schema_version: "3.0"
 description: |
   Example usage patterns for precondition types.
   These are documentary snippets for workflow authors.

@@ -1,9 +1,7 @@
 # Workflow Loader
 # Load reusable workflows from remote or local sources
 #
-# This file defines how reusable sub-workflows are loaded and resolved
-# at execution time via reference nodes. Supports both GitHub repositories
-# and local filesystem paths.
+# Fetching primitives: see resolution/fetch-patterns.yaml (loaded during bootstrap Phase 3.0)
 
 schema_version: "2.0"
 category: resolution
@@ -19,14 +17,6 @@ resolution:
 
         Sub-workflows share state with the parent workflow, allowing them to
         read and modify parent state directly.
-      notes:
-        - Supports both remote GitHub repos and local filesystem paths
-        - Uses gh api for fetching remote (private repo support)
-        - Falls back to raw.githubusercontent.com for public repos when gh unavailable
-        - Local paths bypass network entirely (instant, offline-capable)
-        - Supports version pinning for reproducibility
-        - Sub-workflows share state (unlike invoke_skill)
-        - Dependencies are validated before execution
 
     reference_format:
       description: Reference format supporting remote GitHub repos, local paths, and direct file references
@@ -39,28 +29,12 @@ resolution:
       examples:
         - source: "hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection"
           type: remote
-          description: Remote GitHub repository with version pin
-        - source: "mycorp/custom-workflows@v1.0.0:validation-pipeline"
-          type: remote
-          description: Private or public GitHub repository
         - source: "./:intent-detection"
           type: local_indexed
-          description: Workflow from current directory via index
-        - source: "./lib/workflows:validation"
-          type: local_indexed
-          description: Workflow from relative path via index
         - source: "./subflows/load-skill.yaml"
           type: local_file
-          description: Direct file path (bypasses index)
-        - source: "./lib/workflows/intent-detection.yaml"
-          type: local_file
-          description: Direct file path to specific workflow
         - source: "/home/user/git/my-workflows:intent-detection"
           type: local_indexed
-          description: Absolute path with index-based resolution
-        - source: "/home/user/git/my-workflows/validation.yaml"
-          type: local_file
-          description: Absolute path to specific workflow file
 
       detection:
         is_local_file: |
@@ -69,16 +43,6 @@ resolution:
           (ref.startsWith("./") OR ref.startsWith("/")) AND ref.contains(":") AND NOT ref.endsWith(".yaml")
         is_remote: |
           ref.matches(/^[^\/]+\/[^@]+@[^:]+:.+$/)
-
-      local_notes: |
-        Local paths are useful for:
-        - Development: Testing workflow changes before publishing
-        - Monorepos: Workflows defined in same repository as consuming plugin
-        - Offline: No network required for local paths
-        - Speed: No network latency for local file reads
-
-        Direct file paths (ending in .yaml) bypass index resolution entirely.
-        This is simpler for workflows that don't need versioning or discovery.
 
       version_formats:
         - format: "@v2.0.0"
@@ -90,6 +54,7 @@ resolution:
 
     loading_algorithm:
       description: Main loading function for workflow references (supports local file, local indexed, and remote)
+      # Uses fetch() from resolution/fetch-patterns.yaml
       effect: |
         FUNCTION load_workflow(workflow_ref):
             # 1. Parse reference - determines source type and extracts components
@@ -98,7 +63,6 @@ resolution:
             # 2. Route based on source type
             IF parts.is_local_file:
                 # Direct file path: ./subflows/load-skill.yaml
-                # Bypass index resolution entirely
                 RETURN load_workflow_direct(parts.file_path)
 
             ELSE IF parts.is_local_indexed:
@@ -137,113 +101,6 @@ resolution:
 
             RETURN workflow
 
-    fetching:
-      description: Fetch YAML content from local path or GitHub repository
-
-      local_method:
-        description: Read directly from local filesystem (fastest, no network)
-        effect: |
-          FUNCTION fetch_local(local_path, path):
-              full_path = "{local_path}/{path}"
-
-              IF NOT file_exists(full_path):
-                  RETURN { success: false, error: "File not found: {full_path}" }
-
-              result = CALL Read with:
-                  file_path: full_path
-
-              IF result.error:
-                  RETURN { success: false, error: result.error }
-
-              RETURN { success: true, content: parse_yaml(result.content) }
-
-        advantages:
-          - No network latency
-          - Works offline
-          - No authentication required
-          - Instant feedback during development
-
-      gh_api_method:
-        description: Use gh api for authenticated access (supports private repos)
-        effect: |
-          FUNCTION fetch_gh_api(owner, repo, path, version):
-              result = CALL Bash with:
-                  command: "gh api repos/{owner}/{repo}/contents/{path}?ref={version} --jq '.content' | base64 -d"
-
-              IF result.exit_code != 0:
-                  RETURN { success: false, error: result.stderr }
-
-              RETURN { success: true, content: parse_yaml(result.stdout) }
-
-        advantages:
-          - Works with private repositories
-          - Respects GitHub rate limits
-          - Uses existing gh authentication
-
-      raw_url_method:
-        description: Use raw.githubusercontent.com for public repos when gh unavailable
-        effect: |
-          FUNCTION fetch_raw_url(owner, repo, path, version):
-              url = "https://raw.githubusercontent.com/{owner}/{repo}/{version}/{path}"
-              response = CALL WebFetch with:
-                  url: url
-                  prompt: "Return the raw YAML content"
-
-              IF response.status >= 400:
-                  RETURN { success: false, error: "{response.status} {url}" }
-
-              # Handle redirects
-              IF response.redirect_url:
-                  RETURN fetch_raw_url_direct(response.redirect_url)
-
-              RETURN { success: true, content: parse_yaml(response.content) }
-
-        advantages:
-          - Works without gh CLI installed
-          - Good fallback for public repos
-          - Simple HTTP fetch
-
-      combined_fetch:
-        description: Unified fetch supporting local paths and remote with fallback
-        effect: |
-          FUNCTION fetch(source_parts, path):
-              # Local path: direct file read (fastest)
-              IF source_parts.is_local:
-                  result = fetch_local(source_parts.local_path, path)
-                  IF result.success:
-                      LOG "Fetched locally: {source_parts.local_path}/{path}"
-                      RETURN result.content
-
-                  THROW "Failed to fetch local: {source_parts.local_path}/{path}\n  Error: {result.error}"
-
-              # Remote: try gh api first, then raw URL fallback
-              owner = source_parts.owner
-              repo = source_parts.repo
-              version = source_parts.version
-
-              result = fetch_gh_api(owner, repo, path, version)
-              IF result.success:
-                  LOG "Fetched via gh api: {owner}/{repo}/{path}@{version}"
-                  RETURN result.content
-
-              # Fall back to raw URL (public repos only)
-              LOG "gh api failed, trying raw URL fallback"
-              result = fetch_raw_url(owner, repo, path, version)
-              IF result.success:
-                  LOG "Fetched via raw URL: {owner}/{repo}/{path}@{version}"
-                  RETURN result.content
-
-              THROW "Failed to fetch: {owner}/{repo}/{path}@{version}\n  gh api: {result.error}\n  raw URL: {result.error}"
-
-      method_selection:
-        description: Which method is used based on source type
-        table: |
-          | Source Type        | Primary Method | Fallback Method |
-          |--------------------|----------------|-----------------|
-          | Local path (./)    | local_method   | none (error)    |
-          | Local path (/)     | local_method   | none (error)    |
-          | Remote (owner/repo)| gh_api_method  | raw_url_method  |
-
     reference_parsing:
       description: Parse workflow reference into components (supports local file, local indexed, and remote)
       effect: |
@@ -253,8 +110,6 @@ resolution:
 
                 # Check for direct file path (ends with .yaml)
                 IF ref.endsWith(".yaml"):
-                    # Direct file reference: ./subflows/load-skill.yaml
-                    # Resolve path
                     IF ref.startsWith("./"):
                         file_path = resolve_relative_path(ref)
                     ELSE:
@@ -265,7 +120,7 @@ resolution:
                         is_local_indexed: false,
                         is_remote: false,
                         file_path: file_path,
-                        workflow_name: null,  # Not used for direct files
+                        workflow_name: null,
                         local_path: null,
                         owner: null,
                         repo: null,
@@ -274,7 +129,6 @@ resolution:
                     }
 
                 # Local indexed: path:workflow-name format
-                # Find the last colon to split path and workflow name
                 last_colon = ref.lastIndexOf(":")
 
                 IF last_colon == -1:
@@ -283,13 +137,11 @@ resolution:
                 path_part = ref.substring(0, last_colon)
                 workflow_name = ref.substring(last_colon + 1)
 
-                # Resolve path
                 IF path_part.startsWith("./"):
                     local_path = resolve_relative_path(path_part)
                 ELSE:
                     local_path = path_part
 
-                # Validate path exists
                 IF NOT directory_exists(local_path):
                     THROW "Local source path does not exist: {local_path}"
 
@@ -338,14 +190,6 @@ resolution:
           output: |
             { is_local_file: true, file_path: "/current/working/directory/subflows/load-skill.yaml" }
 
-        - input: "/home/user/git/my-workflows:validation"
-          output: |
-            { is_local_indexed: true, local_path: "/home/user/git/my-workflows", workflow_name: "validation" }
-
-        - input: "/home/user/git/my-workflows/validation.yaml"
-          output: |
-            { is_local_file: true, file_path: "/home/user/git/my-workflows/validation.yaml" }
-
     local_references:
       description: Options for local workflow references
       examples:
@@ -357,9 +201,6 @@ resolution:
               input:
                 skill_path: "${args.path}"
               next_node: analyze_structure
-          notes: |
-            Direct file paths (ending in .yaml) bypass index resolution.
-            Simplest approach for workflows that don't need versioning.
 
         - title: Local indexed workflow
           yaml: |
@@ -369,9 +210,6 @@ resolution:
               context:
                 arguments: "${arguments}"
               next_node: execute_dynamic_route
-          notes: |
-            Uses workflows/index.yaml for resolution. Good for workflows
-            that may be versioned or need discovery.
 
         - title: Document reference (for markdown procedures)
           yaml: |
@@ -382,8 +220,6 @@ resolution:
               context:
                 repo_url: "${computed.repo_url}"
               next_node: verify_clone
-          notes: |
-            Use 'doc' for markdown documents, 'workflow' for YAML workflows.
 
     workflow_index_format:
       description: Structure of workflow index files
@@ -443,12 +279,6 @@ resolution:
         - name: depends_on
           required: false
           description: Type dependencies for validation
-        - name: depends_on.consequences
-          required: false
-          description: Required consequence types
-        - name: depends_on.preconditions
-          required: false
-          description: Required precondition types
         - name: inputs
           required: true
           description: Input parameters
@@ -461,12 +291,10 @@ resolution:
       effect: |
         FUNCTION validate_workflow_dependencies(workflow_info, type_registry):
             IF workflow_info.depends_on:
-                # Check consequences
                 FOR each type_name IN workflow_info.depends_on.consequences:
                     IF type_name NOT IN type_registry.consequences:
                         THROW "Workflow requires missing consequence type: {type_name}"
 
-                # Check preconditions
                 FOR each type_name IN workflow_info.depends_on.preconditions:
                     IF type_name NOT IN type_registry.preconditions:
                         THROW "Workflow requires missing precondition type: {type_name}"
@@ -476,10 +304,8 @@ resolution:
       effect: |
         FUNCTION execute_reference_node(node, types, state):
             IF node.workflow:
-                # Remote workflow reference
                 workflow = load_workflow(node.workflow)
             ELSE IF node.doc:
-                # Local file reference
                 workflow = parse_yaml(read_file(node.doc))
             ELSE:
                 THROW "Reference node requires 'workflow' or 'doc' parameter"
@@ -512,10 +338,10 @@ resolution:
             type: reference
             workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
             context:
-              arguments: "${arguments}"           # Maps state.arguments
-              intent_flags: "${intent_flags}"     # Maps state.intent_flags
-              intent_rules: "${intent_rules}"     # Maps state.intent_rules
-              fallback_action: "show_main_menu"   # Literal value
+              arguments: "${arguments}"
+              intent_flags: "${intent_flags}"
+              intent_rules: "${intent_rules}"
+              fallback_action: "show_main_menu"
             next_node: execute_dynamic_route
 
       outputs:
@@ -524,7 +350,6 @@ resolution:
           # After intent-detection workflow completes:
           # - state.computed.matched_action is set
           # - state.computed.intent_flags is set
-          # - state.computed.intent_matches is set
 
           # Parent workflow can use these directly:
           execute_dynamic_route:
@@ -561,108 +386,32 @@ resolution:
           state: Isolated
           use_case: Reusable skills, clean boundaries
 
-    version_pinning:
-      description: Use exact versions for reproducible builds
-
-      formats:
-        - format: "@v2.0.0"
-          behavior: Exact version (recommended for production)
-        - format: "@v2.0"
-          behavior: Latest patch in v2.0.x
-        - format: "@v2"
-          behavior: Latest minor in v2.x.x (development)
-
     error_messages:
-      description: Provide clear, actionable error messages for all source types
-
       examples:
         - error: "Workflow not found (remote)"
-          source_type: remote
           context: |
             Reference: hiivmind/hiivmind-blueprint-lib@v2.0.0:my-workflow
 
-            Tried:
-            1. gh api repos/hiivmind/hiivmind-blueprint-lib/contents/workflows/index.yaml?ref=v2.0.0 → (success)
-            2. Workflow 'my-workflow' not in index
-
-            Available workflows in this version:
-            - intent-detection (v1.0.0)
+            Workflow 'my-workflow' not in index.
+            Available workflows: intent-detection (v1.0.0)
 
             Suggestions:
             - Check the workflow name for typos
             - Verify the workflow exists in the specified version
-            - Check available workflows: https://github.com/hiivmind/hiivmind-blueprint-lib/releases
-
-        - error: "Workflow not found (local)"
-          source_type: local
-          context: |
-            Reference: ./:my-workflow
-
-            Tried:
-            1. /home/user/project/workflows/index.yaml → (success)
-            2. Workflow 'my-workflow' not in index
-
-            Available workflows:
-            - intent-detection (v1.0.0)
-            - validation (v1.0.0)
-
-            Suggestions:
-            - Check the workflow name for typos
-            - Verify workflows/index.yaml lists this workflow
-            - Run: yq '.workflows | keys' ./workflows/index.yaml
 
         - error: "Failed to fetch workflow (remote)"
-          source_type: remote
           context: |
             Reference: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
 
             Tried:
-            1. gh api repos/hiivmind/hiivmind-blueprint-lib/contents/workflows/index.yaml?ref=v2.0.0 → (error)
-            2. https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/workflows/index.yaml → (error)
+            1. gh api repos/.../workflows/index.yaml → (error)
+            2. raw.githubusercontent.com fallback → (error)
 
             Suggestions:
-            - For private repos: Verify gh auth status (gh auth status)
-            - Check the version exists: https://github.com/hiivmind/hiivmind-blueprint-lib/tags
-            - Verify network connectivity
-
-        - error: "Failed to fetch workflow (local)"
-          source_type: local
-          context: |
-            Reference: ./lib/workflows:intent-detection
-
-            Tried:
-            1. /home/user/project/lib/workflows/workflows/index.yaml → File not found
-
-            Suggestions:
-            - Verify the path exists: ls -la ./lib/workflows
-            - Check for required files: workflows/index.yaml
-            - Ensure proper directory structure with index.yaml files
-
-        - error: "Local source path does not exist"
-          source_type: local
-          context: |
-            Reference: /home/user/git/my-workflows:intent-detection
-
-            The specified local path does not exist or is not a directory.
-
-            Suggestions:
-            - Verify the path: ls -la /home/user/git/my-workflows
-            - Check spelling and case sensitivity
-            - Use absolute path or ./ relative path
-
-        - error: "Invalid workflow reference format"
-          context: |
-            Reference: invalid-reference
-
-            Expected formats:
-            - Remote: owner/repo@version:workflow-name (e.g., hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection)
-            - Local file: ./path/to/workflow.yaml (direct file path)
-            - Local indexed: ./:workflow-name or ./path:workflow-name
-            - Absolute file: /path/to/workflow.yaml
-            - Absolute indexed: /path:workflow-name
+            - Verify gh auth status (gh auth status)
+            - Check the version exists
 
         - error: "Direct workflow file not found"
-          source_type: local_file
           context: |
             Reference: ./subflows/load-skill.yaml
 
@@ -670,22 +419,7 @@ resolution:
 
             Suggestions:
             - Verify the file path: ls -la ./subflows/
-            - Check spelling and case sensitivity
             - Ensure the file has .yaml extension
-
-        - error: "Workflow dependency missing"
-          context: |
-            Workflow: intent-detection@v1.0.0
-            Missing consequence type: parse_intent_flags
-
-            The workflow requires consequence types that are not in the loaded type registry.
-
-            Loaded types: hiivmind/hiivmind-blueprint-lib@v1.0.0 (35 consequences)
-            Required types: 43 consequences (workflow needs v2.0.0+)
-
-            Suggestions:
-            - Update type definitions to v2.0.0 or later
-            - Add an extension with the missing type
 
     since: "2.1.0"
     direct_file_since: "3.1.0"
