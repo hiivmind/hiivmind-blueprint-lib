@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/workflow.json",
-  "$comment": "Schema version 2.4 - Added input_schema, output_schema for subflow interfaces, output field for endings (spawn mode)",
+  "$comment": "Schema version 2.5 - Replaced deprecated logging/display with unified output config, prompts now required",
   "title": "Blueprint Workflow Schema",
   "description": "JSON Schema for hiivmind-blueprint workflow.yaml files",
   "type": "object",
@@ -40,17 +40,13 @@
           "additionalProperties": { "type": "boolean" }
         },
         "computed": { "type": "object" },
-        "logging": {
-          "$ref": "../config/logging-config.json#/$defs/loggingConfig",
-          "description": "Skill-specific logging configuration (priority 2 in 4-tier hierarchy)"
+        "output": {
+          "$ref": "../config/output-config.json#/$defs/outputConfig",
+          "description": "Unified output configuration (logging + display). Extracted by engine in Phase 2, Step 2.2."
         },
         "prompts": {
           "$ref": "../config/prompts-config.json#/$defs/promptsConfig",
-          "description": "User prompt execution mode configuration (interactive or tabular)"
-        },
-        "display": {
-          "$ref": "../config/display-config.json#/$defs/displayConfig",
-          "description": "Skill-specific display configuration for real-time output (priority 2 in 4-tier hierarchy)"
+          "description": "User prompt execution mode configuration. Extracted by engine in Phase 2, Step 2.3."
         }
       },
       "additionalProperties": true

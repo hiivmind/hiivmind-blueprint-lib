@@ -18,7 +18,7 @@ description: >
 # Inputs (must be set in parent workflow's state before invoking)
 # - arguments: string - User input to parse
 # - intent_flags: object - Flag definitions (keywords, negative_keywords)
-# - intent_rules: array - Rules with conditions, action, priority
+# - intent_rules: array - Rules with conditions and action
 # - fallback_action: string - Action when no rules match (default: "show_main_menu")
 
 # Outputs (set in state after execution)
