@@ -1,10 +1,6 @@
 # Execution Entrypoints
 # Pre-composed yq queries for progressive loading of execution semantics
 #
-# This file serves two purposes:
-# 1. Documents the exact yq queries to use for fetching minimal entrypoint data
-# 2. Provides expected values for verification checkpoints
-#
 # Progressive loading strategy:
 # - Phase 1: Fetch entrypoints only (small payloads, verifiable values)
 # - Phase 2: Execute workflow using entrypoints as guide
@@ -30,6 +26,22 @@ resolution:
         If verification fails, the fetch was skipped or returned incorrect data.
 
     queries:
+      fetch_patterns:
+        description: Shared fetch primitives (loaded during bootstrap Phase 3.0)
+        file: resolution/fetch-patterns.yaml
+        yq: |
+          {
+            "functions": [.resolution.fetch_patterns | keys[] | select(. != "description" and . != "since")]
+          }
+        expected:
+          functions:
+            - "source_format"
+            - "source_parsing"
+            - "url_construction"
+            - "fetching"
+        verification: |
+          After loading, parse_source() and fetch() must be available in context.
+
       bootstrap:
         description: Bootstrap phases and required section registry
         file: resolution/execution-loader.yaml
@@ -75,7 +87,7 @@ resolution:
             - "reference"
         verification: |
           state._semantics.traversal.phases MUST equal ["initialize", "execute", "complete"]
-          This is the 3-phase model: initialize → execute → complete
+          This is the 3-phase model: initialize -> execute -> complete
 
       type_loading:
         description: Type loader hybrid threshold and strategies
@@ -93,7 +105,7 @@ resolution:
             - "hybrid"
         verification: |
           state._semantics.type_loading.hybrid_threshold MUST equal 30
-          Workflows with < 30 types use selective loading; ≥ 30 use lazy loading
+          Workflows with < 30 types use selective loading; >= 30 use lazy loading
 
       workflow_references:
         description: Reference node format and state behavior
@@ -133,7 +145,7 @@ resolution:
       description: On-demand queries for specific sections (fetch when needed)
 
       execute_phase:
-        description: The execute phase algorithm (lines 113-180 in engine_execution.yaml)
+        description: The execute phase algorithm
         file: execution/engine_execution.yaml
         yq: '.execution.traversal.phases[] | select(.id == "execute") | .effect'
         use_when: Starting the main execution loop
@@ -149,56 +161,40 @@ resolution:
           - Update position (previous_node, current_node)
 
       initialize_phase:
-        description: The initialize phase algorithm (lines 44-97 in engine_execution.yaml)
+        description: The initialize phase algorithm
         file: execution/engine_execution.yaml
         yq: '.execution.traversal.phases[] | select(.id == "initialize") | .effect'
         use_when: Starting workflow execution
-        key_behaviors:
-          - Load workflow from path
-          - Load types via type-loader.yaml
-          - Load output config
-          - Validate schema and types
-          - Check entry preconditions
-          - Initialize state structure
-          - Auto-inject init_log if enabled
 
       complete_phase:
-        description: The complete phase algorithm (lines 187-228 in engine_execution.yaml)
+        description: The complete phase algorithm
         file: execution/engine_execution.yaml
         yq: '.execution.traversal.phases[] | select(.id == "complete") | .effect'
         use_when: Reaching an ending node
-        key_behaviors:
-          - Finalize and write log if logging enabled
-          - Display result to user (unless display disabled)
-          - Emit CI annotations if enabled
 
       conditional_dispatch:
         description: How conditional nodes are executed
         file: execution/engine_execution.yaml
         yq: '.execution.traversal.dispatch.effect | match("CASE \"conditional\"[^C]+") | .string'
         use_when: Dispatching a conditional node
-        alternative: See nodes/core/conditional.yaml for full semantics
 
       action_dispatch:
         description: How action nodes are executed
         file: execution/engine_execution.yaml
         yq: '.execution.traversal.dispatch.effect | match("CASE \"action\"[^C]+") | .string'
         use_when: Dispatching an action node
-        alternative: See nodes/core/action.yaml for full semantics
 
       user_prompt_dispatch:
         description: How user_prompt nodes are executed
         file: execution/engine_execution.yaml
         yq: '.execution.traversal.dispatch.effect | match("CASE \"user_prompt\"[^C]+") | .string'
         use_when: Dispatching a user_prompt node
-        alternative: See nodes/core/user_prompt.yaml for full semantics
 
       reference_dispatch:
         description: How reference nodes are executed
         file: execution/engine_execution.yaml
         yq: '.execution.traversal.dispatch.effect | match("CASE \"reference\"[^C]+") | .string'
         use_when: Dispatching a reference node (sub-workflow loading)
-        alternative: See resolution/workflow-loader.yaml for full semantics
 
       consequence_type:
         description: Get semantics for a specific consequence type
@@ -206,69 +202,6 @@ resolution:
         yq: '.consequences.${type_name}'
         param: type_name
         use_when: Executing a consequence you haven't seen before
-
-    fetch_commands:
-      description: Ready-to-use shell commands for fetching entrypoints
-
-      bootstrap_via_gh_api:
-        command: |
-          gh api repos/hiivmind/hiivmind-blueprint-lib/contents/resolution/execution-loader.yaml?ref=${VERSION} \
-            --jq '.content' | base64 -d | yq '{
-              "phases": [.resolution.execution_loader.bootstrap.fetch_order.phases[].id],
-              "required_sections": [.resolution.execution_loader.section_registry.sections | to_entries[] | select(.value.required == true) | .key]
-            }'
-        params:
-          VERSION: The library version (e.g., v3.0.0)
-
-      traversal_via_gh_api:
-        command: |
-          gh api repos/hiivmind/hiivmind-blueprint-lib/contents/execution/engine_execution.yaml?ref=${VERSION} \
-            --jq '.content' | base64 -d | yq '{
-              "phases": [.execution.traversal.phases[].id],
-              "node_types": ["action", "conditional", "user_prompt", "validation_gate", "reference"]
-            }'
-        params:
-          VERSION: The library version (e.g., v3.0.0)
-
-      type_loading_via_gh_api:
-        command: |
-          gh api repos/hiivmind/hiivmind-blueprint-lib/contents/resolution/type-loader.yaml?ref=${VERSION} \
-            --jq '.content' | base64 -d | yq '{
-              "hybrid_threshold": .resolution.type_loader.hybrid_loading.threshold,
-              "strategies": ["lazy", "selective", "hybrid"]
-            }'
-        params:
-          VERSION: The library version (e.g., v3.0.0)
-
-      combined_entrypoints:
-        description: Fetch all entrypoints in parallel
-        command: |
-          # Fetch bootstrap, traversal, and type_loading in parallel
-          (
-            gh api repos/hiivmind/hiivmind-blueprint-lib/contents/resolution/execution-loader.yaml?ref=${VERSION} \
-              --jq '.content' | base64 -d | yq '{
-                "phases": [.resolution.execution_loader.bootstrap.fetch_order.phases[].id],
-                "required_sections": [.resolution.execution_loader.section_registry.sections | to_entries[] | select(.value.required == true) | .key]
-              }' > /tmp/bootstrap.json &
-
-            gh api repos/hiivmind/hiivmind-blueprint-lib/contents/execution/engine_execution.yaml?ref=${VERSION} \
-              --jq '.content' | base64 -d | yq '{
-                "phases": [.execution.traversal.phases[].id],
-                "node_types": ["action", "conditional", "user_prompt", "validation_gate", "reference"]
-              }' > /tmp/traversal.json &
-
-            gh api repos/hiivmind/hiivmind-blueprint-lib/contents/resolution/type-loader.yaml?ref=${VERSION} \
-              --jq '.content' | base64 -d | yq '{
-                "hybrid_threshold": .resolution.type_loader.hybrid_loading.threshold,
-                "strategies": ["lazy", "selective", "hybrid"]
-              }' > /tmp/type_loading.json &
-
-            wait
-          )
-
-          # Combine results
-          jq -s '{ bootstrap: .[0], traversal: .[1], type_loading: .[2] }' \
-            /tmp/bootstrap.json /tmp/traversal.json /tmp/type_loading.json
 
     verification_protocol:
       description: How to verify entrypoints were actually loaded
@@ -304,39 +237,3 @@ resolution:
         - Incorrect values fail the checkpoint and halt execution
 
         This is a forcing function, not just documentation.
-
-    state_tracking:
-      description: State fields for tracking loaded semantics
-
-      initial_state:
-        _semantics_loaded:
-          execution_loader: false
-          engine_execution: false
-          type_loader: false
-          workflow_loader: false
-        _semantics:
-          bootstrap: null
-          traversal: null
-          type_loading: null
-          output_defaults: null
-
-      after_entrypoint_fetch:
-        _semantics_loaded:
-          execution_loader: true
-          engine_execution: true
-          type_loader: true
-          workflow_loader: false  # Loaded on-demand when reference nodes are encountered
-        _semantics:
-          bootstrap:
-            phases: ["bootstrap", "execution_semantics", "types", "initialize", "execute"]
-            required_sections: ["traversal", "state", "precondition_dispatch", "consequence_dispatch"]
-          traversal:
-            phases: ["initialize", "execute", "complete"]
-            node_types: ["action", "conditional", "user_prompt", "validation_gate", "reference"]
-          type_loading:
-            hybrid_threshold: 30
-            strategies: ["lazy", "selective", "hybrid"]
-          output_defaults:
-            level: "normal"
-            batch_threshold: 3
-            use_icons: true

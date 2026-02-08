@@ -1,7 +1,7 @@
 # Action Node Type Definition
 # Executes operations and routes based on success/failure
 
-schema_version: "1.0"
+schema_version: "2.0"
 category: core
 
 nodes:
@@ -47,7 +47,7 @@ nodes:
         min_items: 1
         description: |
           Array of consequence objects to execute. Each consequence must have a 'type'
-          field matching a defined consequence type (e.g., set_flag, read_file, clone_repo).
+          field matching a defined consequence type (e.g., set_flag, local_file_ops, git_ops_local).
 
       - name: on_success
         type: node_reference
@@ -74,56 +74,6 @@ nodes:
       state_writes:
         - "computed.${store_as} for each action with store_as"
         - "Additional writes defined by individual consequence types"
-
-    examples:
-      - title: Basic action chain
-        yaml: |
-          read_config:
-            type: action
-            description: Load and validate configuration
-            actions:
-              - type: read_file
-                path: "config.yaml"
-                store_as: config
-              - type: set_flag
-                flag: config_loaded
-                value: true
-            on_success: process_config
-            on_failure: error_no_config
-        explanation: |
-          Reads config.yaml and stores result in state.computed.config, then sets
-          the config_loaded flag. If file read fails, routes to error_no_config.
-
-      - title: Action with evaluation
-        yaml: |
-          check_sources:
-            type: action
-            actions:
-              - type: evaluate
-                expression: "len(config.sources) == 0"
-                set_flag: is_first_source
-              - type: set_state
-                field: source_count
-                value: "${computed.config.sources.length}"
-            on_success: route_by_source_count
-            on_failure: error_evaluation
-
-      - title: Git clone action
-        yaml: |
-          clone_repository:
-            type: action
-            description: Clone the source repository
-            actions:
-              - type: clone_repo
-                url: "${computed.repo_url}"
-                path: "${computed.clone_path}"
-                branch: "${user_responses.branch}"
-                store_as: clone_result
-              - type: set_flag
-                flag: repo_cloned
-                value: true
-            on_success: scan_docs
-            on_failure: error_clone_failed
 
     related:
       - conditional
@@ -176,17 +126,19 @@ nodes:
         description: |
           A single precondition object that evaluates to true or false.
           Must have a 'type' field matching a defined precondition type
-          (e.g., flag_set, file_exists, all_of, any_of, xor_of).
+          (e.g., state_check, path_check, all_of, any_of, xor_of).
 
           For multi-condition validation with audit, use a composite precondition:
           ```yaml
           condition:
             type: all_of
             conditions:
-              - type: file_exists
+              - type: path_check
                 path: "config.yaml"
-              - type: tool_available
+                check: is_file
+              - type: tool_check
                 tool: git
+                capability: available
           ```
 
       - name: audit
@@ -213,7 +165,7 @@ nodes:
             description: |
               Error messages keyed by precondition type. When a condition of
               the given type fails, this message is included in the audit output.
-              Keys are precondition type names (e.g., file_exists, tool_available).
+              Keys are precondition type names (e.g., path_check, tool_check).
 
       - name: branches
         type: object
@@ -287,174 +239,6 @@ nodes:
         - "computed.audit_results (when audit.enabled is true)"
         - "Custom path via audit.output (when audit.enabled is true)"
 
-    examples:
-      - title: Branch on flag
-        yaml: |
-          check_manifest:
-            type: conditional
-            description: Route based on whether manifest was detected
-            condition:
-              type: flag_set
-              flag: manifest_detected
-            branches:
-              on_true: present_manifest_option
-              on_false: ask_source_type
-        explanation: |
-          Checks if the manifest_detected flag is true. If so, routes to
-          present_manifest_option; otherwise routes to ask_source_type.
-
-      - title: Branch on state value
-        yaml: |
-          check_source_type:
-            type: conditional
-            description: Route based on detected source type
-            condition:
-              type: state_equals
-              field: source_type
-              value: git
-            branches:
-              on_true: configure_git_source
-              on_false: configure_other_source
-
-      - title: Branch on file existence
-        yaml: |
-          check_existing_corpus:
-            type: conditional
-            condition:
-              type: file_exists
-              path: "data/config.yaml"
-            branches:
-              on_true: load_existing_config
-              on_false: initialize_new_corpus
-
-      - title: Branch on expression evaluation
-        yaml: |
-          check_first_source:
-            type: conditional
-            description: Check if this is the first source being added
-            condition:
-              type: evaluate_expression
-              expression: "len(computed.config.sources) == 0"
-            branches:
-              on_true: show_first_source_guidance
-              on_false: proceed_to_add_source
-
-      - title: Validation with audit mode (replaces validation_gate)
-        yaml: |
-          check_environment:
-            type: conditional
-            description: Validate environment before proceeding
-            condition:
-              type: all_of
-              conditions:
-                - type: file_exists
-                  path: "config.yaml"
-                - type: tool_available
-                  tool: git
-                - type: tool_available
-                  tool: yq
-            audit:
-              enabled: true
-              output: computed.audit_results
-              messages:
-                file_exists: "Config missing - run init first"
-                tool_available: "Required tool not installed"
-            branches:
-              on_true: proceed
-              on_false: show_errors
-        explanation: |
-          With audit.enabled, evaluates ALL conditions (no short-circuit) and
-          collects results. On failure, computed.audit_results contains:
-          {
-            passed: false,
-            total: 3,
-            passed_count: 1,
-            failed_count: 2,
-            results: [
-              { index: 0, condition: {...}, passed: true },
-              { index: 1, condition: {...}, passed: false, message: "Required tool not installed" },
-              { index: 2, condition: {...}, passed: false, message: "Required tool not installed" }
-            ]
-          }
-
-      - title: Audit with custom output path
-        yaml: |
-          validate_source_config:
-            type: conditional
-            description: Validate source configuration
-            condition:
-              type: all_of
-              conditions:
-                - type: state_not_null
-                  field: source_type
-                - type: state_not_null
-                  field: computed.source_id
-                - type: flag_set
-                  flag: url_validated
-            audit:
-              enabled: true
-              output: computed.source_validation
-              messages:
-                state_not_null: "Required field is missing"
-                flag_set: "Validation step incomplete"
-            branches:
-              on_true: add_source
-              on_false: show_validation_errors
-        explanation: |
-          Stores audit results at computed.source_validation instead of
-          the default computed.audit_results. Useful when multiple validation
-          nodes need separate result storage.
-
-      - title: Audit with any_of (flexible requirements)
-        yaml: |
-          check_yaml_processor:
-            type: conditional
-            description: Check for any available YAML processor
-            condition:
-              type: any_of
-              conditions:
-                - type: tool_available
-                  tool: yq
-                - type: python_module_available
-                  module: yaml
-            audit:
-              enabled: true
-              messages:
-                tool_available: "yq not found"
-                python_module_available: "PyYAML not installed"
-            branches:
-              on_true: process_yaml
-              on_false: suggest_install
-        explanation: |
-          For any_of with audit, all conditions are still evaluated to collect
-          complete results, but passed is true if ANY condition passed.
-
-      - title: Audit with xor_of (exactly one)
-        yaml: |
-          check_single_source_type:
-            type: conditional
-            description: Exactly one source type must be selected
-            condition:
-              type: xor_of
-              conditions:
-                - type: flag_set
-                  flag: is_git_source
-                - type: flag_set
-                  flag: is_local_source
-                - type: flag_set
-                  flag: is_web_source
-            audit:
-              enabled: true
-              messages:
-                flag_set: "Source type flag"
-            branches:
-              on_true: configure_source
-              on_false: ask_source_type
-        explanation: |
-          For xor_of with audit, passed is true only if exactly one condition
-          is true. If zero or multiple are true, routes to on_false with full
-          audit results showing which conditions matched.
-
     related:
       - action
       - user_prompt
@@ -471,28 +255,34 @@ nodes:
 
   reference:
     description:
-      brief: Loads and executes a reference document or remote workflow
+      brief: Loads and executes a reference document or workflow with configurable state isolation
       detail: |
-        A reference node delegates execution to either a local reference document
-        or a remote workflow. This enables complex multi-step procedures to be
+        A reference node delegates execution to a local document, local workflow file,
+        or remote workflow. This enables complex multi-step procedures to be
         documented separately while remaining callable from workflows.
 
         For local documents: typically markdown files containing detailed procedure
         instructions. Context variables are available for interpolation.
 
+        For local workflows: direct .yaml file paths (e.g., ./subflows/load-skill.yaml)
+        that bypass index-based resolution. Useful for monorepos and development.
+
         For remote workflows: fetched from GitHub repositories, enabling distributed
         composable workflow ecosystems. See resolution/workflow-loader.yaml for
         the loading protocol.
 
-        State is SHARED between parent and referenced workflow/document.
+        Execution mode determines state handling:
+        - inline (default): State is SHARED with parent workflow
+        - spawn: State is COPIED, execution is isolated, only output_mapping returns
       notes:
-        - Must specify either 'doc' (local) or 'workflow' (remote), not both
-        - For local: doc path is relative to plugin root
-        - For remote: uses owner/repo@version:workflow-name format
+        - Must specify either 'doc' (local doc) or 'workflow' (local/remote workflow)
+        - For doc, path is relative to plugin root
+        - For workflow, use owner/repo@version:name (remote) or ./path/file.yaml (local)
         - Section parameter only applies to doc references
-        - Context variables are merged into state for sub-execution
-        - State is shared (unlike invoke_skill which isolates state)
-        - next_node supports variable interpolation for dynamic routing
+        - context/input variables are merged into sub-execution state
+        - Inline mode shares state; spawn mode isolates state
+        - Either next_node (legacy) or transitions (new) required for routing
+        - Spawn mode requires transitions for success/failure distinction
 
     fields:
       - name: type
@@ -500,6 +290,11 @@ nodes:
         required: true
         value: "reference"
         description: Node type discriminator
+
+      - name: description
+        type: string
+        required: false
+        description: Human-readable purpose for debugging and documentation
 
       - name: doc
         type: string
@@ -513,8 +308,10 @@ nodes:
         type: string
         required_unless: doc
         description: |
-          Remote workflow reference in format: owner/repo@version:workflow-name
-          Example: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+          Workflow reference. Supports three formats:
+          - Remote: owner/repo@version:workflow-name (e.g., hiivmind/hiivmind-blueprint-lib@v3.0.0:intent-detection)
+          - Local file: ./path/to/workflow.yaml (direct file path, bypasses index)
+          - Local indexed: ./:workflow-name (uses workflows/index.yaml)
           Mutually exclusive with 'doc'.
           See resolution/workflow-loader.yaml for loading protocol.
 
@@ -526,6 +323,19 @@ nodes:
           If omitted, the entire document is executed.
           Only applicable when using 'doc' (not 'workflow').
 
+      - name: mode
+        type: string
+        required: false
+        enum: ["inline", "spawn"]
+        default: "inline"
+        description: |
+          Execution mode determining state handling:
+          - inline (default): State is SHARED with parent. Sub-workflow reads and
+            writes directly to parent state. Simple, but changes are permanent.
+          - spawn: State is COPIED at invocation. Sub-workflow executes in isolation.
+            Only values specified in output_mapping are merged back on success.
+            On failure, parent state is UNCHANGED.
+
       - name: context
         type: object
         required: false
@@ -533,26 +343,85 @@ nodes:
           Variables to make available within the referenced document/workflow.
           These can be referenced using ${} interpolation syntax.
           For workflows, maps to workflow inputs.
+          Prefer 'input' for spawn mode (clearer semantics).
         additionalProperties:
           type: any
           interpolatable: true
 
+      - name: input
+        type: object
+        required: false
+        description: |
+          Explicit inputs for the sub-workflow (alternative to context).
+          Preferred for spawn mode as it clearly defines the interface.
+          Values are interpolated and passed to the sub-workflow.
+          For subflows with input_schema, validates against declared inputs.
+        additionalProperties:
+          type: any
+          interpolatable: true
+
+      - name: output_mapping
+        type: object
+        required: false
+        description: |
+          Maps sub-workflow outputs back to parent state. Only used with spawn mode.
+          Keys are parent state paths, values are sub-workflow output paths.
+          On success, these mappings are applied; on failure, parent state unchanged.
+          For subflows with output_schema, validates against declared outputs.
+        additionalProperties:
+          type: string
+        example:
+          state.loaded.content: "output.skill_content"
+          state.loaded.name: "output.skill_name"
+
       - name: next_node
         type: node_reference
-        required: true
+        required_unless: transitions
         description: |
           Node or ending to route to after execution completes.
           Supports variable interpolation (e.g., "${computed.dynamic_target}").
+          Routes regardless of success/failure outcome.
+          Prefer 'transitions' for spawn mode to handle success/failure separately.
+
+      - name: transitions
+        type: object
+        required_unless: next_node
+        description: |
+          Explicit routing for success and failure outcomes.
+          Required for spawn mode to properly handle isolated execution results.
+          Mutually exclusive with next_node.
+        properties:
+          - name: on_success
+            type: node_reference
+            required: true
+            description: Node or ending to route to when sub-workflow succeeds
+          - name: on_failure
+            type: node_reference
+            required: true
+            description: Node or ending to route to when sub-workflow fails
+
+      - name: error_mapping
+        type: object
+        required: false
+        description: |
+          Maps specific sub-workflow error endings to recovery nodes.
+          Keys are ending IDs from the sub-workflow, values are nodes to route to.
+          Takes precedence over transitions.on_failure for matched errors.
+          Enables fine-grained error recovery based on failure type.
+        additionalProperties:
+          type: node_reference
+        example:
+          error_prereqs: "error_prerequisites"
+          error_locate: "ask_user_for_path"
 
     execution:
       effect: |
-        # Determine source: remote workflow or local document
+        # Determine source: workflow (local/remote) or document
         if node.workflow:
-          # Remote workflow reference (v2.1+)
-          # See resolution/workflow-loader.yaml for full loading protocol
+          # Workflow reference (local file, local indexed, or remote)
           workflow = load_workflow(node.workflow)
         else if node.doc:
-          # Local file reference
+          # Local document reference
           doc_path = resolve_path(plugin_root, node.doc)
           doc_content = read_file(doc_path)
 
@@ -562,151 +431,171 @@ nodes:
         else:
           throw Error("Reference node requires 'workflow' or 'doc' parameter")
 
-        # Build context with interpolation
-        context = {}
-        if node.context:
+        # Build inputs with interpolation (prefer input over context)
+        inputs = {}
+        if node.input:
+          for key, value in node.input.items():
+            inputs[key] = interpolate(value, state)
+        else if node.context:
           for key, value in node.context.items():
-            context[key] = interpolate(value, state)
+            inputs[key] = interpolate(value, state)
 
-        # Merge context into state (for shared state execution)
-        for key, value in context.items():
-          state[key] = value
+        # Determine execution mode
+        mode = node.mode or "inline"
 
-        # Execute based on source type
-        if node.workflow:
-          # Execute as sub-workflow with shared state
-          # Note: Reference execution shares state (unlike invoke_skill)
-          execute_workflow(workflow, types, state)
+        if mode == "inline":
+          # INLINE MODE: Shared state execution
+          return execute_inline(node, workflow or doc_content, inputs, state)
         else:
-          # Execute document with context
-          execute_document(doc_content, context, state)
+          # SPAWN MODE: Isolated state execution
+          return execute_spawn(node, workflow, inputs, state)
 
-        # Resolve next node (supports dynamic interpolation)
-        target = resolve_routing_target(node.next_node, state)
+      helpers:
+        execute_inline: |
+          FUNCTION execute_inline(node, target, inputs, state):
+            # Merge inputs into shared state
+            for key, value in inputs.items():
+              state[key] = value
 
-        return route_to(target)
+            # Execute with shared state
+            if node.workflow:
+              execute_workflow(target, types, state)
+            else:
+              execute_document(target, inputs, state)
+
+            # Resolve routing (next_node or transitions)
+            if node.next_node:
+              target = resolve_routing_target(node.next_node, state)
+              return route_to(target)
+            else:
+              # Inline mode with transitions - check for success based on ending
+              # Note: For inline, success/failure is determined by ending type
+              if state.execution_result and state.execution_result.success:
+                return route_to(node.transitions.on_success)
+              else:
+                return route_to(node.transitions.on_failure)
+
+        execute_spawn: |
+          FUNCTION execute_spawn(node, workflow, inputs, state):
+            # SPAWN MODE: Copy-on-call semantics with isolated execution
+            # Parent state is UNCHANGED on failure
+
+            # 1. Create isolated state copy
+            isolated_state = deep_copy(state)
+
+            # 2. Merge inputs into isolated state
+            for key, value in inputs.items():
+              isolated_state[key] = value
+
+            # 3. Validate inputs against input_schema if defined
+            if workflow.input_schema:
+              validate_inputs(inputs, workflow.input_schema)
+
+            # 4. Execute in isolated context (conceptually via Task agent)
+            result = execute_workflow_isolated(workflow, types, isolated_state)
+
+            # 5. Handle result based on outcome
+            if result.success:
+              # Extract outputs from isolated state
+              ending = result.ending
+              outputs = {}
+
+              # Get outputs from ending definition if present
+              if ending.output:
+                for key, expr in ending.output.items():
+                  outputs[key] = resolve_value(expr, isolated_state)
+
+              # Apply output_mapping to parent state
+              if node.output_mapping:
+                for parent_path, output_path in node.output_mapping.items():
+                  value = get_nested(outputs, output_path) or get_nested(isolated_state, output_path)
+                  set_nested(state, parent_path, value)
+
+              # Validate outputs against output_schema if defined
+              if workflow.output_schema:
+                validate_outputs(outputs, workflow.output_schema)
+
+              return route_to(node.transitions.on_success)
+
+            else:
+              # Failure: Parent state UNCHANGED
+              ending_id = result.ending_id
+
+              # Check error_mapping for specific recovery
+              if node.error_mapping and node.error_mapping[ending_id]:
+                return route_to(node.error_mapping[ending_id])
+
+              # Default failure routing
+              return route_to(node.transitions.on_failure)
+
+        execute_workflow_isolated: |
+          FUNCTION execute_workflow_isolated(workflow, types, isolated_state):
+            # Execute workflow in isolated context
+            # This conceptually maps to Task agent execution:
+            #
+            # Task agent receives:
+            # - The workflow definition
+            # - A copy of the state
+            # - Type definitions
+            #
+            # Task agent returns:
+            # - success: boolean
+            # - ending_id: string (which ending was reached)
+            # - ending: object (the ending definition)
+            # - state: object (final isolated state, if needed)
+
+            try:
+              execute_workflow(workflow, types, isolated_state)
+              return {
+                success: true,
+                ending_id: isolated_state.reached_ending,
+                ending: workflow.endings[isolated_state.reached_ending],
+                state: isolated_state
+              }
+            catch (error):
+              return {
+                success: false,
+                ending_id: error.ending_id or "error",
+                error: error.message
+              }
+
+        validate_inputs: |
+          FUNCTION validate_inputs(inputs, input_schema):
+            for param_name, param_def in input_schema.items():
+              value = inputs.get(param_name)
+
+              if param_def.required and value is null:
+                if param_def.default is not null:
+                  inputs[param_name] = param_def.default
+                else:
+                  throw Error("Missing required input: {param_name}")
+
+              if value is not null and param_def.type:
+                if not type_matches(value, param_def.type):
+                  throw Error("Input {param_name} has wrong type: expected {param_def.type}")
+
+        validate_outputs: |
+          FUNCTION validate_outputs(outputs, output_schema):
+            for output_name, output_def in output_schema.items():
+              # Output validation is informational, not blocking
+              if output_name not in outputs:
+                LOG_WARN "Expected output not present: {output_name}"
+
       state_reads:
-        - Fields referenced in context values via ${} interpolation
+        - Fields referenced in input/context values via ${} interpolation
+        - All state (for spawn mode copy)
       state_writes:
-        - Depends on workflow/document execution
-        - Remote workflows can read and modify parent state directly
-
-    examples:
-      # === Local document references ===
-      - title: Execute git clone procedure (local doc)
-        yaml: |
-          clone_repository:
-            type: reference
-            doc: "lib/corpus/patterns/sources/git.md"
-            section: "Clone Repository"
-            context:
-              repo_url: "${computed.repo_url}"
-              clone_path: "${computed.clone_path}"
-              branch: "${user_responses.branch}"
-            next_node: verify_clone
-        explanation: |
-          Loads the git.md document, extracts the "Clone Repository" section,
-          and executes it with the provided context variables. After completion,
-          routes to verify_clone.
-
-      - title: Full document execution (local doc)
-        yaml: |
-          run_build_process:
-            type: reference
-            doc: "references/build-index.md"
-            context:
-              source_paths: "${computed.source_paths}"
-              output_path: "${computed.output_path}"
-            next_node: finalize_build
-        explanation: |
-          Executes the entire build-index.md document with source and output
-          paths from computed state.
-
-      # === Remote workflow references ===
-      - title: Remote workflow for intent detection
-        yaml: |
-          detect_intent:
-            type: reference
-            workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
-            context:
-              arguments: "${arguments}"
-              intent_flags: "${intent_flags}"
-              intent_rules: "${intent_rules}"
-              fallback_action: "show_main_menu"
-            next_node: execute_dynamic_route
-        explanation: |
-          Fetches the intent-detection workflow from hiivmind-blueprint-lib
-          and executes it with context mapped as workflow inputs.
-          After completion, routes to execute_dynamic_route.
-          The workflow sets computed.matched_action and other outputs
-          that are directly available in parent state.
-
-      - title: Remote workflow with dynamic routing
-        yaml: |
-          detect_intent:
-            type: reference
-            workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
-            context:
-              arguments: "${arguments}"
-              intent_flags: "${intent_flags}"
-              intent_rules: "${intent_rules}"
-            next_node: "${computed.dynamic_target}"
-        explanation: |
-          The next_node uses variable interpolation to route dynamically
-          based on the workflow output. The intent-detection workflow sets
-          computed.dynamic_target based on the matched intent.
-
-      - title: Using outputs from remote workflow
-        yaml: |
-          # Parent workflow can use outputs directly after reference node
-          execute_matched_intent:
-            type: action
-            actions:
-              - type: dynamic_route
-                action: "${computed.matched_action}"
-            on_success: "${computed.dynamic_target}"
-            on_failure: show_main_menu
-        explanation: |
-          After detect_intent reference node completes, the parent workflow
-          has access to computed.matched_action, computed.intent_flags,
-          and computed.intent_matches set by the sub-workflow.
-
-      # === State sharing examples ===
-      - title: Complex procedure with multiple context values (local doc)
-        yaml: |
-          process_web_source:
-            type: reference
-            doc: "lib/corpus/patterns/sources/web.md"
-            section: "Fetch and Cache"
-            context:
-              urls: "${computed.discovered_urls}"
-              cache_dir: "${computed.cache_directory}"
-              max_depth: "${user_responses.crawl_depth}"
-              include_images: "${flags.include_images}"
-              user_agent: "hiivmind-corpus/1.0"
-            next_node: verify_cached_content
-
-      - title: Override logging for sub-workflow
-        yaml: |
-          detect_intent:
-            type: reference
-            workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
-            context:
-              arguments: "${arguments}"
-              logging:
-                level: "debug"
-                auto:
-                  node_tracking: true
-            next_node: execute_dynamic_route
-        explanation: |
-          Pass logging config in context to override for this sub-workflow.
-          More verbose logging for intent detection debugging.
+        - "Inline mode: Depends on workflow/document execution (shared state)"
+        - "Spawn mode: Only fields specified in output_mapping (on success)"
+        - "Spawn mode failure: No writes (parent state unchanged)"
 
     related:
       - action
       - conditional
     since: "1.0.0"
     workflow_since: "2.1.0"
+    mode_since: "3.1.0"
+    transitions_since: "3.1.0"
 
   # ==========================================================================
   # category: core/user_prompt
@@ -1261,325 +1150,7 @@ nodes:
         - "awaiting_input (set when awaiting input, cleared when received)"
         - "Additional writes from consequence execution"
 
-    examples:
-      - title: Basic source type selection
-        yaml: |
-          ask_source_type:
-            type: user_prompt
-            prompt:
-              question: "What type of source would you like to add?"
-              header: "Source"
-              options:
-                - id: git
-                  label: "Git repository"
-                  description: "Clone a repository with docs folder"
-                - id: local
-                  label: "Local files"
-                  description: "Files on your machine"
-                - id: web
-                  label: "Web pages"
-                  description: "Cache blog posts or articles"
-            on_response:
-              git:
-                consequence:
-                  - type: set_state
-                    field: source_type
-                    value: git
-                next_node: collect_git_url
-              local:
-                consequence:
-                  - type: set_state
-                    field: source_type
-                    value: local
-                next_node: collect_local_info
-              web:
-                consequence:
-                  - type: set_state
-                    field: source_type
-                    value: web
-                next_node: collect_web_urls
-        explanation: |
-          Presents three options to the user. Based on selection, sets the source_type
-          state field and routes to the appropriate collection node.
-
-      - title: Confirmation prompt
-        yaml: |
-          confirm_delete:
-            type: user_prompt
-            prompt:
-              question: "Are you sure you want to delete this source?"
-              header: "Confirm"
-              options:
-                - id: yes
-                  label: "Yes, delete"
-                  description: "Permanently remove the source"
-                - id: no
-                  label: "Cancel"
-                  description: "Keep the source unchanged"
-            on_response:
-              yes:
-                next_node: execute_delete
-              no:
-                next_node: cancelled
-
-      - title: Route without consequence
-        yaml: |
-          select_output_format:
-            type: user_prompt
-            prompt:
-              question: "Which output format do you prefer?"
-              header: "Format"
-              options:
-                - id: markdown
-                  label: "Markdown"
-                  description: "Portable, readable in any editor"
-                - id: json
-                  label: "JSON"
-                  description: "Machine-readable, for automation"
-            on_response:
-              markdown:
-                next_node: generate_markdown
-              json:
-                next_node: generate_json
-
-      - title: Dynamic options from state (disambiguation)
-        yaml: |
-          show_disambiguation:
-            type: user_prompt
-            description: Present top candidates for user selection
-            prompt:
-              question: "Multiple intents detected. Which did you mean?"
-              header: "Clarify"
-              options_from_state: computed.intent_matches.top_candidates
-              option_mapping:
-                id: rule.name
-                label: rule.name
-                description: rule.description
-            on_response:
-              selected:
-                # User selected one of the dynamic options
-                consequence:
-                  - type: set_state
-                    field: computed.matched_action
-                    value: "${user_responses.show_disambiguation.selected.rule.action}"
-                next_node: success_resolved
-              other:
-                # User typed custom text - re-parse with new input
-                consequence:
-                  - type: set_state
-                    field: arguments
-                    value: "${user_responses.show_disambiguation.text}"
-                next_node: parse_intent_flags
-        explanation: |
-          Uses dynamic options from state array. The option_mapping transforms each
-          candidate into an option. When user selects, the original item is available
-          at user_responses.{node_id}.selected. When user types custom text, it's
-          available at user_responses.{node_id}.text.
-
-      - title: Tabular mode with prefix matching
-        yaml: |
-          # Workflow-level configuration in initial_state
-          initial_state:
-            prompts:
-              mode: "tabular"
-              tabular:
-                match_strategy: "prefix"
-                other_handler: "prompt"
-
-          # Node definition (same structure as interactive mode)
-          select_output_format:
-            type: user_prompt
-            prompt:
-              question: "Which output format do you prefer?"
-              header: "Format"
-              options:
-                - id: markdown
-                  label: "Markdown"
-                  description: "Portable, readable in any editor"
-                - id: json
-                  label: "JSON"
-                  description: "Machine-readable, for automation"
-                - id: yaml
-                  label: "YAML"
-                  description: "Structured and human-readable"
-            on_response:
-              markdown:
-                next_node: generate_markdown
-              json:
-                next_node: generate_json
-              yaml:
-                next_node: generate_yaml
-        explanation: |
-          Tabular mode renders options as a markdown table:
-
-          ## Which output format do you prefer?
-
-          | Option ID | Label | Description |
-          |-----------|-------|-------------|
-          | markdown | Markdown | Portable, readable in any editor |
-          | json | JSON | Machine-readable, for automation |
-          | yaml | YAML | Structured and human-readable |
-
-          **Please type the Option ID of your choice.**
-
-          User types "mark" → matches "markdown" (prefix match)
-          User types "json" → matches "json" (exact)
-          User types "xyz" → re-prompts (no match)
-
-      - title: Tabular mode with route to other handler
-        yaml: |
-          initial_state:
-            prompts:
-              mode: "tabular"
-              tabular:
-                match_strategy: "exact"
-                other_handler: "route"
-
-          select_or_custom:
-            type: user_prompt
-            prompt:
-              question: "Select a preset or enter a custom value"
-              header: "Choice"
-              options:
-                - id: preset1
-                  label: "Preset 1"
-                  description: "Common configuration"
-                - id: preset2
-                  label: "Preset 2"
-                  description: "Alternative configuration"
-            on_response:
-              preset1:
-                next_node: apply_preset1
-              preset2:
-                next_node: apply_preset2
-              other:
-                # Required when other_handler: "route"
-                consequence:
-                  - type: set_state
-                    field: custom_value
-                    value: "${user_responses.select_or_custom.text}"
-                next_node: apply_custom
-        explanation: |
-          When other_handler is "route", unrecognized input routes to the "other"
-          handler instead of re-prompting. The user's text is available at
-          user_responses.{node_id}.text.
-
-          User types "preset1" → matches, routes to apply_preset1
-          User types "custom config" → no match, routes to other handler
-
-      - title: Autonomous mode for embedded agents
-        yaml: |
-          # Workflow-level configuration for agent interface
-          initial_state:
-            prompts:
-              interface: "agent"
-              autonomous:
-                strategy: "best_match"
-                context_fields:
-                  - computed.intent_flags
-                  - arguments
-                  - computed.context
-                fallback: "other"
-                confidence_threshold: 0.7
-                explain_selection: true
-
-          # Node definition (same structure, different execution)
-          select_action:
-            type: user_prompt
-            prompt:
-              question: "What action should be taken?"
-              header: "Action"
-              options:
-                - id: create
-                  label: "Create new"
-                  description: "Create a new resource"
-                - id: update
-                  label: "Update existing"
-                  description: "Modify an existing resource"
-                - id: delete
-                  label: "Delete"
-                  description: "Remove a resource"
-            on_response:
-              create:
-                next_node: execute_create
-              update:
-                next_node: execute_update
-              delete:
-                next_node: execute_delete
-              other:
-                # Fallback when confidence is too low
-                consequence:
-                  - type: set_state
-                    field: computed.needs_clarification
-                    value: true
-                next_node: request_clarification
-        explanation: |
-          In autonomous mode, no user is prompted. The LLM evaluates options
-          based on context_fields and selects the best match. If confidence
-          is below threshold (0.7), routes to 'other' handler.
-
-          Example: If arguments contains "create a new file" and intent_flags
-          includes { create: true }, the LLM selects "create" with high confidence.
-
-          The selection is logged when explain_selection is true:
-          [DEBUG] Autonomous selection: create (confidence: 0.95)
-          [DEBUG]   Context: {"arguments": "create a new file", ...}
-
-      - title: Multi-modal with interface-specific modes
-        yaml: |
-          initial_state:
-            prompts:
-              interface: "auto"  # Auto-detect interface
-              modes:
-                claude_code: "interactive"  # AskUserQuestion tool
-                web: "forms"                # Rich form rendering
-                api: "structured"           # JSON schema response
-                agent: "autonomous"         # LLM decides
-              tabular:
-                match_strategy: "prefix"
-              autonomous:
-                strategy: "best_match"
-                confidence_threshold: 0.6
-        explanation: |
-          Different interfaces get different prompt modes automatically.
-
-          - Claude Code CLI: Uses AskUserQuestion with structured options
-          - Web (Claude.ai): Renders as clickable form/buttons
-          - API: Returns JSON schema, expects structured response
-          - Agent: LLM evaluates options without user interaction
-
-          The same user_prompt node works across all interfaces.
-
-      - title: API structured mode
-        yaml: |
-          initial_state:
-            prompts:
-              interface: "api"
-              modes:
-                api: "structured"
-
-          # When interface is "api", the node returns structured prompt data
-          # API consumer receives:
-          # {
-          #   "awaiting_input": true,
-          #   "prompt": {
-          #     "question": "Select output format",
-          #     "options": [
-          #       { "id": "json", "label": "JSON", "description": "..." },
-          #       { "id": "yaml", "label": "YAML", "description": "..." }
-          #     ],
-          #     "response_format": {
-          #       "selected_id": "string (required)"
-          #     }
-          #   }
-          # }
-
-          # API consumer responds with:
-          # state.api_response = { node_id: "select_format", selected_id: "json" }
-        explanation: |
-          Structured mode is designed for programmatic API access.
-          The prompt is returned as JSON schema, and the response
-          is expected to match the schema format.
+    # Examples have been extracted to examples/nodes.yaml
 
     related:
       - conditional

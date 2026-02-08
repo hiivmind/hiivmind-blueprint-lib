@@ -64,12 +64,6 @@
           "type": "string",
           "description": "Node name or action to execute when this rule matches"
         },
-        "priority": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 100,
-          "description": "Priority for tie-breaking (higher = more preferred)"
-        },
         "description": {
           "type": "string",
           "description": "Human-readable description of this rule's intent"

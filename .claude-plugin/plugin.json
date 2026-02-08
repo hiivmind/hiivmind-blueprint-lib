@@ -1,0 +1,13 @@
+{
+  "name": "hiivmind-blueprint-lib",
+  "description": "Management, validation, and extension building tools for hiivmind-blueprint type definition libraries.",
+  "version": "3.1.0",
+  "author": {
+    "name": "Nathaniel Ramm <nathaniel@hiivmind.ai>"
+  },
+  "keywords": [
+    "blueprint", "type-definitions", "semver", "version-bump",
+    "validation", "changelog", "release", "lib-management"
+  ],
+  "repository": "https://github.com/hiivmind/hiivmind-blueprint-lib"
+}

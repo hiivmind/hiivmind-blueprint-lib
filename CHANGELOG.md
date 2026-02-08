@@ -5,6 +5,22 @@ All notable changes to hiivmind-blueprint-lib will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-02-08
+
+### Added
+
+- **Shared fetch patterns**: Extracted `resolution/fetch-patterns.yaml` with reusable `source_format`, `source_parsing`, `url_construction`, and `fetching` primitives
+- **Claude Code plugin**: `.claude-plugin/plugin.json` manifest with `pr-version-bump` skill and command
+- **Change classification patterns**: `lib/patterns/change-classification.md` and `lib/patterns/version-discovery.md`
+
+### Changed
+
+- **Bootstrap loaders simplified**: `type-loader.yaml`, `execution-loader.yaml`, and `workflow-loader.yaml` significantly reduced by extracting shared fetch logic
+- **Release workflow overhauled**: `.github/workflows/release.yaml` now supports PR-merge-driven releases with production/rc/beta channels
+- **Node definitions**: Removed embedded examples from `workflow_nodes.yaml` (examples live in `examples/`)
+- **Examples updated**: Schema versions bumped to 3.0, type references updated to v3 consolidated names
+- **Entrypoints**: Added `fetch_patterns` query entry, cleaned up documentation references
+
 ## [3.0.0] - 2026-02-02
 
 ### BREAKING CHANGES

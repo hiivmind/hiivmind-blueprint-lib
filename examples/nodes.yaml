@@ -3,7 +3,7 @@
 #
 # These examples are for human reference, not automated testing.
 
-schema_version: "1.0"
+schema_version: "3.0"
 description: |
   Example usage patterns for node types.
   These are documentary snippets for workflow authors.
@@ -19,7 +19,8 @@ examples:
           type: action
           description: Load and validate configuration
           actions:
-            - type: read_file
+            - type: local_file_ops
+              operation: read
               path: "config.yaml"
               store_as: config
             - type: set_flag
@@ -39,7 +40,8 @@ examples:
             - type: evaluate
               expression: "len(config.sources) == 0"
               set_flag: is_first_source
-            - type: set_state
+            - type: mutate_state
+              operation: set
               field: source_count
               value: "${computed.config.sources.length}"
           on_success: route_by_source_count
@@ -53,10 +55,12 @@ examples:
           type: action
           description: Clone the source repository
           actions:
-            - type: clone_repo
-              url: "${computed.repo_url}"
-              dest: "${computed.clone_path}"
-              branch: "${user_responses.branch}"
+            - type: git_ops_local
+              operation: clone
+              args:
+                url: "${computed.repo_url}"
+                dest: "${computed.clone_path}"
+                branch: "${user_responses.branch}"
               store_as: clone_result
             - type: set_flag
               flag: repo_cloned
@@ -77,8 +81,9 @@ examples:
           type: conditional
           description: Route based on whether manifest was detected
           condition:
-            type: flag_set
-            flag: manifest_detected
+            type: state_check
+            field: flags.manifest_detected
+            operator: "true"
           branches:
             on_true: present_manifest_option
             on_false: ask_source_type
@@ -92,8 +97,9 @@ examples:
           type: conditional
           description: Route based on detected source type
           condition:
-            type: state_equals
+            type: state_check
             field: source_type
+            operator: equals
             value: git
           branches:
             on_true: configure_git_source
@@ -106,8 +112,9 @@ examples:
         check_existing_corpus:
           type: conditional
           condition:
-            type: file_exists
+            type: path_check
             path: "data/config.yaml"
+            check: is_file
           branches:
             on_true: load_existing_config
             on_false: initialize_new_corpus
@@ -136,18 +143,21 @@ examples:
           condition:
             type: all_of
             conditions:
-              - type: file_exists
+              - type: path_check
                 path: "config.yaml"
-              - type: tool_available
+                check: is_file
+              - type: tool_check
                 tool: git
-              - type: tool_available
+                capability: available
+              - type: tool_check
                 tool: yq
+                capability: available
           audit:
             enabled: true
             output: computed.audit_results
             messages:
-              file_exists: "Config missing - run init first"
-              tool_available: "Required tool not installed"
+              path_check: "Config missing - run init first"
+              tool_check: "Required tool not installed"
           branches:
             on_true: proceed
             on_false: show_errors
@@ -174,18 +184,20 @@ examples:
           condition:
             type: all_of
             conditions:
-              - type: state_not_null
+              - type: state_check
                 field: source_type
-              - type: state_not_null
+                operator: not_null
+              - type: state_check
                 field: computed.source_id
-              - type: flag_set
-                flag: url_validated
+                operator: not_null
+              - type: state_check
+                field: flags.url_validated
+                operator: "true"
           audit:
             enabled: true
             output: computed.source_validation
             messages:
-              state_not_null: "Required field is missing"
-              flag_set: "Validation step incomplete"
+              state_check: "Required field is missing or validation incomplete"
           branches:
             on_true: add_source
             on_false: show_validation_errors
@@ -201,14 +213,15 @@ examples:
           condition:
             type: any_of
             conditions:
-              - type: tool_available
+              - type: tool_check
                 tool: yq
+                capability: available
               - type: python_module_available
                 module: yaml
           audit:
             enabled: true
             messages:
-              tool_available: "yq not found"
+              tool_check: "yq not found"
               python_module_available: "PyYAML not installed"
           branches:
             on_true: process_yaml
@@ -225,16 +238,19 @@ examples:
           condition:
             type: xor_of
             conditions:
-              - type: flag_set
-                flag: is_git_source
-              - type: flag_set
-                flag: is_local_source
-              - type: flag_set
-                flag: is_web_source
+              - type: state_check
+                field: flags.is_git_source
+                operator: "true"
+              - type: state_check
+                field: flags.is_local_source
+                operator: "true"
+              - type: state_check
+                field: flags.is_web_source
+                operator: "true"
           audit:
             enabled: true
             messages:
-              flag_set: "Source type flag"
+              state_check: "Source type flag"
           branches:
             on_true: configure_source
             on_false: ask_source_type
@@ -243,9 +259,10 @@ examples:
         is true. If zero or multiple are true, routes to on_false.
 
   # ==========================================================================
-  # reference - Load and execute reference document or remote workflow
+  # reference - Load and execute reference document or workflow
   # ==========================================================================
   reference:
+    # --- Local document references (inline mode) ---
     - title: "Execute git clone procedure (local doc)"
       yaml: |
         clone_repository:
@@ -273,11 +290,12 @@ examples:
       explanation: |
         Executes the entire build-index.md document.
 
+    # --- Remote workflow references (inline mode) ---
     - title: "Remote workflow for intent detection"
       yaml: |
         detect_intent:
           type: reference
-          workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+          workflow: hiivmind/hiivmind-blueprint-lib@v3.0.0:intent-detection
           context:
             arguments: "${arguments}"
             intent_flags: "${intent_flags}"
@@ -292,7 +310,7 @@ examples:
       yaml: |
         detect_intent:
           type: reference
-          workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+          workflow: hiivmind/hiivmind-blueprint-lib@v3.0.0:intent-detection
           context:
             arguments: "${arguments}"
             intent_flags: "${intent_flags}"
@@ -302,11 +320,165 @@ examples:
         The next_node uses variable interpolation to route dynamically
         based on the workflow output.
 
+    # --- Local workflow file references ---
+    - title: "Local workflow file (direct path)"
+      yaml: |
+        load_skill:
+          type: reference
+          workflow: ./subflows/load-skill.yaml
+          input:
+            skill_path: "${args.path}"
+          next_node: analyze_structure
+      explanation: |
+        References a local workflow file directly by path. Bypasses index
+        resolution. Useful for development and monorepos.
+
+    - title: "Local indexed workflow"
+      yaml: |
+        validate_config:
+          type: reference
+          workflow: ./:validation-pipeline
+          context:
+            config_path: "${computed.config_file}"
+          next_node: process_config
+      explanation: |
+        References a workflow from local workflows/index.yaml.
+        Uses ./:workflow-name format for index-based resolution.
+
+    # --- Spawn mode (isolated execution) ---
+    - title: "Spawn mode with input/output mapping"
+      yaml: |
+        load_skill:
+          type: reference
+          mode: spawn
+          workflow: ./subflows/load-skill.yaml
+          input:
+            skill_path: "${args.path}"
+          output_mapping:
+            state.loaded.content: output.skill_content
+            state.loaded.name: output.skill_name
+          transitions:
+            on_success: analyze_structure
+            on_failure: error_load
+      explanation: |
+        Spawn mode copies state, runs in isolation. On success, only
+        output_mapping values merge back. On failure, parent state unchanged.
+
+    - title: "Spawn mode with error mapping"
+      yaml: |
+        load_skill:
+          type: reference
+          mode: spawn
+          workflow: ./subflows/load-skill.yaml
+          input:
+            skill_path: "${args.path}"
+          output_mapping:
+            state.loaded.content: output.skill_content
+            state.loaded.name: output.skill_name
+          transitions:
+            on_success: analyze_structure
+            on_failure: error_generic
+          error_mapping:
+            error_prereqs: error_prerequisites
+            error_locate: ask_user_for_path
+            error_parse: error_invalid_yaml
+      explanation: |
+        Error mapping routes to specific recovery nodes based on which
+        error ending the sub-workflow reached.
+
+    - title: "Spawn mode for safe validation"
+      yaml: |
+        try_parse_config:
+          type: reference
+          mode: spawn
+          workflow: ./subflows/parse-config.yaml
+          input:
+            config_content: "${computed.raw_config}"
+          output_mapping:
+            state.computed.parsed_config: output.parsed
+            state.computed.config_schema: output.schema_version
+          transitions:
+            on_success: apply_config
+            on_failure: show_parse_error
+      explanation: |
+        Use spawn mode for operations that may fail, protecting parent state.
+
+    # --- Complete subflow definition example ---
+    - title: "Subflow definition with input/output schemas"
+      yaml: |
+        # subflows/load-skill.yaml
+        name: load-skill
+        version: 1.0.0
+        description: Load and validate a skill file
+
+        input_schema:
+          skill_path:
+            type: string
+            required: false
+            description: Path to skill file
+
+        output_schema:
+          skill_content:
+            type: string
+            description: Raw skill file content
+          skill_name:
+            type: string
+            description: Name from skill frontmatter
+
+        start_node: check_prerequisites
+        nodes:
+          check_prerequisites:
+            type: conditional
+            condition:
+              type: tool_check
+              tool: yq
+              capability: available
+            branches:
+              on_true: locate_skill
+              on_false: error_prereqs
+
+          locate_skill:
+            type: action
+            actions:
+              - type: local_file_ops
+                operation: read
+                path: "${skill_path}"
+                store_as: file_content
+              - type: inline
+                description: Parse YAML frontmatter from file content
+                pseudocode: |
+                  content = get_state_value("computed.file_content")
+                  frontmatter = parse_yaml_frontmatter(content)
+                  return frontmatter
+                store_as: computed.frontmatter
+            on_success: success
+            on_failure: error_locate
+
+        endings:
+          success:
+            type: success
+            message: "Skill loaded successfully"
+            output:
+              skill_content: "${computed.file_content}"
+              skill_name: "${computed.frontmatter.name}"
+          error_prereqs:
+            type: failure
+            category: prerequisites
+            message: "yq tool required but not available"
+          error_locate:
+            type: failure
+            category: not_found
+            message: "Could not locate or read skill file"
+      explanation: |
+        Complete subflow definition showing input_schema, output_schema,
+        and output field in endings for returning values to caller.
+
+    # --- Other examples ---
     - title: "Override logging for sub-workflow"
       yaml: |
         detect_intent:
           type: reference
-          workflow: hiivmind/hiivmind-blueprint-lib@v2.0.0:intent-detection
+          workflow: hiivmind/hiivmind-blueprint-lib@v3.0.0:intent-detection
           context:
             arguments: "${arguments}"
             logging:
@@ -341,19 +513,22 @@ examples:
           on_response:
             git:
               consequence:
-                - type: set_state
+                - type: mutate_state
+                  operation: set
                   field: source_type
                   value: git
               next_node: collect_git_url
             local:
               consequence:
-                - type: set_state
+                - type: mutate_state
+                  operation: set
                   field: source_type
                   value: local
               next_node: collect_local_info
             web:
               consequence:
-                - type: set_state
+                - type: mutate_state
+                  operation: set
                   field: source_type
                   value: web
               next_node: collect_web_urls
@@ -399,13 +574,15 @@ examples:
           on_response:
             selected:
               consequence:
-                - type: set_state
+                - type: mutate_state
+                  operation: set
                   field: computed.matched_action
                   value: "${user_responses.show_disambiguation.selected.rule.action}"
               next_node: success_resolved
             other:
               consequence:
-                - type: set_state
+                - type: mutate_state
+                  operation: set
                   field: arguments
                   value: "${user_responses.show_disambiguation.text}"
               next_node: parse_intent_flags
@@ -479,7 +656,8 @@ examples:
               next_node: apply_preset2
             other:
               consequence:
-                - type: set_state
+                - type: mutate_state
+                  operation: set
                   field: custom_value
                   value: "${user_responses.select_or_custom.text}"
               next_node: apply_custom
@@ -535,15 +713,17 @@ examples:
           condition:
             type: all_of
             conditions:
-              - type: file_exists
+              - type: path_check
                 path: "config.yaml"
-              - type: tool_available
+                check: is_file
+              - type: tool_check
                 tool: git
+                capability: available
           audit:
             enabled: true
             messages:
-              file_exists: "Config missing"
-              tool_available: "Git not installed"
+              path_check: "Config missing"
+              tool_check: "Git not installed"
           branches:
             on_true: proceed
             on_false: show_errors

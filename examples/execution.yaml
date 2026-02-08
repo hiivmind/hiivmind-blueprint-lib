@@ -3,7 +3,7 @@
 #
 # These examples are for human reference, not automated testing.
 
-schema_version: "1.0"
+schema_version: "3.0"
 description: |
   Example usage patterns for execution concepts.
   These are documentary snippets for workflow authors.
@@ -21,11 +21,13 @@ examples:
             flag: config_loaded
             value: true
 
-          - type: set_state
+          - type: mutate_state
+            operation: set
             field: source_type
             value: git
 
-          - type: append_state
+          - type: mutate_state
+            operation: append
             field: computed.items
             value: "${computed.new_item}"
         explanation: |
@@ -49,15 +51,19 @@ examples:
       - title: "tool_call - Claude tool invocation"
         yaml: |
           # Consequence types with payload.kind: tool_call
-          - type: clone_repo
-            url: "https://github.com/org/repo"
-            dest: ".source/repo"
+          - type: git_ops_local
+            operation: clone
+            args:
+              url: "https://github.com/org/repo"
+              dest: ".source/repo"
 
-          - type: read_file
+          - type: local_file_ops
+            operation: read
             path: "config.yaml"
             store_as: config_content
 
-          - type: web_fetch
+          - type: web_ops
+            operation: fetch
             url: "https://example.com/docs"
             store_as: page_content
         explanation: |
@@ -77,13 +83,15 @@ examples:
       - title: "side_effect - Display without state mutation"
         yaml: |
           # Consequence types with payload.kind: side_effect
-          - type: display_message
-            message: "Processing ${computed.source_id}..."
+          - type: display
+            format: text
+            content: "Processing ${computed.source_id}..."
 
-          - type: display_table
+          - type: display
+            format: table
             title: "Sources"
             headers: [ID, Type]
-            rows: "${computed.sources_table}"
+            content: "${computed.sources_table}"
         explanation: |
           Side effects produce output but don't modify state.
           Used for user feedback and debugging.
@@ -91,14 +99,16 @@ examples:
     parameter_interpolation:
       - title: "String interpolation"
         yaml: |
-          - type: display_message
-            message: "Cloning ${computed.repo_url} to ${computed.clone_path}"
+          - type: display
+            format: text
+            content: "Cloning ${computed.repo_url} to ${computed.clone_path}"
         explanation: |
           ${...} patterns are replaced with state values before execution.
 
       - title: "Nested object interpolation"
         yaml: |
-          - type: merge_state
+          - type: mutate_state
+            operation: merge
             field: computed.config
             value:
               url: "${computed.repo_url}"
@@ -115,32 +125,36 @@ examples:
       - title: "Filesystem preconditions"
         yaml: |
           condition:
-            type: file_exists
+            type: path_check
             path: "data/config.yaml"
+            check: is_file
         explanation: |
           Check file and directory existence.
-          Types: file_exists, directory_exists, config_exists
+          Types: path_check with various checks (is_file, is_directory, exists, contains_text)
 
       - title: "State preconditions"
         yaml: |
           condition:
             type: all_of
             conditions:
-              - type: flag_set
-                flag: config_loaded
-              - type: state_not_null
+              - type: state_check
+                field: flags.config_loaded
+                operator: "true"
+              - type: state_check
                 field: computed.source_id
+                operator: not_null
         explanation: |
           Check state values and flags.
-          Types: flag_set, state_equals, state_not_null, count_above
+          Types: state_check with operators (true, false, equals, not_null, null)
 
       - title: "Composite preconditions"
         yaml: |
           condition:
             type: any_of
             conditions:
-              - type: tool_available
+              - type: tool_check
                 tool: yq
+                capability: available
               - type: python_module_available
                 module: yaml
         explanation: |
@@ -155,15 +169,17 @@ examples:
             condition:
               type: all_of
               conditions:
-                - type: file_exists
+                - type: path_check
                   path: "config.yaml"
-                - type: tool_available
+                  check: is_file
+                - type: tool_check
                   tool: git
+                  capability: available
             audit:
               enabled: true
               messages:
-                file_exists: "Config missing"
-                tool_available: "Tool not installed"
+                path_check: "Config missing"
+                tool_check: "Tool not installed"
             branches:
               on_true: proceed
               on_false: show_errors
@@ -202,15 +218,14 @@ examples:
 
       - title: "Skill config (Tier 2)"
         yaml: |
-          # workflow.initial_state.logging
+          # workflow.initial_state.output
           initial_state:
-            logging:
+            output:
               level: "debug"
-              auto:
-                node_tracking: true
+              log_enabled: true
         explanation: |
           Skill-specific overrides.
-          Defined in workflow YAML.
+          Defined in workflow YAML using unified output config.
 
       - title: "Runtime flags (Tier 1 - highest)"
         yaml: |
@@ -242,40 +257,40 @@ examples:
     verbosity_levels:
       - title: "Silent mode"
         yaml: |
-          display:
-            verbosity: "silent"
+          output:
+            level: "silent"
         explanation: |
           Only user prompts and final result shown.
           Use for production or embedded workflows.
 
-      - title: "Terse mode (default for users)"
+      - title: "Quiet mode (default for users)"
         yaml: |
-          display:
-            verbosity: "terse"
+          output:
+            level: "quiet"
         explanation: |
-          Batch summaries for non-interactive segments.
+          Batch summaries and warnings shown.
           Reduces visual noise.
 
       - title: "Normal mode (development)"
         yaml: |
-          display:
-            verbosity: "normal"
+          output:
+            level: "normal"
         explanation: |
           Node transition arrows shown.
-          Batches when threshold met.
+          Batches when threshold met. Default level.
 
       - title: "Verbose mode (debugging)"
         yaml: |
-          display:
-            verbosity: "verbose"
+          output:
+            level: "verbose"
         explanation: |
           All node details shown.
           Condition evaluation and branch decisions visible.
 
       - title: "Debug mode"
         yaml: |
-          display:
-            verbosity: "debug"
+          output:
+            level: "debug"
         explanation: |
           Full state dumps at each node.
           All internal details visible.
@@ -283,24 +298,18 @@ examples:
     batch_mode:
       - title: "Batch configuration"
         yaml: |
-          display:
-            batch:
-              enabled: true
-              threshold: 3
-              show_summary: true
-              show_node_list: false
-              expand_on_error: true
+          output:
+            level: "quiet"
+            batch_enabled: true
+            batch_threshold: 3
         explanation: |
           Batch consecutive non-interactive nodes into summary lines.
-          Threshold sets minimum nodes before batching.
+          batch_threshold sets minimum nodes before batching.
 
       - title: "Batch output example"
         yaml: |
-          # With batch.show_summary: true, batch.show_node_list: false
+          # With batch_enabled: true, batch_threshold: 3
           # Output: "Initializing... [3 nodes] -> ask_source_type"
-
-          # With batch.show_node_list: true
-          # Output: "Initializing... [load_config, validate, prepare] -> ask_source_type"
         explanation: |
           Batch summaries collapse multiple nodes into single line.
 
@@ -342,11 +351,10 @@ examples:
             checkpoints:
               before_clone: { ... }
 
-            # Logging config
-            logging:
-              level: "info"
-              auto:
-                init: true
+            # Output config (unified display + logging)
+            output:
+              level: "normal"
+              log_enabled: true
         explanation: |
           Full state structure maintained during workflow execution.
 
@@ -405,9 +413,11 @@ examples:
           execute_clone:
             type: action
             actions:
-              - type: clone_repo
-                url: "${computed.repo_url}"
-                dest: ".source/${computed.source_id}"
+              - type: git_ops_local
+                operation: clone
+                args:
+                  url: "${computed.repo_url}"
+                  dest: ".source/${computed.source_id}"
             on_success: verify_clone
             on_failure: handle_clone_failure
 
@@ -416,8 +426,9 @@ examples:
             actions:
               - type: rollback_checkpoint
                 name: "before_clone"
-              - type: display_message
-                message: "Clone failed, state restored"
+              - type: display
+                format: text
+                content: "Clone failed, state restored"
             on_success: ask_retry
             on_failure: error_rollback
         explanation: |
@@ -504,17 +515,17 @@ examples:
       - title: "Batch buffer management"
         yaml: |
           # During execution
-          IF should_batch_node(node, display_config):
+          IF should_batch_node(node, output_config):
             state.batch_buffer.append({
               id: node_id,
               outcome: outcome,
               phase: infer_phase_name(state)
             })
-            IF state.batch_buffer.length >= display_config.batch.threshold:
-              flush_batch(state.batch_buffer, display_config)
+            IF state.batch_buffer.length >= output_config.batch_threshold:
+              flush_batch(state.batch_buffer, output_config)
           ELSE:
-            flush_batch(state.batch_buffer, display_config)
-            display_node_execution(node, outcome, display_config)
+            flush_batch(state.batch_buffer, output_config)
+            display_node_execution(node, outcome, output_config)
         explanation: |
           Batches consecutive non-interactive nodes.
           Flushes batch before user prompts or on threshold.

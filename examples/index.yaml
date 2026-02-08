@@ -19,15 +19,16 @@ files:
     categories:
       - core/control
       - core/evaluation
-      - core/filesystems
-      - core/git
       - core/intent
       - core/interaction
       - core/logging
-      - core/scripting
       - core/state
       - core/utility
-      - core/web
+      - extensions/file-system
+      - extensions/git
+      - extensions/package
+      - extensions/scripting
+      - extensions/web
 
   preconditions:
     description: Examples for precondition types (conditions)
