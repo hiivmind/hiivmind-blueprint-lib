@@ -4,57 +4,137 @@ This document describes the release process for hiivmind-blueprint-lib.
 
 ## Overview
 
-Releases are managed through git tags. When a tag is pushed, GitHub Actions automatically creates a GitHub Release with notes extracted from CHANGELOG.md.
+Releases are fully automated via GitHub Actions. When a pull request is merged, a release is created automatically based on the target branch:
+
+| PR Target | Source Branch | Release Type | Tag Format |
+|-----------|-------------|--------------|------------|
+| `main` | `release/*`, `hotfix/*` | Production | `v3.1.0` |
+| `develop` | `feature/*`, `bugfix/*` | RC | `v3.1.0-rc.1` |
+| `feature/*`, `bugfix/*` | topic branches | Beta | `v3.1.0-beta.my-feature.1` |
+
+Pre-release numbers (rc.N, beta.NAME.N) auto-increment based on existing releases.
+
+## Branch Model
+
+```
+main ─────────────────────────────── production releases only
+  ↑                    ↑
+  release/v3.1.0       hotfix/fix-name
+  ↑
+develop ─────────────────────────── RC releases on merge
+  ↑              ↑
+  feature/foo    bugfix/bar ──────── beta releases on merge
+```
+
+| Branch | Purpose | PRs From | Release Type |
+|--------|---------|----------|--------------|
+| `main` | Production only | `release/*`, `hotfix/*` | Production (`vX.Y.Z`) |
+| `develop` | Integration | `feature/*`, `bugfix/*` | RC (`vX.Y.Z-rc.N`) |
+| `feature/*`, `bugfix/*` | Development | topic branches | Beta (`vX.Y.Z-beta.NAME.N`) |
 
 ## Version Pinning Strategy
 
 Workflows reference this library using version specifiers:
 
-| Reference | Resolves To | Use Case |
-|-----------|-------------|----------|
-| `@v2.0.0` | Exact version | Production - pinned and reproducible |
-| `@v2.0` | Latest patch in v2.0.x | Auto-patch updates (not yet supported) |
-| `@v2` | Latest minor in v2.x.x | Development - tracks latest features |
-| `@main` | Latest commit | Testing only - not recommended |
+| Reference | Example | Use Case |
+|-----------|---------|----------|
+| `@vX.Y.Z` | `@v3.1.0` | Production - pinned and reproducible |
+| `@vX.Y.Z-rc.N` | `@v3.1.0-rc.1` | Testing RC before production release |
+| `@vX.Y.Z-beta.NAME.N` | `@v3.1.0-beta.new-types.1` | Testing a specific feature branch |
+| `@main` | `@main` | Latest production commit (not recommended) |
+| `@develop` | `@develop` | Latest integration commit (not recommended) |
 
-**Recommendation:** Always use exact version pins (`@v2.0.0`) in production workflows.
+**Recommendation:** Always use exact version pins (`@v3.1.0`) in production workflows.
+
+## Release Workflows
+
+### Production Release
+
+Standard flow for releasing a new version:
+
+1. **Develop on a feature branch:**
+   ```bash
+   git checkout develop
+   git checkout -b feature/my-feature
+   # ... make changes ...
+   git push -u origin feature/my-feature
+   ```
+
+2. **Merge to develop** (creates RC release):
+   - Open PR: `feature/my-feature` -> `develop`
+   - On merge, GitHub Actions creates `v3.1.0-rc.1`
+   - Test the RC in consuming workflows
+
+3. **Prepare release branch:**
+   ```bash
+   git checkout develop
+   git checkout -b release/v3.1.0
+   ```
+   - Update `package.yaml` version to `3.1.0`
+   - Update `.claude-plugin/plugin.json` version to `3.1.0`
+   - Update `CHANGELOG.md` with release notes
+   - Commit: `chore: Prepare release v3.1.0`
+   - Or use `/pr-version-bump` to automate these steps
+
+4. **Merge to main** (creates production release):
+   - Open PR: `release/v3.1.0` -> `main`
+   - On merge, GitHub Actions creates `v3.1.0` tag and GitHub Release
+
+5. **Verify:**
+   ```bash
+   curl -sf "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v3.1.0/package.yaml" | head -5
+   ```
+
+### Hotfix Release
+
+For urgent fixes to production:
+
+1. **Branch from main:**
+   ```bash
+   git checkout main
+   git checkout -b hotfix/fix-critical-bug
+   ```
+
+2. **Fix, bump version, update changelog:**
+   - Update `package.yaml` to `3.1.1`
+   - Update `.claude-plugin/plugin.json` to `3.1.1`
+   - Add `CHANGELOG.md` entry
+
+3. **Merge to main:**
+   - Open PR: `hotfix/fix-critical-bug` -> `main`
+   - On merge, GitHub Actions creates `v3.1.1` tag and GitHub Release
+
+4. **Back-merge to develop:**
+   ```bash
+   git checkout develop
+   git merge main
+   git push
+   ```
+
+### Manual Trigger
+
+For cases where you need to create a release without a PR merge:
+
+```bash
+# Production release from a specific branch
+gh workflow run release.yaml -f release_type=production -f source_branch=release/v3.1.0
+
+# RC release
+gh workflow run release.yaml -f release_type=rc -f source_branch=develop
+
+# Beta release
+gh workflow run release.yaml -f release_type=beta -f source_branch=feature/my-feature
+```
 
 ## Prerequisites
 
-- Git access to the repository
-- `yq` installed (for parsing package.yaml)
-- GitHub CLI (`gh`) for workflow dispatch (optional)
+- Version in `package.yaml` follows semver (`X.Y.Z`)
+- For production releases: `CHANGELOG.md` has an entry for the version
+- For production releases: `.claude-plugin/plugin.json` version matches `package.yaml`
 
-## Release Workflow
+## Emergency Manual Release
 
-### 1. Update Version and Changelog
-
-1. Update `package.yaml` with the new version:
-   ```yaml
-   version: "2.1.0"
-   ```
-
-2. Add a changelog entry to `CHANGELOG.md`:
-   ```markdown
-   ## [2.1.0] - 2026-01-30
-
-   ### Added
-   - New feature X
-
-   ### Changed
-   - Improved Y
-   ```
-
-3. Commit these changes:
-   ```bash
-   git add package.yaml CHANGELOG.md
-   git commit -m "chore: Prepare release v2.1.0"
-   git push origin main
-   ```
-
-### 2. Create and Push Tag
-
-Use the release script:
+If GitHub Actions is unavailable, use the legacy release script:
 
 ```bash
 # Preview what will happen
@@ -64,23 +144,7 @@ Use the release script:
 ./scripts/release.sh
 ```
 
-Or manually:
-
-```bash
-git tag -a v2.1.0 -m "Release v2.1.0 - Brief description"
-git push origin v2.1.0
-```
-
-### 3. Verify Release
-
-1. Check GitHub for the new release: https://github.com/hiivmind/hiivmind-blueprint-lib/releases
-
-2. Verify raw URLs work (for public repos):
-   ```bash
-   curl -sf "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.1.0/package.yaml" | head -5
-   ```
-
-3. Test in a workflow that uses this library
+**Note:** `scripts/release.sh` is deprecated for normal use. Prefer the automated PR-merge workflow.
 
 ## Backfilling Historical Tags
 
@@ -94,58 +158,32 @@ To tag an older commit retroactively:
 ./scripts/release.sh --backfill v1.0.0 d3936fd
 ```
 
-## Release Script Reference
-
-```bash
-./scripts/release.sh [OPTIONS]
-
-Options:
-    --dry-run           Preview without making changes
-    --backfill VERSION COMMIT
-                        Tag a historical commit
-    -h, --help          Show help
-```
-
-The script:
-- Reads version from `package.yaml`
-- Validates CHANGELOG.md has an entry for that version
-- Checks the tag doesn't already exist
-- Creates an annotated tag with changelog notes
-- Pushes to origin
-
-## GitHub Actions Workflow
-
-The `.github/workflows/release.yaml` workflow:
-
-- **Triggers:** On tag push (`v*`) or manual dispatch
-- **Actions:**
-  1. Validates tag format (semver)
-  2. Verifies package.yaml version matches tag
-  3. Extracts changelog notes
-  4. Creates GitHub Release
-
-### Manual Trigger
-
-```bash
-gh workflow run release.yaml -f tag=v2.1.0
-```
-
 ## Troubleshooting
 
 ### Tag Already Exists
 
-If you need to re-release the same version:
+If a tag collision occurs:
 
 ```bash
 # Delete local tag
-git tag -d v2.1.0
+git tag -d v3.1.0
 
 # Delete remote tag
-git push origin :v2.1.0
+git push origin :v3.1.0
 
-# Re-create
-./scripts/release.sh
+# Delete the GitHub release (if created)
+gh release delete v3.1.0 --yes
+
+# Re-trigger via manual dispatch or re-merge
 ```
+
+### Only release/hotfix branches can target main
+
+This error means a feature or bugfix branch PR was opened against `main`. Change the PR target to `develop` instead.
+
+### Pre-Release Number Wrong
+
+Pre-release numbers are auto-incremented by counting existing releases. If a release was deleted, the count may skip. This is harmless - semver pre-release ordering is correct regardless.
 
 ### Private Repository Considerations
 
@@ -155,9 +193,9 @@ If this repository is private, raw GitHub URLs will return 404 for unauthenticat
 2. **Use authenticated fetches** - Workflows would need a GitHub token
 3. **Bundle types** - Include type definitions directly in dependent projects
 
-### CHANGELOG Entry Not Found
+### CHANGELOG Entry Not Found (Production)
 
-The release script requires a changelog entry. Format:
+Production releases extract notes from `CHANGELOG.md`. Format:
 
 ```markdown
 ## [X.Y.Z] - YYYY-MM-DD
@@ -168,6 +206,8 @@ The release script requires a changelog entry. Format:
 ### Changed
 - ...
 ```
+
+If no entry is found, the release is still created with a default message, but a warning is emitted.
 
 ## Semantic Versioning
 

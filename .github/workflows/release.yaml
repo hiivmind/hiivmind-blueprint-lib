@@ -1,20 +1,36 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+      - develop
+      - 'release/**'
+      - 'feature/**'
+      - 'bugfix/**'
+      - 'hotfix/**'
+
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Tag to create release for (e.g., v2.0.0)'
+      release_type:
+        description: 'Release type'
+        required: true
+        type: choice
+        options:
+          - production
+          - rc
+          - beta
+      source_branch:
+        description: 'Branch to release from'
         required: true
         type: string
 
 jobs:
   release:
-    name: Create GitHub Release
+    name: Create Release
     runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
     permissions:
       contents: write
 
@@ -22,101 +38,243 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
-
-      - name: Determine version
-        id: version
-        run: |
-          if [[ -n "${{ github.event.inputs.tag }}" ]]; then
-            TAG="${{ github.event.inputs.tag }}"
-          else
-            TAG="${GITHUB_REF#refs/tags/}"
-          fi
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
-
-      - name: Validate version format
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Error: Tag '$TAG' does not match semver format (v#.#.#)"
-            exit 1
-          fi
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.source_branch || github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
 
       - name: Install yq
         run: |
           sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
           sudo chmod +x /usr/local/bin/yq
 
-      - name: Verify package.yaml version matches tag
+      - name: Set branch variables
+        id: branches
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          VERSION="${{ steps.version.outputs.version }}"
-          PACKAGE_VERSION=$(yq -r '.version' package.yaml)
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            SOURCE_BRANCH="${{ github.event.inputs.source_branch }}"
+            # For manual dispatch, infer target from release_type
+            case "${{ github.event.inputs.release_type }}" in
+              production) TARGET_BRANCH="main" ;;
+              rc)         TARGET_BRANCH="develop" ;;
+              beta)       TARGET_BRANCH="${{ github.event.inputs.source_branch }}" ;;
+            esac
+          else
+            SOURCE_BRANCH="${{ github.event.pull_request.head.ref }}"
+            TARGET_BRANCH="${{ github.event.pull_request.base.ref }}"
+          fi
 
-          if [[ "$PACKAGE_VERSION" != "$VERSION" ]]; then
-            echo "Error: package.yaml version ($PACKAGE_VERSION) does not match tag ($VERSION)"
+          echo "source=$SOURCE_BRANCH" >> $GITHUB_OUTPUT
+          echo "target=$TARGET_BRANCH" >> $GITHUB_OUTPUT
+          echo "Source branch: $SOURCE_BRANCH"
+          echo "Target branch: $TARGET_BRANCH"
+
+      - name: Get base version
+        id: version
+        run: |
+          BASE_VERSION=$(yq -r '.version' package.yaml)
+
+          if [[ -z "$BASE_VERSION" || "$BASE_VERSION" == "null" ]]; then
+            echo "::error::No version found in package.yaml"
             exit 1
           fi
-          echo "Version match confirmed: $VERSION"
 
-      - name: Extract changelog section
-        id: changelog
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-
-          # Extract the changelog section for this version
-          NOTES=$(awk "/^## \[$VERSION\]/{found=1; next} /^## \[/{if(found) exit} found" CHANGELOG.md | head -100)
-
-          if [[ -z "$NOTES" ]]; then
-            NOTES="Release ${{ steps.version.outputs.tag }}"
+          # Validate semver format (base version, no pre-release suffix)
+          if [[ ! "$BASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version '$BASE_VERSION' in package.yaml is not valid semver (X.Y.Z)"
+            exit 1
           fi
 
-          # Write to file for GitHub release (handles multiline)
+          echo "base=$BASE_VERSION" >> $GITHUB_OUTPUT
+          echo "Base version: $BASE_VERSION"
+
+      - name: Determine release configuration
+        id: config
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TARGET="${{ steps.branches.outputs.target }}"
+          SOURCE="${{ steps.branches.outputs.source }}"
+          BASE_VERSION="${{ steps.version.outputs.base }}"
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # Manual dispatch: use release_type input directly
+            RELEASE_TYPE="${{ github.event.inputs.release_type }}"
+          else
+            # PR merge: determine release type from target branch
+            case "$TARGET" in
+              main)
+                # Only release/* and hotfix/* branches can target main
+                if [[ "$SOURCE" == release/* || "$SOURCE" == hotfix/* ]]; then
+                  RELEASE_TYPE="production"
+                else
+                  echo "::error::Only release/* and hotfix/* branches can target main. Got: $SOURCE"
+                  exit 1
+                fi
+                ;;
+              develop)
+                RELEASE_TYPE="rc"
+                ;;
+              *)
+                RELEASE_TYPE="beta"
+                ;;
+            esac
+          fi
+
+          echo "release_type=$RELEASE_TYPE" >> $GITHUB_OUTPUT
+
+          case "$RELEASE_TYPE" in
+            production)
+              TAG="v${BASE_VERSION}"
+              PRERELEASE="false"
+              RELEASE_NAME="Release v${BASE_VERSION}"
+              ;;
+
+            rc)
+              # Auto-increment RC number
+              EXISTING=$(gh release list --json tagName --jq "[.[] | select(.tagName | startswith(\"v${BASE_VERSION}-rc.\"))] | length" 2>/dev/null || echo "0")
+              NEXT_N=$((EXISTING + 1))
+              TAG="v${BASE_VERSION}-rc.${NEXT_N}"
+              PRERELEASE="true"
+              RELEASE_NAME="Release v${BASE_VERSION}-rc.${NEXT_N}"
+              ;;
+
+            beta)
+              # Extract short name from source branch (feature/my-thing -> my-thing)
+              BRANCH_NAME="${SOURCE#feature/}"
+              BRANCH_NAME="${BRANCH_NAME#bugfix/}"
+              # Sanitize: replace non-alphanumeric with hyphens, lowercase
+              BRANCH_NAME=$(echo "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
+
+              # Auto-increment beta number for this branch
+              EXISTING=$(gh release list --json tagName --jq "[.[] | select(.tagName | startswith(\"v${BASE_VERSION}-beta.${BRANCH_NAME}.\"))] | length" 2>/dev/null || echo "0")
+              NEXT_N=$((EXISTING + 1))
+              TAG="v${BASE_VERSION}-beta.${BRANCH_NAME}.${NEXT_N}"
+              PRERELEASE="true"
+              RELEASE_NAME="Pre-release v${BASE_VERSION}-beta.${BRANCH_NAME}.${NEXT_N}"
+              ;;
+          esac
+
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
+          echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
+          echo "Release type: $RELEASE_TYPE"
+          echo "Tag: $TAG"
+          echo "Prerelease: $PRERELEASE"
+
+      - name: Verify plugin.json version matches (production only)
+        if: steps.config.outputs.release_type == 'production'
+        run: |
+          BASE_VERSION="${{ steps.version.outputs.base }}"
+
+          if [[ -f ".claude-plugin/plugin.json" ]]; then
+            PLUGIN_VERSION=$(jq -r '.version // empty' .claude-plugin/plugin.json 2>/dev/null || true)
+            if [[ -n "$PLUGIN_VERSION" && "$PLUGIN_VERSION" != "$BASE_VERSION" ]]; then
+              echo "::error::plugin.json version ($PLUGIN_VERSION) does not match package.yaml ($BASE_VERSION)"
+              exit 1
+            fi
+          fi
+
+      - name: Validate tag does not exist
+        run: |
+          TAG="${{ steps.config.outputs.tag }}"
+          if git tag -l "$TAG" | grep -q "^${TAG}$"; then
+            echo "::error::Tag $TAG already exists"
+            exit 1
+          fi
+
+      - name: Extract release notes
+        id: notes
+        run: |
+          TAG="${{ steps.config.outputs.tag }}"
+          BASE_VERSION="${{ steps.version.outputs.base }}"
+          RELEASE_TYPE="${{ steps.config.outputs.release_type }}"
+
+          if [[ "$RELEASE_TYPE" == "production" ]]; then
+            # Extract changelog section for this version
+            NOTES=$(awk "/^## \[$BASE_VERSION\]/{found=1; next} /^## \[/{if(found) exit} found" CHANGELOG.md 2>/dev/null | head -100)
+
+            if [[ -z "$NOTES" ]]; then
+              echo "::warning::No CHANGELOG.md entry found for $BASE_VERSION, using default notes"
+              NOTES="Release $TAG"
+            fi
+          else
+            # For pre-releases, generate notes from PR info
+            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+              PR_TITLE="${{ github.event.pull_request.title }}"
+              PR_BODY="${{ github.event.pull_request.body }}"
+              SOURCE="${{ steps.branches.outputs.source }}"
+              NOTES="Pre-release from \`${SOURCE}\`
+
+**PR:** ${PR_TITLE}
+
+${PR_BODY:-No description provided.}"
+            else
+              SOURCE="${{ steps.branches.outputs.source }}"
+              NOTES="Manual pre-release from \`${SOURCE}\`"
+            fi
+          fi
+
+          # Write to file for multiline handling
           echo "$NOTES" > release_notes.md
 
-      - name: Check if release exists
-        id: check_release
+      - name: Create and push tag
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          if gh release view "$TAG" &>/dev/null; then
-            echo "exists=true" >> $GITHUB_OUTPUT
+          TAG="${{ steps.config.outputs.tag }}"
+          RELEASE_TYPE="${{ steps.config.outputs.release_type }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if [[ "$RELEASE_TYPE" == "production" ]]; then
+            git tag -a "$TAG" -m "Release $TAG
+
+$(cat release_notes.md)
+
+See CHANGELOG.md for full details."
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
+            git tag -a "$TAG" -m "Pre-release $TAG"
           fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          git push origin "$TAG"
 
       - name: Create GitHub Release
-        if: steps.check_release.outputs.exists == 'false'
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          gh release create "$TAG" \
-            --title "Release $TAG" \
-            --notes-file release_notes.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.config.outputs.tag }}"
+          RELEASE_NAME="${{ steps.config.outputs.release_name }}"
+          PRERELEASE="${{ steps.config.outputs.prerelease }}"
 
-      - name: Update existing release
-        if: steps.check_release.outputs.exists == 'true'
-        run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          echo "Release $TAG already exists - skipping creation"
-          echo "To update, delete the release first and re-run"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARGS=(
+            "$TAG"
+            --title "$RELEASE_NAME"
+            --notes-file release_notes.md
+          )
+
+          if [[ "$PRERELEASE" == "true" ]]; then
+            ARGS+=(--prerelease)
+          fi
+
+          gh release create "${ARGS[@]}"
 
       - name: Summary
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
+          TAG="${{ steps.config.outputs.tag }}"
+          RELEASE_TYPE="${{ steps.config.outputs.release_type }}"
+          SOURCE="${{ steps.branches.outputs.source }}"
+          TARGET="${{ steps.branches.outputs.target }}"
+
           echo "## Release Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag:** $TAG" >> $GITHUB_STEP_SUMMARY
-          echo "**Release URL:** https://github.com/${{ github.repository }}/releases/tag/$TAG" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tag** | \`$TAG\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Type** | $RELEASE_TYPE |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Source** | \`$SOURCE\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Target** | \`$TARGET\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Release** | [View release](https://github.com/${{ github.repository }}/releases/tag/$TAG) |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Raw URL Verification" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Test the release URLs:" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
           echo "curl -sf https://raw.githubusercontent.com/${{ github.repository }}/$TAG/package.yaml | head -5" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
