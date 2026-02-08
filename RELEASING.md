@@ -46,11 +46,48 @@ Workflows reference this library using version specifiers:
 
 **Recommendation:** Always use exact version pins (`@v3.1.0`) in production workflows.
 
+## CI Enforcement
+
+### Branch Validation Gate
+
+A GitHub Actions workflow (`.github/workflows/validate-pr-branch.yaml`) runs on every PR targeting `main` and **blocks merge** unless the source branch matches `release/*` or `hotfix/*`.
+
+This is configured as a **required status check** on `main`, meaning:
+- `feature/*` PRs to `main` will fail the check and cannot be merged
+- `release/*` and `hotfix/*` PRs pass automatically
+- The check name is `Validate PR Source Branch`
+
+**Why:** Without this gate, feature PRs merged directly to `main` bypass the automated release pipeline (which expects `release/*` or `hotfix/*` sources), requiring manual tagging and releasing.
+
+### Setting Up the Required Check (First Time Only)
+
+The status check name must have run at least once before GitHub allows it to be set as required. After the first `release/*` or `hotfix/*` PR runs the workflow:
+
+1. Go to **Settings > Branches > Branch protection rules > main**
+2. Enable **Require status checks to pass before merging**
+3. Search for and add: `Validate PR Source Branch`
+
 ## Release Workflows
 
-### Production Release
+### Production Release (Automated)
 
-Standard flow for releasing a new version:
+Use `/prepare-release` for the recommended automated flow:
+
+```
+/prepare-release              # Auto-detect version from changes
+/prepare-release 4.0.0        # Explicit version
+```
+
+This will:
+1. Analyze changes and recommend a semver bump
+2. Create a `release/vX.Y.Z` branch from your current HEAD
+3. Bump `package.yaml`, `.claude-plugin/plugin.json`, and `CHANGELOG.md`
+4. Commit, push, and open a PR to `main`
+5. On merge, GitHub Actions creates the tag and GitHub Release automatically
+
+### Production Release (Manual)
+
+If you prefer to do it manually:
 
 1. **Develop on a feature branch:**
    ```bash
@@ -74,10 +111,11 @@ Standard flow for releasing a new version:
    - Update `.claude-plugin/plugin.json` version to `3.1.0`
    - Update `CHANGELOG.md` with release notes
    - Commit: `chore: Prepare release v3.1.0`
-   - Or use `/pr-version-bump` to automate these steps
+   - Or use `/pr-version-bump` to automate version bump steps
 
 4. **Merge to main** (creates production release):
    - Open PR: `release/v3.1.0` -> `main`
+   - The `Validate PR Source Branch` check passes (source is `release/*`)
    - On merge, GitHub Actions creates `v3.1.0` tag and GitHub Release
 
 5. **Verify:**
@@ -179,7 +217,9 @@ gh release delete v3.1.0 --yes
 
 ### Only release/hotfix branches can target main
 
-This error means a feature or bugfix branch PR was opened against `main`. Change the PR target to `develop` instead.
+This error appears either from the `Validate PR Source Branch` CI check (pre-merge) or from the release workflow (post-merge). A feature or bugfix branch PR was opened against `main`.
+
+**Fix:** Either change the PR target to `develop`, or use `/prepare-release` to create a proper release branch first.
 
 ### Pre-Release Number Wrong
 

@@ -2,7 +2,7 @@
 # Semantic type definitions and reusable workflows for hiivmind-blueprint
 
 name: hiivmind-blueprint-lib
-version: "3.1.0"
+version: "3.1.1"
 description: |
   Externalized type definitions and reusable workflows for hiivmind-blueprint.
   Provides 31 consequence types, 14 precondition types, 5 node types, and

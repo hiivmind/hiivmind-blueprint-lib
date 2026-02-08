@@ -5,6 +5,19 @@ All notable changes to hiivmind-blueprint-lib will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.1] - 2026-02-08
+
+### Added
+
+- **PR branch validation CI gate**: `.github/workflows/validate-pr-branch.yaml` blocks PRs to `main` unless from `release/*` or `hotfix/*` branches
+- **`/prepare-release` skill**: Automates release branch creation, version bump, changelog, and PR to `main`
+- **`/prepare-release` command**: Command gateway for the prepare-release skill
+
+### Changed
+
+- **RELEASING.md**: Added CI enforcement section and documented `/prepare-release` as recommended release flow
+- **CLAUDE.md**: Updated Git Workflow section with branching requirement and release process reference
+
 ## [3.1.0] - 2026-02-08
 
 ### Added

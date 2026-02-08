@@ -171,8 +171,11 @@ Current version: Check `package.yaml`
 ## Git Workflow
 
 - Main branch: `main`
-- Releases are tagged (e.g., `v2.0.0`, `v2.1.0`)
+- **PRs to `main` must come from `release/*` or `hotfix/*` branches** — enforced by CI (`Validate PR Source Branch` required check)
+- Use `/prepare-release` to automate: create release branch, bump version, update changelog, and open PR to `main`
+- Releases are tagged (e.g., `v2.0.0`, `v2.1.0`) automatically when PRs to `main` are merged
 - Workflows reference specific versions via GitHub raw URLs
+- See `RELEASING.md` for the full release process
 
 ## GitHub Operations
 

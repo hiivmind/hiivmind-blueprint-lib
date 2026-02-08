@@ -1,0 +1,24 @@
+name: Validate PR Branch
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+jobs:
+  validate-source-branch:
+    name: Validate PR Source Branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check source branch pattern
+        run: |
+          SOURCE="${{ github.event.pull_request.head.ref }}"
+          if [[ "$SOURCE" == release/* || "$SOURCE" == hotfix/* ]]; then
+            echo "✅ Branch '$SOURCE' is allowed to target main"
+          else
+            echo "::error::PRs targeting main must come from release/* or hotfix/* branches. Got: $SOURCE"
+            echo ""
+            echo "Create a release branch first, or use /prepare-release"
+            echo "See RELEASING.md for the full release workflow."
+            exit 1
+          fi
