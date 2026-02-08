@@ -6,15 +6,15 @@ on:
     branches:
       - main
       - develop
-      - 'release/**'
-      - 'feature/**'
-      - 'bugfix/**'
-      - 'hotfix/**'
+      - "release/**"
+      - "feature/**"
+      - "bugfix/**"
+      - "hotfix/**"
 
   workflow_dispatch:
     inputs:
       release_type:
-        description: 'Release type'
+        description: "Release type"
         required: true
         type: choice
         options:
@@ -22,7 +22,7 @@ on:
           - rc
           - beta
       source_branch:
-        description: 'Branch to release from'
+        description: "Branch to release from"
         required: true
         type: string
 
@@ -204,9 +204,9 @@ jobs:
               SOURCE="${{ steps.branches.outputs.source }}"
               NOTES="Pre-release from \`${SOURCE}\`
 
-**PR:** ${PR_TITLE}
+              **PR:** ${PR_TITLE}
 
-${PR_BODY:-No description provided.}"
+              ${PR_BODY:-No description provided.}"
             else
               SOURCE="${{ steps.branches.outputs.source }}"
               NOTES="Manual pre-release from \`${SOURCE}\`"
@@ -227,9 +227,9 @@ ${PR_BODY:-No description provided.}"
           if [[ "$RELEASE_TYPE" == "production" ]]; then
             git tag -a "$TAG" -m "Release $TAG
 
-$(cat release_notes.md)
+            $(cat release_notes.md)
 
-See CHANGELOG.md for full details."
+            See CHANGELOG.md for full details."
           else
             git tag -a "$TAG" -m "Pre-release $TAG"
           fi
