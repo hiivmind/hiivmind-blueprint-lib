@@ -2,7 +2,7 @@
 # Semantic type definitions and reusable workflows for hiivmind-blueprint
 
 name: hiivmind-blueprint-lib
-version: "3.0.0"
+version: "3.1.0"
 description: |
   Externalized type definitions and reusable workflows for hiivmind-blueprint.
   Provides 31 consequence types, 14 precondition types, 5 node types, and
@@ -45,7 +45,7 @@ usage: |
 
   ```yaml
   definitions:
-    source: hiivmind/hiivmind-blueprint-lib@v3.0.0
+    source: hiivmind/hiivmind-blueprint-lib@v3.1.0
   ```
 
   This fetches types from raw GitHub URLs at runtime.
@@ -55,7 +55,7 @@ usage: |
   ```yaml
   detect_intent:
     type: reference
-    workflow: hiivmind/hiivmind-blueprint-lib@v3.0.0:intent-detection
+    workflow: hiivmind/hiivmind-blueprint-lib@v3.1.0:intent-detection
     context:
       arguments: "${arguments}"
       intent_flags: "${intent_flags}"
