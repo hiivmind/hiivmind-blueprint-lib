@@ -115,7 +115,8 @@ examples:
       - title: "State preconditions"
         yaml: |
           condition:
-            type: all_of
+            type: composite
+            operator: all
             conditions:
               - type: state_check
                 field: flags.config_loaded
@@ -129,7 +130,8 @@ examples:
       - title: "Composite preconditions"
         yaml: |
           condition:
-            type: any_of
+            type: composite
+            operator: any
             conditions:
               - type: tool_check
                 tool: yq
@@ -138,7 +140,8 @@ examples:
                 tool: python3
                 capability: available
         explanation: |
-          Combine conditions with all_of, any_of, none_of, xor_of.
+          Combine multiple preconditions with logical operators.
+          Type: composite with operator (all, any, none, xor)
 
   # ==========================================================================
   # state - Runtime state structure

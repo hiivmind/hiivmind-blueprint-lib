@@ -14,11 +14,12 @@ examples:
   # core/composite - Logical combinators
   # ==========================================================================
   core/composite:
-    all_of:
+    composite:
       - title: "All conditions must be true (AND)"
         yaml: |
           condition:
-            type: all_of
+            type: composite
+            operator: all
             conditions:
               - type: path_check
                 path: "config.yaml"
@@ -26,55 +27,29 @@ examples:
               - type: tool_check
                 tool: git
                 capability: available
-              - type: tool_check
-                tool: yq
-                capability: available
         explanation: |
-          Evaluates to true only if ALL conditions are true.
-          Short-circuits on first false condition.
+          operator: all requires ALL conditions to be true.
+          Short-circuits on first false.
 
-      - title: "Nested composite conditions"
-        yaml: |
-          condition:
-            type: all_of
-            conditions:
-              - type: path_check
-                path: "data/config.yaml"
-                check: is_file
-              - type: any_of
-                conditions:
-                  - type: tool_check
-                    tool: yq
-                    capability: available
-                  - type: python_module_available
-                    module: yaml
-        explanation: |
-          Composite conditions can be nested.
-          Config must exist AND at least one YAML processor available.
-
-    any_of:
       - title: "At least one condition true (OR)"
         yaml: |
           condition:
-            type: any_of
+            type: composite
+            operator: any
             conditions:
               - type: tool_check
                 tool: yq
-                capability: available
-              - type: tool_check
-                tool: jq
                 capability: available
               - type: python_module_available
                 module: yaml
         explanation: |
-          Evaluates to true if ANY condition is true.
-          Short-circuits on first true condition.
+          operator: any requires at least one condition to be true.
 
-    none_of:
       - title: "No conditions may be true (NOR)"
         yaml: |
           condition:
-            type: none_of
+            type: composite
+            operator: none
             conditions:
               - type: path_check
                 path: ".lock"
@@ -83,14 +58,13 @@ examples:
                 field: flags.operation_in_progress
                 operator: "true"
         explanation: |
-          Evaluates to true only if NO conditions are true.
-          Useful for exclusion checks.
+          operator: none requires no conditions to be true.
 
-    xor_of:
-      - title: "Exactly one condition must be true (XOR)"
+      - title: "Exactly one must be true (XOR)"
         yaml: |
           condition:
-            type: xor_of
+            type: composite
+            operator: xor
             conditions:
               - type: state_check
                 field: flags.is_git_source
@@ -102,9 +76,27 @@ examples:
                 field: flags.is_web_source
                 operator: "true"
         explanation: |
-          Evaluates to true if EXACTLY one condition is true.
-          Does not short-circuit - always evaluates all conditions.
-          Useful for mutually exclusive states.
+          operator: xor requires exactly one condition to be true.
+
+      - title: "Nested composite conditions"
+        yaml: |
+          condition:
+            type: composite
+            operator: all
+            conditions:
+              - type: path_check
+                path: "data/config.yaml"
+                check: is_file
+              - type: composite
+                operator: any
+                conditions:
+                  - type: tool_check
+                    tool: yq
+                    capability: available
+                  - type: python_module_available
+                    module: yaml
+        explanation: |
+          Composites can be nested for complex logic.
 
   # ==========================================================================
   # core/expression - Arbitrary expression evaluation

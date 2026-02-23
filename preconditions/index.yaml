@@ -14,27 +14,13 @@ remote_sources:
 
 types:
   # ==========================================================================
-  # Core - Composite (4 types)
+  # Core - Composite (1 type) - CONSOLIDATED in v4.0
   # ==========================================================================
-  all_of:
+  composite:
     category: core/composite
-    brief: All nested conditions must be true (AND)
-    required_params: [conditions]
-
-  any_of:
-    category: core/composite
-    brief: At least one condition must be true (OR)
-    required_params: [conditions]
-
-  none_of:
-    category: core/composite
-    brief: No conditions may be true (NOR)
-    required_params: [conditions]
-
-  xor_of:
-    category: core/composite
-    brief: Exactly one condition must be true (XOR)
-    required_params: [conditions]
+    brief: Combine conditions with logical operators (all, any, none, xor)
+    required_params: [operator, conditions]
+    replaces: [all_of, any_of, none_of, xor_of]
 
   # ==========================================================================
   # Core - Expression (1 type)
@@ -119,6 +105,6 @@ types:
 
 # Statistics
 stats:
-  total_types: 14
+  total_types: 11
   consolidated_from: 27
   eliminated: 3  # count_equals, count_above, count_below
