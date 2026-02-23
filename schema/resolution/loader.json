@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/resolution/loader.json",
+  "$comment": "Unified resolution schema - index, type-loader, and workflow-loader",
+  "title": "Resolution Loader Schema",
+  "description": "Unified schema for resolution files: type indexes, type loader, and workflow loader",
+  "oneOf": [
+    { "$ref": "#/$defs/indexFile" },
+    { "$ref": "#/$defs/loaderFile" }
+  ],
+  "$defs": {
+
+    "indexFile": {
+      "type": "object",
+      "required": ["schema_version", "definition_file", "types"],
+      "additionalProperties": false,
+      "description": "Schema for index.yaml files (consequences, preconditions, nodes, execution)",
+      "properties": {
+        "schema_version": { "$ref": "../common.json#/$defs/semver_short" },
+        "definition_file": {
+          "type": "string",
+          "pattern": "^[a-z_-]+\\.yaml$",
+          "examples": ["consequences.yaml", "preconditions.yaml", "workflow_nodes.yaml"]
+        },
+        "description": { "type": "string" },
+        "remote_sources": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/remoteSource" }
+        },
+        "types": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/typeEntry" }
+        },
+        "categories": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/categoryEntry" }
+        },
+        "stats": { "$ref": "#/$defs/stats" }
+      }
+    },
+
+    "loaderFile": {
+      "type": "object",
+      "required": ["schema_version", "category", "resolution"],
+      "additionalProperties": false,
+      "description": "Schema for the unified resolution/loader.yaml file",
+      "properties": {
+        "schema_version": { "$ref": "../common.json#/$defs/semver_short" },
+        "category": { "const": "resolution" },
+        "resolution": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "entrypoints": { "$ref": "#/$defs/entrypoints" },
+            "fetch_patterns": { "$ref": "#/$defs/fetchPatterns" },
+            "type_loading": { "$ref": "#/$defs/typeLoader" },
+            "workflow_loading": { "$ref": "#/$defs/workflowLoader" },
+            "execution_loading": { "$ref": "#/$defs/executionLoader" }
+          }
+        }
+      }
+    },
+
+    "typeEntry": {
+      "type": "object",
+      "required": ["category", "brief"],
+      "additionalProperties": false,
+      "properties": {
+        "category": { "type": "string" },
+        "brief": { "type": "string", "maxLength": 100 },
+        "required_params": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "required_fields": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "categoryEntry": {
+      "type": "object",
+      "required": ["description"],
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string" },
+        "types": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "remoteSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "url": { "type": "string", "format": "uri" },
+        "types": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "total_types": { "type": "integer", "minimum": 0 },
+        "core_types": { "type": "integer", "minimum": 0 },
+        "extension_types": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "entrypoints": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Progressive loading queries and verification protocol"
+    },
+
+    "fetchPatterns": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Source parsing and fetch primitives",
+      "properties": {
+        "description": { "type": "string" },
+        "since": { "$ref": "../common.json#/$defs/semver" },
+        "source_format": { "type": "object" },
+        "parse_source": { "$ref": "#/$defs/algorithm" },
+        "fetch": { "$ref": "#/$defs/algorithm" }
+      }
+    },
+
+    "typeLoader": {
+      "type": "object",
+      "required": ["description", "loading_algorithm"],
+      "additionalProperties": true,
+      "properties": {
+        "description": { "type": "string" },
+        "since": { "$ref": "../common.json#/$defs/semver" },
+        "version_formats": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "loading_algorithm": { "$ref": "#/$defs/algorithm" },
+        "registry_building": { "$ref": "#/$defs/algorithm" },
+        "lazy_loading": { "$ref": "#/$defs/algorithm" },
+        "selective_loading": { "$ref": "#/$defs/algorithm" },
+        "hybrid_loading": {
+          "type": "object",
+          "properties": {
+            "threshold": { "type": "integer" },
+            "effect": { "type": "string" }
+          }
+        },
+        "extension_loading": { "type": "object" },
+        "validation": { "$ref": "#/$defs/algorithm" }
+      }
+    },
+
+    "workflowLoader": {
+      "type": "object",
+      "required": ["description", "reference_format", "loading_algorithm"],
+      "additionalProperties": true,
+      "properties": {
+        "description": { "type": "string" },
+        "since": { "$ref": "../common.json#/$defs/semver" },
+        "direct_file_since": { "$ref": "../common.json#/$defs/semver" },
+        "reference_format": {
+          "type": "object",
+          "required": ["patterns"],
+          "properties": {
+            "patterns": { "type": "object" },
+            "detection": { "type": "object" }
+          }
+        },
+        "loading_algorithm": { "$ref": "#/$defs/algorithm" },
+        "reference_parsing": { "$ref": "#/$defs/algorithm" },
+        "execution": { "$ref": "#/$defs/algorithm" },
+        "state_sharing": { "type": "object" },
+        "workflow_index_format": { "type": "object" },
+        "dependency_validation": { "$ref": "#/$defs/algorithm" }
+      }
+    },
+
+    "executionLoader": {
+      "type": "object",
+      "required": ["description", "bootstrap"],
+      "additionalProperties": true,
+      "properties": {
+        "description": { "type": "string" },
+        "since": { "$ref": "../common.json#/$defs/semver" },
+        "bootstrap": {
+          "type": "object",
+          "properties": {
+            "description": { "type": "string" },
+            "phases": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "description"],
+                "properties": {
+                  "id": { "type": "string" },
+                  "description": { "type": "string" },
+                  "produces": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "section_registry": { "type": "object" },
+        "loading_strategies": { "type": "object" },
+        "output_defaults": { "type": "object" },
+        "main_algorithm": { "$ref": "#/$defs/algorithm" }
+      }
+    },
+
+    "algorithm": {
+      "type": "object",
+      "required": ["effect"],
+      "additionalProperties": true,
+      "properties": {
+        "description": { "type": "string" },
+        "effect": { "type": "string" }
+      }
+    }
+  }
+}
