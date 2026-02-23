@@ -208,16 +208,13 @@ preconditions:
   tool_check:
     category: core/tools
     description:
-      brief: Check tool availability, version, auth, or daemon status
+      brief: Check tool availability or version
       detail: |
-        Unified tool inspection precondition. The capability parameter determines
-        what aspect of the tool is checked.
+        Checks whether a CLI tool is available in PATH or meets a minimum
+        version requirement.
       notes:
         - "capability: available - tool exists in PATH"
         - "capability: version_gte - tool version >= args.min_version"
-        - "capability: authenticated - tool is authenticated (for gh, aws, etc.)"
-        - "capability: daemon_ready - tool's daemon is running (for docker, etc.)"
-        - Returns true for tools that don't need auth/daemon
 
     parameters:
       - name: tool
@@ -230,12 +227,10 @@ preconditions:
       - name: capability
         type: string
         required: true
-        description: "Capability to check: available, version_gte, authenticated, daemon_ready"
+        description: "Capability to check: available, version_gte"
         enum:
           - available
           - version_gte
-          - authenticated
-          - daemon_ready
         interpolatable: false
 
       - name: args
@@ -258,39 +253,17 @@ preconditions:
           if installed_version == null:
             return true  # Can't determine version, assume OK
           return compare_versions(installed_version, args.min_version) >= 0
-
-        elif capability == "authenticated":
-          if not tool_available(tool):
-            return false
-          auth_check = get_auth_check(tool)  # From registry
-          if auth_check == null:
-            return true  # No auth required
-          exit_code = shell(auth_check + " >/dev/null 2>&1")
-          return exit_code == 0
-
-        elif capability == "daemon_ready":
-          if not tool_available(tool):
-            return false
-          daemon_check = get_daemon_check(tool)  # From registry
-          if daemon_check == null:
-            return true  # No daemon required
-          exit_code = shell(daemon_check)
-          return exit_code == 0
       reads: []
       functions:
         - shell
         - tool_available
         - extract_version
         - compare_versions
-        - get_auth_check
-        - get_daemon_check
 
     since: "3.0.0"
     replaces:
       - tool_available
       - tool_version_gte
-      - tool_authenticated
-      - tool_daemon_ready
 
   # ==========================================================================
   # category: core/filesystems
