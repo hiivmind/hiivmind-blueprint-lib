@@ -276,18 +276,6 @@ examples:
   # core/logging - Workflow execution logging
   # ==========================================================================
   core/logging:
-    init_log:
-      - title: "Initialize logging at workflow start"
-        yaml: |
-          - type: init_log
-            workflow_name: add-source
-            workflow_version: "1.0"
-            skill_name: hiivmind-corpus-add-source
-            plugin_name: hiivmind-corpus
-        explanation: |
-          Initializes logging structure. Call once at workflow start.
-          Sets flags.log_initialized to true.
-
     log_node:
       - title: "Record node execution"
         yaml: |
@@ -307,14 +295,11 @@ examples:
           - type: log_entry
             level: info
             message: "Source added successfully"
-            event_type: source_added
             context:
               source_id: "${computed.source_id}"
               source_type: "${source_type}"
-              file_count: "${computed.file_count}"
         explanation: |
-          Logs structured event for auditing.
-          Context can be any structured object.
+          Logs structured entry with context.
 
       - title: "Log warning"
         yaml: |
@@ -332,73 +317,11 @@ examples:
           - type: log_entry
             level: error
             message: "Clone failed"
-            error_type: git_error
             context:
               repo_url: "${computed.repo_url}"
               exit_code: "${computed.exit_code}"
-            recoverable: true
         explanation: |
-          Logs error with classification and recovery flag.
-
-    log_session_snapshot:
-      - title: "Checkpoint logging state"
-        yaml: |
-          - type: log_session_snapshot
-            description: "Before destructive operation"
-            write_intermediate: true
-        explanation: |
-          Creates snapshot at critical decision point.
-          Can write intermediate log file.
-
-    finalize_log:
-      - title: "Complete log at workflow end"
-        yaml: |
-          - type: finalize_log
-            outcome: success
-            summary: "Added ${computed.file_count} files from ${source_type} source"
-        explanation: |
-          Completes log with timing and outcome.
-          Call at workflow end.
-
-    write_log:
-      - title: "Write log to file"
-        yaml: |
-          - type: write_log
-            format: yaml
-            path: ".logs/${computed.log_filename}"
-        explanation: |
-          Writes finalized log to file.
-          Supports yaml, json, markdown formats.
-
-    apply_log_retention:
-      - title: "Clean up old logs (count-based)"
-        yaml: |
-          - type: apply_log_retention
-            path: ".logs/"
-            strategy: count
-            count: 10
-            pattern: "*.yaml"
-        explanation: |
-          Keeps only the 10 newest log files.
-
-      - title: "Clean up old logs (time-based)"
-        yaml: |
-          - type: apply_log_retention
-            path: ".logs/"
-            strategy: days
-            days: 30
-        explanation: |
-          Removes logs older than 30 days.
-
-    output_ci_summary:
-      - title: "GitHub Actions summary"
-        yaml: |
-          - type: output_ci_summary
-            format: github
-            annotations: true
-        explanation: |
-          Outputs summary to GITHUB_STEP_SUMMARY.
-          Emits annotations for errors/warnings.
+          Logs error with structured context.
 
   # ==========================================================================
   # core/state - State mutation

@@ -212,40 +212,6 @@ examples:
           Replaces the old index_is_placeholder type.
 
   # ==========================================================================
-  # core/logging - Logging state checks
-  # ==========================================================================
-  core/logging:
-    log_state:
-      - title: "Check if logging is ready"
-        yaml: |
-          condition:
-            type: log_state
-            aspect: initialized
-        explanation: |
-          True if init_log has been called.
-          Required before log_node, log_entry, etc.
-
-      - title: "Check if debug logging enabled"
-        yaml: |
-          condition:
-            type: log_state
-            aspect: level_enabled
-            args:
-              level: debug
-        explanation: |
-          True if current log level includes debug.
-          Level hierarchy: error < warn < info < debug < trace
-
-      - title: "Check if log is complete"
-        yaml: |
-          condition:
-            type: log_state
-            aspect: finalized
-        explanation: |
-          True if finalize_log has been called.
-          Required before write_log.
-
-  # ==========================================================================
   # core/state - State inspection
   # ==========================================================================
   core/state:
