@@ -440,138 +440,12 @@ consequences:
   # ==========================================================================
 
   # --------------------------------------------------------------------------
-  # init_log
-  # --------------------------------------------------------------------------
-  init_log:
-    category: core/logging
-    description:
-      brief: Initialize log structure with workflow metadata
-      detail: |
-        Initializes the log structure at workflow start. Sets up metadata,
-        session tracking, and prepares arrays for events, warnings, and
-        errors. Should be called once at the beginning of workflow execution.
-      notes:
-        - Call once at workflow start
-        - Session context captured from environment variables
-        - Creates state.log structure
-        - Sets flags.log_initialized to true
-
-    parameters:
-      - name: workflow_name
-        type: string
-        required: true
-        description: Workflow identifier
-        interpolatable: true
-
-      - name: workflow_version
-        type: string
-        required: false
-        default: "1.0"
-        description: Workflow version
-        interpolatable: true
-
-      - name: skill_name
-        type: string
-        required: false
-        description: Name of invoking skill
-        interpolatable: true
-
-      - name: plugin_name
-        type: string
-        required: false
-        description: Name of parent plugin
-        interpolatable: true
-
-      - name: execution_path
-        type: string
-        required: false
-        description: Skill/command path (auto-detected if not provided)
-        interpolatable: true
-
-    payload:
-      kind: composite
-      tool: null
-      effect: |
-        # Session state management
-        session_state_path = ".logs/.session-state.yaml"
-        session_state = read_yaml(session_state_path) ?? { current_session: null }
-
-        current_id = env.BLUEPRINT_SESSION_ID
-        if session_state.current_session?.id != current_id:
-          session_state.current_session = {
-            id: current_id,
-            invocation_count: 0,
-            invocations: []
-          }
-
-        session_state.current_session.invocation_count += 1
-        invocation_index = session_state.current_session.invocation_count
-
-        computed_log_path = format_log_path(skill_name, now_iso8601())
-
-        session_state.current_session.invocations.push({
-          index: invocation_index,
-          skill: skill_name,
-          log_path: computed_log_path,
-          timestamp: now_iso8601()
-        })
-
-        mkdir -p dirname(session_state_path)
-        write_yaml(session_state_path, session_state)
-
-        state.log = {
-          metadata: {
-            workflow_name: workflow_name,
-            workflow_version: workflow_version ?? "1.0",
-            skill_name: skill_name ?? null,
-            plugin_name: plugin_name ?? null,
-            execution_path: execution_path ?? cwd,
-            session: {
-              id: env.BLUEPRINT_SESSION_ID ?? null,
-              transcript_path: env.BLUEPRINT_TRANSCRIPT_PATH ?? null,
-              invocation_index: invocation_index,
-              snapshot_points: []
-            }
-          },
-          parameters: extract_flags(initial_state.flags),
-          execution: {
-            start_time: now_iso8601(),
-            end_time: null,
-            duration_seconds: null,
-            outcome: null,
-            ending_node: null
-          },
-          node_history: [],
-          events: [],
-          warnings: [],
-          errors: [],
-          summary: null
-        }
-        state.flags.log_initialized = true
-        state.computed.expected_log_path = computed_log_path
-      state_writes:
-        - "log"
-        - "flags.log_initialized"
-        - "computed.expected_log_path"
-      state_reads: []
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
   # log_node
   # --------------------------------------------------------------------------
   log_node:
     category: core/logging
     description:
-      brief: Record node execution in history
-      detail: |
-        Records a node execution event in the log history. Captures the
-        node ID, outcome, timestamp, and optional details. Subject to
-        logging level configuration.
-      notes:
-        - Requires logging level >= info
-        - Details can include any key-value pairs
-        - Timestamp auto-generated
+      brief: Record node execution in log history
 
     parameters:
       - name: node
@@ -584,11 +458,7 @@ consequences:
         type: string
         required: true
         description: "Execution result: success, skipped, error, blocked"
-        enum:
-          - success
-          - skipped
-          - error
-          - blocked
+        enum: [success, skipped, error, blocked]
         interpolatable: true
 
       - name: details
@@ -601,13 +471,12 @@ consequences:
       kind: state_mutation
       tool: null
       effect: |
-        if logging.level >= "info":
-          state.log.node_history.push({
-            node: node,
-            timestamp: now_iso8601(),
-            outcome: outcome,
-            details: details ?? {}
-          })
+        state.log.node_history.push({
+          node: node,
+          timestamp: now_iso8601(),
+          outcome: outcome,
+          details: details ?? {}
+        })
       state_writes:
         - "log.node_history"
       state_reads: []
@@ -621,28 +490,13 @@ consequences:
     category: core/logging
     description:
       brief: Log event, warning, or error with context
-      detail: |
-        Unified logging consequence that handles events, warnings, and errors.
-        The level parameter determines how the entry is stored and displayed.
-        Events go to state.log.events, warnings to state.log.warnings,
-        errors to state.log.errors.
-      notes:
-        - "level: info/debug - logged as event"
-        - "level: warning - logged as warning"
-        - "level: error - logged as error"
-        - Context can be any structured object
-        - error_type and recoverable only used for error level
 
     parameters:
       - name: level
         type: string
         required: true
         description: "Log level: debug, info, warning, error"
-        enum:
-          - debug
-          - info
-          - warning
-          - error
+        enum: [debug, info, warning, error]
         interpolatable: false
 
       - name: message
@@ -654,427 +508,26 @@ consequences:
       - name: context
         type: object
         required: false
-        description: Additional context for debugging
-        interpolatable: true
-
-      - name: event_type
-        type: string
-        required: false
-        description: Domain-specific event type (for info/debug levels)
-        interpolatable: true
-
-      - name: error_type
-        type: string
-        required: false
-        description: Error classification (for error level)
-        interpolatable: true
-
-      - name: recoverable
-        type: boolean
-        required: false
-        default: false
-        description: Whether workflow continued after this error
-        interpolatable: false
-
-      - name: node
-        type: string
-        required: false
-        description: Node that generated entry (auto-detected)
+        description: Additional structured context
         interpolatable: true
 
     payload:
       kind: state_mutation
       tool: null
       effect: |
-        if level == "error":
-          if logging.level >= "error":
-            state.log.errors.push({
-              message: message,
-              error_type: error_type ?? "unknown",
-              timestamp: now_iso8601(),
-              node: node ?? current_node.id,
-              context: context ?? {},
-              recoverable: recoverable ?? false
-            })
-
-        elif level == "warning":
-          if logging.level >= "warn":
-            state.log.warnings.push({
-              message: message,
-              timestamp: now_iso8601(),
-              node: node ?? current_node.id,
-              context: context ?? {}
-            })
-
-        else:  # info or debug
-          effective_level = level ?? "info"
-          if logging.level >= effective_level:
-            state.log.events.push({
-              type: event_type ?? "log",
-              timestamp: now_iso8601(),
-              message: message,
-              data: context ?? {}
-            })
+        entry = {
+          level: level,
+          message: message,
+          timestamp: now_iso8601(),
+          node: current_node.id,
+          context: context ?? {}
+        }
+        state.log.entries.push(entry)
       state_writes:
-        - "log.events"
-        - "log.warnings"
-        - "log.errors"
+        - "log.entries"
       state_reads: []
 
     since: "3.0.0"
-    replaces:
-      - log_event
-      - log_warning
-      - log_error
-
-  # --------------------------------------------------------------------------
-  # log_session_snapshot
-  # --------------------------------------------------------------------------
-  log_session_snapshot:
-    category: core/logging
-    description:
-      brief: Record mid-session checkpoint
-      detail: |
-        Records a snapshot at a critical decision point. Useful for
-        long-running workflows where you want checkpoints at significant
-        moments. Can optionally write an intermediate log file.
-      notes:
-        - Always executes (level-independent)
-        - write_intermediate creates a snapshot file
-        - Useful before destructive operations
-
-    parameters:
-      - name: description
-        type: string
-        required: true
-        description: What decision or event occurred
-        interpolatable: true
-
-      - name: write_intermediate
-        type: boolean
-        required: false
-        default: false
-        description: Write log to file at this point
-        interpolatable: false
-
-      - name: node
-        type: string
-        required: false
-        description: Node identifier (auto-detected)
-        interpolatable: true
-
-    payload:
-      kind: composite
-      tool: null
-      effect: |
-        snapshot = {
-          timestamp: now_iso8601(),
-          node: node ?? current_node.id,
-          description: description,
-          log_path: null
-        }
-
-        if write_intermediate:
-          snapshot_count = len(state.log.metadata.session.snapshot_points) + 1
-          snapshot_path = format_snapshot_path(
-            state.log.metadata.skill_name,
-            now_iso8601(),
-            snapshot_count
-          )
-
-          log_content = format_log(state.log, "yaml")
-          mkdir -p dirname(snapshot_path)
-          write_file(snapshot_path, log_content)
-
-          snapshot.log_path = snapshot_path
-
-        state.log.metadata.session.snapshot_points.push(snapshot)
-      state_writes:
-        - "log.metadata.session.snapshot_points"
-      state_reads: []
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # finalize_log
-  # --------------------------------------------------------------------------
-  finalize_log:
-    category: core/logging
-    description:
-      brief: Complete log with timing and outcome
-      detail: |
-        Completes the log with execution timing, outcome, and summary.
-        Should be called at workflow end (success, error, or cancel).
-        Sets flags.log_finalized to true.
-      notes:
-        - Call at workflow end (any ending node)
-        - Calculates duration from start_time
-        - Auto-generates summary if not provided
-
-    parameters:
-      - name: outcome
-        type: string
-        required: true
-        description: "Final result: success, partial, error, cancelled"
-        enum:
-          - success
-          - partial
-          - error
-          - cancelled
-        interpolatable: true
-
-      - name: ending_node
-        type: string
-        required: false
-        description: Last executed node (auto-detected)
-        interpolatable: true
-
-      - name: summary
-        type: string
-        required: false
-        description: Human-readable execution summary
-        interpolatable: true
-
-    payload:
-      kind: state_mutation
-      tool: null
-      effect: |
-        state.log.execution.end_time = now_iso8601()
-        state.log.execution.duration_seconds = time_diff_seconds(
-          state.log.execution.start_time,
-          state.log.execution.end_time
-        )
-        state.log.execution.outcome = outcome
-        state.log.execution.ending_node = ending_node ?? current_node.id
-        state.log.summary = summary ?? auto_generate_summary()
-        state.flags.log_finalized = true
-      state_writes:
-        - "log.execution"
-        - "log.summary"
-        - "flags.log_finalized"
-      state_reads:
-        - "log.execution.start_time"
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # write_log
-  # --------------------------------------------------------------------------
-  write_log:
-    category: core/logging
-    description:
-      brief: Write log to file
-      detail: |
-        Writes the finalized log to a file. Supports multiple output
-        formats (YAML, JSON, Markdown). Path supports interpolation and
-        has sensible defaults.
-      notes:
-        - Default path pattern based on skill name and timestamp
-        - Creates parent directories if needed
-        - Stores actual path in computed.log_path
-
-    parameters:
-      - name: format
-        type: string
-        required: false
-        default: yaml
-        description: "Output format: yaml, json, markdown"
-        enum:
-          - yaml
-          - json
-          - markdown
-        interpolatable: false
-
-      - name: path
-        type: string
-        required: false
-        description: Output path (default based on skill name and timestamp)
-        interpolatable: true
-
-      - name: include_node_history
-        type: boolean
-        required: false
-        default: true
-        description: Include node_history array
-        interpolatable: false
-
-      - name: include_events
-        type: boolean
-        required: false
-        default: true
-        description: Include events array
-        interpolatable: false
-
-    payload:
-      kind: side_effect
-      tool: null
-      effect: |
-        log_content = format_log(state.log, format, {
-          include_node_history: include_node_history ?? true,
-          include_events: include_events ?? true
-        })
-        effective_path = path ?? format_default_log_path(
-          state.log.metadata.skill_name,
-          state.log.execution.start_time,
-          format
-        )
-        mkdir -p dirname(effective_path)
-        write_file(effective_path, log_content)
-        state.computed.log_path = effective_path
-      state_writes:
-        - "computed.log_path"
-      state_reads:
-        - "log"
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # apply_log_retention
-  # --------------------------------------------------------------------------
-  apply_log_retention:
-    category: core/logging
-    description:
-      brief: Clean up old log files
-      detail: |
-        Cleans up old log files according to retention policy. Supports
-        count-based (keep N newest) or time-based (keep files newer than
-        N days) retention strategies.
-      notes:
-        - "strategy: none - no cleanup"
-        - "strategy: count - keep N newest files"
-        - "strategy: days - keep files newer than N days"
-        - Stores count of deleted files in computed.logs_deleted
-
-    parameters:
-      - name: path
-        type: string
-        required: true
-        description: Directory containing logs
-        interpolatable: true
-
-      - name: strategy
-        type: string
-        required: true
-        description: "Retention strategy: none, days, count"
-        enum:
-          - none
-          - days
-          - count
-        interpolatable: false
-
-      - name: days
-        type: number
-        required: false
-        description: Max age in days (required if strategy=days)
-        interpolatable: false
-
-      - name: count
-        type: number
-        required: false
-        description: Max files to keep (required if strategy=count)
-        interpolatable: false
-
-      - name: pattern
-        type: string
-        required: false
-        default: "*.yaml"
-        description: Glob pattern for log files
-        interpolatable: false
-
-    payload:
-      kind: side_effect
-      tool: null
-      effect: |
-        if strategy == "none":
-          return
-
-        files = glob(path, pattern ?? "*.yaml").sort_by_mtime()
-
-        if strategy == "count":
-          to_delete = files[count:]
-        elif strategy == "days":
-          cutoff = now() - days * 86400
-          to_delete = files.filter(f => mtime(f) < cutoff)
-
-        for file in to_delete:
-          delete_file(file)
-
-        state.computed.logs_deleted = len(to_delete)
-      state_writes:
-        - "computed.logs_deleted"
-      state_reads: []
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # output_ci_summary
-  # --------------------------------------------------------------------------
-  output_ci_summary:
-    category: core/logging
-    description:
-      brief: Format output for CI environments
-      detail: |
-        Formats and outputs log summary for CI environments like GitHub
-        Actions. Can emit annotations for errors and warnings. Writes to
-        GITHUB_STEP_SUMMARY when in GitHub Actions environment.
-      notes:
-        - "github format: writes to GITHUB_STEP_SUMMARY"
-        - "plain format: prints to stdout"
-        - "json format: prints JSON to stdout"
-        - Annotations emit ::error and ::warning prefixes
-
-    parameters:
-      - name: format
-        type: string
-        required: false
-        description: "CI format: github, plain, json, none"
-        enum:
-          - github
-          - plain
-          - json
-          - none
-        interpolatable: false
-
-      - name: annotations
-        type: boolean
-        required: false
-        default: true
-        description: Emit annotations for errors/warnings
-        interpolatable: false
-
-      - name: output_file
-        type: string
-        required: false
-        description: Override GITHUB_STEP_SUMMARY path
-        interpolatable: true
-
-    payload:
-      kind: side_effect
-      tool: null
-      effect: |
-        if format == "none":
-          return
-
-        if format == "github":
-          summary_path = output_file ?? env.GITHUB_STEP_SUMMARY
-          append_file(summary_path, format_github_summary(state.log))
-
-          if annotations:
-            for error in state.log.errors:
-              echo "::error file={error.context.file},line={error.context.line}::{error.message}"
-            for warning in state.log.warnings:
-              echo "::warning::{warning.message}"
-
-        elif format == "plain":
-          print(format_plain_summary(state.log))
-
-        elif format == "json":
-          print(json_dumps(state.log))
-      state_writes: []
-      state_reads:
-        - "log"
-
-    since: "1.0.0"
 
   # ==========================================================================
   # category: core/state

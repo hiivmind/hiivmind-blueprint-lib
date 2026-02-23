@@ -97,16 +97,10 @@ nodes:
         based on state, flags, or any condition supported by precondition types.
 
         The condition is evaluated once; the result determines which branch is taken.
-
-        With `audit` enabled, the node evaluates ALL nested conditions (no short-circuit)
-        and collects results with error messages. This replaces the deprecated
-        `validation_gate` node type.
       notes:
         - Condition is a single precondition object (often a composite like all_of, any_of, xor_of)
         - Both true and false branches are required
         - Use for binary decisions based on state
-        - With audit enabled, replaces validation_gate functionality
-        - Audit mode evaluates all conditions (no short-circuit) for comprehensive error reporting
 
     fields:
       - name: type
@@ -128,45 +122,6 @@ nodes:
           Must have a 'type' field matching a defined precondition type
           (e.g., state_check, path_check, all_of, any_of, xor_of).
 
-          For multi-condition validation with audit, use a composite precondition:
-          ```yaml
-          condition:
-            type: all_of
-            conditions:
-              - type: path_check
-                path: "config.yaml"
-                check: is_file
-              - type: tool_check
-                tool: git
-                capability: available
-          ```
-
-      - name: audit
-        type: object
-        required: false
-        description: |
-          Enable audit mode to evaluate ALL conditions without short-circuiting
-          and collect detailed results. Used for validation scenarios where you
-          need to report all failures, not just the first one.
-        properties:
-          - name: enabled
-            type: boolean
-            required: false
-            default: false
-            description: Enable audit mode (no short-circuit, collect all results)
-          - name: output
-            type: string
-            required: false
-            default: "computed.audit_results"
-            description: State path where audit results are written
-          - name: messages
-            type: object
-            required: false
-            description: |
-              Error messages keyed by precondition type. When a condition of
-              the given type fails, this message is included in the audit output.
-              Keys are precondition type names (e.g., path_check, tool_check).
-
       - name: branches
         type: object
         required: true
@@ -183,67 +138,20 @@ nodes:
 
     execution:
       effect: |
-        if node.audit.enabled:
-          # Audit mode: evaluate ALL conditions, no short-circuit
-          audit_results = {
-            passed: true,
-            total: 0,
-            passed_count: 0,
-            failed_count: 0,
-            results: []
-          }
-
-          # For composite conditions, iterate through nested conditions
-          conditions = get_nested_conditions(node.condition)
-          for index, condition in enumerate(conditions):
-            result = evaluate_precondition(condition, state)
-            audit_results.total += 1
-
-            entry = {
-              index: index,
-              condition: condition,
-              passed: result
-            }
-
-            if result:
-              audit_results.passed_count += 1
-            else:
-              audit_results.passed_count += 0
-              audit_results.failed_count += 1
-              audit_results.passed = false
-              # Add message from audit.messages if available
-              if node.audit.messages and node.audit.messages[condition.type]:
-                entry.message = node.audit.messages[condition.type]
-
-            audit_results.results.append(entry)
-
-          # Write results to state
-          output_path = node.audit.output or "computed.audit_results"
-          set_nested(state, output_path, audit_results)
-
-          if audit_results.passed:
-            return route_to(node.branches.on_true)
-          else:
-            return route_to(node.branches.on_false)
+        result = evaluate_precondition(node.condition, state)
+        if result == true:
+          return route_to(node.branches.on_true)
         else:
-          # Normal mode: short-circuit evaluation
-          result = evaluate_precondition(node.condition, state)
-          if result == true:
-            return route_to(node.branches.on_true)
-          else:
-            return route_to(node.branches.on_false)
+          return route_to(node.branches.on_false)
       state_reads:
         - Fields referenced in condition parameters via ${} interpolation
         - Fields checked by the precondition type
-      state_writes:
-        - "computed.audit_results (when audit.enabled is true)"
-        - "Custom path via audit.output (when audit.enabled is true)"
+      state_writes: []
 
     related:
       - action
       - user_prompt
     since: "1.0.0"
-    audit_since: "2.0.0"
 
   # ==========================================================================
   # category: core/reference
