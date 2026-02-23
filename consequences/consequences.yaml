@@ -1342,15 +1342,7 @@ consequences:
   parse_intent_flags:
     category: core/intent
     description:
-      brief: Parse 3VL flags from user input
-      detail: |
-        Parses user input and sets 3-valued logic (3VL) flags for intent
-        detection. Each flag can be True (T), False (F), or Unknown (U)
-        based on keyword matching.
-      notes:
-        - "3VL values: T (True), F (False), U (Unknown)"
-        - Negative keywords checked first (more specific)
-        - Unknown is the default when no keywords match
+      brief: Parse 3VL flags from user input via keyword matching
 
     parameters:
       - name: input
@@ -1362,7 +1354,7 @@ consequences:
       - name: flag_definitions
         type: object
         required: true
-        description: Map of flag names to keyword definitions
+        description: Map of flag names to {keywords, negative_keywords} definitions
         interpolatable: true
 
       - name: store_as
@@ -1376,26 +1368,9 @@ consequences:
       kind: computation
       tool: null
       effect: |
-        flags = {}
-        for flag_name, definition in flag_definitions:
-          flags[flag_name] = "U"  # Default: Unknown
-
-          # Check negative keywords first (more specific)
-          if definition.negative_keywords:
-            for keyword in definition.negative_keywords:
-              if input.toLowerCase().includes(keyword.toLowerCase()):
-                flags[flag_name] = "F"
-                break
-
-          # Check positive keywords (if not already F)
-          if flags[flag_name] != "F":
-            for keyword in definition.keywords:
-              if input.toLowerCase().includes(keyword.toLowerCase()):
-                flags[flag_name] = "T"
-                break
-
+        # For each flag: default U. Check negative_keywords first (->F),
+        # then keywords (->T). Case-insensitive. Store map of flag->T/F/U.
         set_state_value(store_as, flags)
-        return success
       state_writes:
         - "${store_as}"
       state_reads: []
@@ -1408,26 +1383,7 @@ consequences:
   match_3vl_rules:
     category: core/intent
     description:
-      brief: Match 3VL flags against rule table
-      detail: |
-        Matches 3VL flags against a rule table and ranks candidate actions.
-        Uses Kleene 3-valued logic with proper U (unknown) handling:
-        - Rule U = "don't care" (wildcard) - condition is skipped
-        - State U = uncertain - counts as soft match if rule expects T/F
-        - Hard match: both state and rule are T, or both are F
-        - Soft match: state is U but rule expects T/F (uncertain satisfaction)
-        - Exclusion: state T vs rule F, or state F vs rule T (contradiction)
-
-        Ranking: (-hard_matches, +soft_matches, +effective_conditions)
-        This prefers rules with more definite matches, fewer uncertain matches,
-        and fewer effective conditions (more specific rules win ties).
-      notes:
-        - "Rule U = don't care (wildcard, skip this condition)"
-        - "State U vs Rule T/F = soft match (uncertain satisfaction)"
-        - "Hard match: state T + rule T, or state F + rule F"
-        - "Exclusion: state T + rule F, or state F + rule T"
-        - "Effective conditions = non-U conditions in rule"
-        - Clear winner determined by full ranking tuple
+      brief: Match 3VL flags against rule table and rank candidates
 
     parameters:
       - name: flags
@@ -1453,85 +1409,12 @@ consequences:
       kind: computation
       tool: null
       effect: |
-        candidates = []
-
-        for rule in rules:
-          hard_matches = 0
-          soft_matches = 0
-          effective_conditions = 0  # Non-U conditions in rule
-          excluded = False
-
-          for condition_key, rule_val in rule.conditions:
-            state_val = flags[condition_key] ?? "U"
-
-            # Rule says "don't care" - skip this condition entirely
-            if rule_val == "U":
-              continue
-
-            # Count effective (non-U) conditions in rule
-            effective_conditions += 1
-
-            if (state_val == "T" and rule_val == "T") or \
-               (state_val == "F" and rule_val == "F"):
-              hard_matches += 1          # Definite match
-            elif state_val == "U":
-              soft_matches += 1          # Uncertain satisfaction
-            else:
-              # state T vs rule F, or state F vs rule T
-              excluded = True            # Contradiction
-              break
-
-          if not excluded:
-            candidates.append({
-              rule: rule,
-              hard_matches: hard_matches,
-              soft_matches: soft_matches,
-              effective_conditions: effective_conditions,
-              # Legacy compatibility fields
-              score: hard_matches,
-              condition_count: effective_conditions
-            })
-
-        # Sort by: hard matches (desc), soft matches (asc), effective conditions (asc)
-        # More hard matches = better, fewer soft matches = more certain,
-        # fewer conditions = more specific rule
-        candidates.sort(by: (-hard_matches, +soft_matches, +effective_conditions))
-
-        # Determine if clear winner using full ranking tuple
-        if len(candidates) == 0:
-          clear_winner = False
-          winner = null
-          tied_at_top = []
-        elif len(candidates) == 1:
-          clear_winner = True
-          winner = candidates[0].rule
-          tied_at_top = []
-        else:
-          top = candidates[0]
-
-          # Count how many candidates tie with the top using full tuple
-          tied_at_top = [c for c in candidates
-                        if c.hard_matches == top.hard_matches and \
-                           c.soft_matches == top.soft_matches and \
-                           c.effective_conditions == top.effective_conditions]
-
-          if len(tied_at_top) == 1:
-            clear_winner = True
-            winner = top.rule
-          else:
-            clear_winner = False
-            winner = null
-
-        result = {
-          clear_winner: clear_winner,
-          winner: winner,
-          tied_candidates: tied_at_top if not clear_winner else [],
-          top_candidates: candidates[0:3],
-          all_candidates: candidates
-        }
-
+        # For each rule, compare flags against rule.conditions:
+        #   Rule U = wildcard (skip). Same values = hard match.
+        #   State U vs Rule T/F = soft match. Contradiction = excluded.
+        # Rank by: most hard matches, fewest soft matches, fewest conditions.
+        # Result: { clear_winner, winner, top_candidates, all_candidates }
         set_state_value(store_as, result)
-        return success
       state_writes:
         - "${store_as}"
       state_reads: []
@@ -1860,30 +1743,21 @@ consequences:
   run_command:
     category: extensions/scripting
     description:
-      brief: Execute script with specified interpreter
-      detail: |
-        Unified command execution consequence. Executes a script with the
-        specified interpreter (or auto-detects from extension).
-      notes:
-        - "interpreter: bash, python, node, ruby, or auto"
-        - "auto mode detects from extension: .py->python3, .sh->bash, .js->node"
-        - Args support ${} interpolation
-        - Can activate Python venv before execution
-        - Can set environment variables
+      brief: Execute script with specified or auto-detected interpreter
 
     parameters:
-      - name: interpreter
-        type: string
-        required: false
-        default: auto
-        description: "Interpreter: auto, bash, python, node, ruby"
-        interpolatable: false
-
       - name: script
         type: string
         required: true
         description: Path to script (relative to repo root)
         interpolatable: true
+
+      - name: interpreter
+        type: string
+        required: false
+        default: auto
+        description: "Interpreter: auto (.py->python3, .sh->bash, .js->node), bash, python, node, ruby"
+        interpolatable: false
 
       - name: args
         type: array
@@ -1904,62 +1778,13 @@ consequences:
         description: Working directory for script execution
         interpolatable: true
 
-      - name: venv
-        type: string
-        required: false
-        description: Python virtual environment path to activate
-        interpolatable: true
-
-      - name: env
-        type: object
-        required: false
-        description: Environment variables to set
-        interpolatable: true
-
     payload:
       kind: tool_call
       tool: Bash
       effect: |
-        script_path = interpolate(script)
-
-        # Determine interpreter
-        if interpreter == "auto" or interpreter == null:
-          extension = script_path.split('.').pop()
-          interp = match extension:
-            "py" -> "python3"
-            "sh" -> "bash"
-            "bash" -> "bash"
-            "js" -> "node"
-            "ts" -> "npx ts-node"
-            "rb" -> "ruby"
-            _ -> null  # Use shebang
-        else:
-          interp = interpreter
-
-        # Build command
-        cmd = ""
-
-        # Add environment variables
-        if env:
-          for key, value in env:
-            cmd += key + "=" + interpolate(value) + " "
-
-        # Add venv activation
-        if venv:
-          cmd += "source " + interpolate(venv) + "/bin/activate && "
-
-        # Add interpreter
-        cmd += interp ? interp + " " : "./"
-        cmd += script_path
-
-        # Add arguments
-        if args:
-          cmd += " " + args.map(interpolate).join(" ")
-
-        # Add working directory
-        if working_directory:
-          cmd = "cd " + interpolate(working_directory) + " && " + cmd
-
+        # Build command: [env vars] [venv activation] [interpreter] script [args]
+        # Auto-detect interpreter from extension if not specified.
+        # Execute via Bash, store stdout in store_as if specified.
         result = Bash(cmd)
         if store_as:
           set_state_value(store_as, result.stdout.trim())

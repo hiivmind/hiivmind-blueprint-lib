@@ -336,26 +336,6 @@ examples:
           True if installed version >= min_version.
           Falls back to existence check if version unknown.
 
-      - title: "Check for authenticated tool (was tool_authenticated)"
-        yaml: |
-          condition:
-            type: tool_check
-            tool: gh
-            capability: authenticated
-        explanation: |
-          True if tool is available AND authenticated.
-          Returns true for tools that don't require auth.
-
-      - title: "Check for running daemon (was tool_daemon_ready)"
-        yaml: |
-          condition:
-            type: tool_check
-            tool: docker
-            capability: daemon_ready
-        explanation: |
-          True if daemon-based tool is ready.
-          Checks both availability and daemon status.
-
   # ==========================================================================
   # core/network - Network connectivity
   # ==========================================================================

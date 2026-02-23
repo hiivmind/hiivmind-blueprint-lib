@@ -269,26 +269,15 @@ examples:
           type: reference
           doc: "lib/corpus/patterns/sources/git.md"
           section: "Clone Repository"
-          context:
+          input:
             repo_url: "${computed.repo_url}"
             clone_path: "${computed.clone_path}"
-            branch: "${user_responses.branch}"
-          next_node: verify_clone
+          transitions:
+            on_success: verify_clone
+            on_failure: error_clone
       explanation: |
         Loads the git.md document, extracts the "Clone Repository" section,
-        and executes it with the provided context variables.
-
-    - title: "Full document execution (local doc)"
-      yaml: |
-        run_build_process:
-          type: reference
-          doc: "references/build-index.md"
-          context:
-            source_paths: "${computed.source_paths}"
-            output_path: "${computed.output_path}"
-          next_node: finalize_build
-      explanation: |
-        Executes the entire build-index.md document.
+        and executes it with the provided input variables.
 
     # --- Remote workflow references (inline mode) ---
     - title: "Remote workflow for intent detection"
@@ -296,29 +285,16 @@ examples:
         detect_intent:
           type: reference
           workflow: hiivmind/hiivmind-blueprint-lib@v3.0.0:intent-detection
-          context:
+          input:
             arguments: "${arguments}"
             intent_flags: "${intent_flags}"
             intent_rules: "${intent_rules}"
-            fallback_action: "show_main_menu"
-          next_node: execute_dynamic_route
+          transitions:
+            on_success: execute_dynamic_route
+            on_failure: error_intent
       explanation: |
         Fetches the intent-detection workflow from hiivmind-blueprint-lib
-        and executes it. State is shared with parent workflow.
-
-    - title: "Remote workflow with dynamic routing"
-      yaml: |
-        detect_intent:
-          type: reference
-          workflow: hiivmind/hiivmind-blueprint-lib@v3.0.0:intent-detection
-          context:
-            arguments: "${arguments}"
-            intent_flags: "${intent_flags}"
-            intent_rules: "${intent_rules}"
-          next_node: "${computed.dynamic_target}"
-      explanation: |
-        The next_node uses variable interpolation to route dynamically
-        based on the workflow output.
+        and executes it inline (shared state with parent).
 
     # --- Local workflow file references ---
     - title: "Local workflow file (direct path)"
@@ -328,22 +304,12 @@ examples:
           workflow: ./subflows/load-skill.yaml
           input:
             skill_path: "${args.path}"
-          next_node: analyze_structure
+          transitions:
+            on_success: analyze_structure
+            on_failure: error_load
       explanation: |
-        References a local workflow file directly by path. Bypasses index
-        resolution. Useful for development and monorepos.
-
-    - title: "Local indexed workflow"
-      yaml: |
-        validate_config:
-          type: reference
-          workflow: ./:validation-pipeline
-          context:
-            config_path: "${computed.config_file}"
-          next_node: process_config
-      explanation: |
-        References a workflow from local workflows/index.yaml.
-        Uses ./:workflow-name format for index-based resolution.
+        References a local workflow file directly by path.
+        Bypasses index resolution.
 
     # --- Spawn mode (isolated execution) ---
     - title: "Spawn mode with input/output mapping"
@@ -374,120 +340,15 @@ examples:
             skill_path: "${args.path}"
           output_mapping:
             state.loaded.content: output.skill_content
-            state.loaded.name: output.skill_name
           transitions:
             on_success: analyze_structure
             on_failure: error_generic
           error_mapping:
             error_prereqs: error_prerequisites
             error_locate: ask_user_for_path
-            error_parse: error_invalid_yaml
       explanation: |
         Error mapping routes to specific recovery nodes based on which
         error ending the sub-workflow reached.
-
-    - title: "Spawn mode for safe validation"
-      yaml: |
-        try_parse_config:
-          type: reference
-          mode: spawn
-          workflow: ./subflows/parse-config.yaml
-          input:
-            config_content: "${computed.raw_config}"
-          output_mapping:
-            state.computed.parsed_config: output.parsed
-            state.computed.config_schema: output.schema_version
-          transitions:
-            on_success: apply_config
-            on_failure: show_parse_error
-      explanation: |
-        Use spawn mode for operations that may fail, protecting parent state.
-
-    # --- Complete subflow definition example ---
-    - title: "Subflow definition with input/output schemas"
-      yaml: |
-        # subflows/load-skill.yaml
-        name: load-skill
-        version: 1.0.0
-        description: Load and validate a skill file
-
-        input_schema:
-          skill_path:
-            type: string
-            required: false
-            description: Path to skill file
-
-        output_schema:
-          skill_content:
-            type: string
-            description: Raw skill file content
-          skill_name:
-            type: string
-            description: Name from skill frontmatter
-
-        start_node: check_prerequisites
-        nodes:
-          check_prerequisites:
-            type: conditional
-            condition:
-              type: tool_check
-              tool: yq
-              capability: available
-            branches:
-              on_true: locate_skill
-              on_false: error_prereqs
-
-          locate_skill:
-            type: action
-            actions:
-              - type: local_file_ops
-                operation: read
-                path: "${skill_path}"
-                store_as: file_content
-              - type: inline
-                description: Parse YAML frontmatter from file content
-                pseudocode: |
-                  content = get_state_value("computed.file_content")
-                  frontmatter = parse_yaml_frontmatter(content)
-                  return frontmatter
-                store_as: computed.frontmatter
-            on_success: success
-            on_failure: error_locate
-
-        endings:
-          success:
-            type: success
-            message: "Skill loaded successfully"
-            output:
-              skill_content: "${computed.file_content}"
-              skill_name: "${computed.frontmatter.name}"
-          error_prereqs:
-            type: failure
-            category: prerequisites
-            message: "yq tool required but not available"
-          error_locate:
-            type: failure
-            category: not_found
-            message: "Could not locate or read skill file"
-      explanation: |
-        Complete subflow definition showing input_schema, output_schema,
-        and output field in endings for returning values to caller.
-
-    # --- Other examples ---
-    - title: "Override logging for sub-workflow"
-      yaml: |
-        detect_intent:
-          type: reference
-          workflow: hiivmind/hiivmind-blueprint-lib@v3.0.0:intent-detection
-          context:
-            arguments: "${arguments}"
-            logging:
-              level: "debug"
-              auto:
-                node_tracking: true
-          next_node: execute_dynamic_route
-      explanation: |
-        Pass logging config in context to override for sub-workflow.
 
   # ==========================================================================
   # user_prompt - Present question and route based on response
@@ -590,80 +451,6 @@ examples:
         Uses dynamic options from state array. When user selects, the original
         item is available at user_responses.{node_id}.selected. When user types
         custom text, it's at user_responses.{node_id}.text.
-
-    - title: "Tabular mode with prefix matching"
-      yaml: |
-        # Workflow-level configuration
-        initial_state:
-          prompts:
-            mode: "tabular"
-            tabular:
-              match_strategy: "prefix"
-              other_handler: "prompt"
-
-        # Node definition
-        select_output_format:
-          type: user_prompt
-          prompt:
-            question: "Which output format do you prefer?"
-            header: "Format"
-            options:
-              - id: markdown
-                label: "Markdown"
-                description: "Portable, readable in any editor"
-              - id: json
-                label: "JSON"
-                description: "Machine-readable, for automation"
-              - id: yaml
-                label: "YAML"
-                description: "Structured and human-readable"
-          on_response:
-            markdown:
-              next_node: generate_markdown
-            json:
-              next_node: generate_json
-            yaml:
-              next_node: generate_yaml
-      explanation: |
-        Tabular mode renders options as a markdown table.
-        User types "mark" -> matches "markdown" (prefix match).
-
-    - title: "Tabular mode with route to other handler"
-      yaml: |
-        initial_state:
-          prompts:
-            mode: "tabular"
-            tabular:
-              match_strategy: "exact"
-              other_handler: "route"
-
-        select_or_custom:
-          type: user_prompt
-          prompt:
-            question: "Select a preset or enter a custom value"
-            header: "Choice"
-            options:
-              - id: preset1
-                label: "Preset 1"
-                description: "Common configuration"
-              - id: preset2
-                label: "Preset 2"
-                description: "Alternative configuration"
-          on_response:
-            preset1:
-              next_node: apply_preset1
-            preset2:
-              next_node: apply_preset2
-            other:
-              consequence:
-                - type: mutate_state
-                  operation: set
-                  field: custom_value
-                  value: "${user_responses.select_or_custom.text}"
-              next_node: apply_custom
-      explanation: |
-        When other_handler is "route", unrecognized input routes to the
-        "other" handler instead of re-prompting.
 
   # ==========================================================================
   # validation_gate (DEPRECATED) - Use conditional with audit instead

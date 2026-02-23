@@ -255,21 +255,10 @@ nodes:
 
   reference:
     description:
-      brief: Loads and executes a reference document or workflow with configurable state isolation
+      brief: Loads and executes a reference document or sub-workflow
       detail: |
         A reference node delegates execution to a local document, local workflow file,
-        or remote workflow. This enables complex multi-step procedures to be
-        documented separately while remaining callable from workflows.
-
-        For local documents: typically markdown files containing detailed procedure
-        instructions. Context variables are available for interpolation.
-
-        For local workflows: direct .yaml file paths (e.g., ./subflows/load-skill.yaml)
-        that bypass index-based resolution. Useful for monorepos and development.
-
-        For remote workflows: fetched from GitHub repositories, enabling distributed
-        composable workflow ecosystems. See resolution/workflow-loader.yaml for
-        the loading protocol.
+        or remote workflow.
 
         Execution mode determines state handling:
         - inline (default): State is SHARED with parent workflow
@@ -278,11 +267,7 @@ nodes:
         - Must specify either 'doc' (local doc) or 'workflow' (local/remote workflow)
         - For doc, path is relative to plugin root
         - For workflow, use owner/repo@version:name (remote) or ./path/file.yaml (local)
-        - Section parameter only applies to doc references
-        - context/input variables are merged into sub-execution state
         - Inline mode shares state; spawn mode isolates state
-        - Either next_node (legacy) or transitions (new) required for routing
-        - Spawn mode requires transitions for success/failure distinction
 
     fields:
       - name: type
@@ -300,28 +285,25 @@ nodes:
         type: string
         required_unless: workflow
         description: |
-          Path to the reference document, relative to plugin root.
-          Typically a markdown file in lib/ or references/ directory.
+          Path to reference document, relative to plugin root.
           Mutually exclusive with 'workflow'.
 
       - name: workflow
         type: string
         required_unless: doc
         description: |
-          Workflow reference. Supports three formats:
-          - Remote: owner/repo@version:workflow-name (e.g., hiivmind/hiivmind-blueprint-lib@v3.0.0:intent-detection)
-          - Local file: ./path/to/workflow.yaml (direct file path, bypasses index)
-          - Local indexed: ./:workflow-name (uses workflows/index.yaml)
+          Workflow reference. Formats:
+          - Remote: owner/repo@version:workflow-name
+          - Local file: ./path/to/workflow.yaml
+          - Local indexed: ./:workflow-name
           Mutually exclusive with 'doc'.
-          See resolution/workflow-loader.yaml for loading protocol.
 
       - name: section
         type: string
         required: false
         description: |
-          Optional section heading within the document to execute.
+          Section heading within document to execute (doc references only).
           If omitted, the entire document is executed.
-          Only applicable when using 'doc' (not 'workflow').
 
       - name: mode
         type: string
@@ -329,33 +311,16 @@ nodes:
         enum: ["inline", "spawn"]
         default: "inline"
         description: |
-          Execution mode determining state handling:
-          - inline (default): State is SHARED with parent. Sub-workflow reads and
-            writes directly to parent state. Simple, but changes are permanent.
-          - spawn: State is COPIED at invocation. Sub-workflow executes in isolation.
-            Only values specified in output_mapping are merged back on success.
-            On failure, parent state is UNCHANGED.
-
-      - name: context
-        type: object
-        required: false
-        description: |
-          Variables to make available within the referenced document/workflow.
-          These can be referenced using ${} interpolation syntax.
-          For workflows, maps to workflow inputs.
-          Prefer 'input' for spawn mode (clearer semantics).
-        additionalProperties:
-          type: any
-          interpolatable: true
+          - inline (default): Shared state with parent.
+          - spawn: Copied state, isolated execution. Only output_mapping merges back on success.
 
       - name: input
         type: object
         required: false
         description: |
-          Explicit inputs for the sub-workflow (alternative to context).
-          Preferred for spawn mode as it clearly defines the interface.
-          Values are interpolated and passed to the sub-workflow.
-          For subflows with input_schema, validates against declared inputs.
+          Inputs for the sub-workflow. Values are interpolated and merged into
+          the sub-execution state. For subflows with input_schema, validates
+          against declared inputs.
         additionalProperties:
           type: any
           interpolatable: true
@@ -364,230 +329,78 @@ nodes:
         type: object
         required: false
         description: |
-          Maps sub-workflow outputs back to parent state. Only used with spawn mode.
+          Maps sub-workflow outputs back to parent state (spawn mode only).
           Keys are parent state paths, values are sub-workflow output paths.
-          On success, these mappings are applied; on failure, parent state unchanged.
-          For subflows with output_schema, validates against declared outputs.
+          On failure, parent state is unchanged.
         additionalProperties:
           type: string
-        example:
-          state.loaded.content: "output.skill_content"
-          state.loaded.name: "output.skill_name"
-
-      - name: next_node
-        type: node_reference
-        required_unless: transitions
-        description: |
-          Node or ending to route to after execution completes.
-          Supports variable interpolation (e.g., "${computed.dynamic_target}").
-          Routes regardless of success/failure outcome.
-          Prefer 'transitions' for spawn mode to handle success/failure separately.
 
       - name: transitions
         type: object
-        required_unless: next_node
-        description: |
-          Explicit routing for success and failure outcomes.
-          Required for spawn mode to properly handle isolated execution results.
-          Mutually exclusive with next_node.
+        required: true
+        description: Routing for success and failure outcomes.
         properties:
           - name: on_success
             type: node_reference
             required: true
-            description: Node or ending to route to when sub-workflow succeeds
+            description: Node or ending to route to on success
           - name: on_failure
             type: node_reference
             required: true
-            description: Node or ending to route to when sub-workflow fails
+            description: Node or ending to route to on failure
 
       - name: error_mapping
         type: object
         required: false
         description: |
           Maps specific sub-workflow error endings to recovery nodes.
-          Keys are ending IDs from the sub-workflow, values are nodes to route to.
           Takes precedence over transitions.on_failure for matched errors.
-          Enables fine-grained error recovery based on failure type.
         additionalProperties:
           type: node_reference
-        example:
-          error_prereqs: "error_prerequisites"
-          error_locate: "ask_user_for_path"
 
     execution:
       effect: |
-        # Determine source: workflow (local/remote) or document
+        # Resolve source: load workflow or read document
         if node.workflow:
-          # Workflow reference (local file, local indexed, or remote)
-          workflow = load_workflow(node.workflow)
-        else if node.doc:
-          # Local document reference
-          doc_path = resolve_path(plugin_root, node.doc)
-          doc_content = read_file(doc_path)
-
-          # Extract section if specified (only for doc references)
+          target = load_workflow(node.workflow)
+        else:
+          target = read_file(resolve_path(plugin_root, node.doc))
           if node.section:
-            doc_content = extract_section(doc_content, node.section)
+            target = extract_section(target, node.section)
+
+        # Interpolate inputs
+        inputs = interpolate_all(node.input, state)
+
+        # Execute based on mode
+        if (node.mode or "inline") == "inline":
+          # Shared state: merge inputs, execute, route on outcome
+          merge_into(state, inputs)
+          result = execute(target, state)
         else:
-          throw Error("Reference node requires 'workflow' or 'doc' parameter")
+          # Spawn: copy state, execute in isolation
+          isolated = deep_copy(state)
+          merge_into(isolated, inputs)
+          result = execute(target, isolated)
 
-        # Build inputs with interpolation (prefer input over context)
-        inputs = {}
-        if node.input:
-          for key, value in node.input.items():
-            inputs[key] = interpolate(value, state)
-        else if node.context:
-          for key, value in node.context.items():
-            inputs[key] = interpolate(value, state)
+          # On success: apply output_mapping to parent state
+          if result.success and node.output_mapping:
+            for parent_path, output_path in node.output_mapping:
+              set_nested(state, parent_path, get_nested(isolated, output_path))
 
-        # Determine execution mode
-        mode = node.mode or "inline"
-
-        if mode == "inline":
-          # INLINE MODE: Shared state execution
-          return execute_inline(node, workflow or doc_content, inputs, state)
+        # Route based on outcome
+        if result.success:
+          return route_to(node.transitions.on_success)
         else:
-          # SPAWN MODE: Isolated state execution
-          return execute_spawn(node, workflow, inputs, state)
-
-      helpers:
-        execute_inline: |
-          FUNCTION execute_inline(node, target, inputs, state):
-            # Merge inputs into shared state
-            for key, value in inputs.items():
-              state[key] = value
-
-            # Execute with shared state
-            if node.workflow:
-              execute_workflow(target, types, state)
-            else:
-              execute_document(target, inputs, state)
-
-            # Resolve routing (next_node or transitions)
-            if node.next_node:
-              target = resolve_routing_target(node.next_node, state)
-              return route_to(target)
-            else:
-              # Inline mode with transitions - check for success based on ending
-              # Note: For inline, success/failure is determined by ending type
-              if state.execution_result and state.execution_result.success:
-                return route_to(node.transitions.on_success)
-              else:
-                return route_to(node.transitions.on_failure)
-
-        execute_spawn: |
-          FUNCTION execute_spawn(node, workflow, inputs, state):
-            # SPAWN MODE: Copy-on-call semantics with isolated execution
-            # Parent state is UNCHANGED on failure
-
-            # 1. Create isolated state copy
-            isolated_state = deep_copy(state)
-
-            # 2. Merge inputs into isolated state
-            for key, value in inputs.items():
-              isolated_state[key] = value
-
-            # 3. Validate inputs against input_schema if defined
-            if workflow.input_schema:
-              validate_inputs(inputs, workflow.input_schema)
-
-            # 4. Execute in isolated context (conceptually via Task agent)
-            result = execute_workflow_isolated(workflow, types, isolated_state)
-
-            # 5. Handle result based on outcome
-            if result.success:
-              # Extract outputs from isolated state
-              ending = result.ending
-              outputs = {}
-
-              # Get outputs from ending definition if present
-              if ending.output:
-                for key, expr in ending.output.items():
-                  outputs[key] = resolve_value(expr, isolated_state)
-
-              # Apply output_mapping to parent state
-              if node.output_mapping:
-                for parent_path, output_path in node.output_mapping.items():
-                  value = get_nested(outputs, output_path) or get_nested(isolated_state, output_path)
-                  set_nested(state, parent_path, value)
-
-              # Validate outputs against output_schema if defined
-              if workflow.output_schema:
-                validate_outputs(outputs, workflow.output_schema)
-
-              return route_to(node.transitions.on_success)
-
-            else:
-              # Failure: Parent state UNCHANGED
-              ending_id = result.ending_id
-
-              # Check error_mapping for specific recovery
-              if node.error_mapping and node.error_mapping[ending_id]:
-                return route_to(node.error_mapping[ending_id])
-
-              # Default failure routing
-              return route_to(node.transitions.on_failure)
-
-        execute_workflow_isolated: |
-          FUNCTION execute_workflow_isolated(workflow, types, isolated_state):
-            # Execute workflow in isolated context
-            # This conceptually maps to Task agent execution:
-            #
-            # Task agent receives:
-            # - The workflow definition
-            # - A copy of the state
-            # - Type definitions
-            #
-            # Task agent returns:
-            # - success: boolean
-            # - ending_id: string (which ending was reached)
-            # - ending: object (the ending definition)
-            # - state: object (final isolated state, if needed)
-
-            try:
-              execute_workflow(workflow, types, isolated_state)
-              return {
-                success: true,
-                ending_id: isolated_state.reached_ending,
-                ending: workflow.endings[isolated_state.reached_ending],
-                state: isolated_state
-              }
-            catch (error):
-              return {
-                success: false,
-                ending_id: error.ending_id or "error",
-                error: error.message
-              }
-
-        validate_inputs: |
-          FUNCTION validate_inputs(inputs, input_schema):
-            for param_name, param_def in input_schema.items():
-              value = inputs.get(param_name)
-
-              if param_def.required and value is null:
-                if param_def.default is not null:
-                  inputs[param_name] = param_def.default
-                else:
-                  throw Error("Missing required input: {param_name}")
-
-              if value is not null and param_def.type:
-                if not type_matches(value, param_def.type):
-                  throw Error("Input {param_name} has wrong type: expected {param_def.type}")
-
-        validate_outputs: |
-          FUNCTION validate_outputs(outputs, output_schema):
-            for output_name, output_def in output_schema.items():
-              # Output validation is informational, not blocking
-              if output_name not in outputs:
-                LOG_WARN "Expected output not present: {output_name}"
+          if node.error_mapping and node.error_mapping[result.ending_id]:
+            return route_to(node.error_mapping[result.ending_id])
+          return route_to(node.transitions.on_failure)
 
       state_reads:
-        - Fields referenced in input/context values via ${} interpolation
+        - Fields referenced in input values via ${} interpolation
         - All state (for spawn mode copy)
       state_writes:
         - "Inline mode: Depends on workflow/document execution (shared state)"
         - "Spawn mode: Only fields specified in output_mapping (on success)"
-        - "Spawn mode failure: No writes (parent state unchanged)"
 
     related:
       - action
@@ -613,22 +426,15 @@ nodes:
         response. Each response option can optionally execute consequences before
         routing to the next node.
 
-        Execution mode is configured via initial_state.prompts:
+        Supports two prompt modes:
         - interactive (default) - Uses AskUserQuestion tool for structured prompts
         - tabular - Renders markdown table, parses user text response
-
-        This enables user-driven branching in workflows while maintaining deterministic
-        behavior once a choice is made.
       notes:
         - "Mode configured in initial_state.prompts (default: interactive)"
-        - "Interactive mode maps to Claude Code's AskUserQuestion tool"
-        - "Tabular mode renders markdown table and matches user text to option IDs"
         - "Header must be 12 characters or less"
         - "Options array should have 2-4 items"
         - "User responses are stored in state.user_responses"
         - "Each response handler can execute consequences before routing"
-        - "Tabular mode supports match strategies: exact, prefix, fuzzy"
-        - "When using tabular mode with other_handler: route, on_response.other is required"
 
     fields:
       - name: type
@@ -683,14 +489,12 @@ nodes:
             description: |
               State path containing an array of items to use as dynamic options.
               Use with option_mapping to transform items into option format.
-              Example: "computed.intent_matches.top_candidates"
 
           - name: option_mapping
             type: object
             required_with: options_from_state
             description: |
               Expressions to transform each item from options_from_state into an option.
-              Each expression is evaluated in the context of the current array item.
             properties:
               - name: id
                 type: string
@@ -700,12 +504,12 @@ nodes:
               - name: label
                 type: string
                 required: true
-                description: Expression for display label (e.g., "rule.name")
+                description: Expression for display label
 
               - name: description
                 type: string
                 required: true
-                description: Expression for description (e.g., "rule.description")
+                description: Expression for description
 
       - name: on_response
         type: object
@@ -729,432 +533,44 @@ nodes:
               type: node_reference
               required: true
               description: Node or ending to route to after this response
-        reserved_keys:
-          - name: selected
-            description: |
-              Handler invoked when user selects any option from a dynamic options list.
-              The selected item is available at user_responses.{node_id}.selected
-            for: options_from_state
-
-          - name: other
-            description: |
-              Handler invoked when user enters custom text (via "Other" option).
-              The text is available at user_responses.{node_id}.text
-            for: options_from_state
 
     execution:
       effect: |
-        # Get prompts configuration with multi-modal interface support
-        prompts_config = state.prompts or { interface: "auto" }
-
-        # Resolve interface (auto-detection or explicit)
-        interface = state.interface or "claude_code"
-
-        # Get mode for this interface
-        mode = get_mode_for_interface(interface, prompts_config)
-
-        # Determine options source (static vs dynamic)
+        # Resolve options (static from node.prompt.options, or dynamic from state)
         options = resolve_options(node, state)
 
-        # Execute based on mode
+        # Get prompt mode from config (default: interactive)
+        mode = state.prompts.mode or "interactive"
+
+        # Display prompt and collect response
         if mode == "interactive":
-          return execute_interactive_mode(node, options, state)
+          response = AskUserQuestion(node.prompt.question, node.prompt.header, options)
         else if mode == "tabular":
-          return execute_tabular_mode(node, options, state, prompts_config.tabular or {})
-        else if mode == "forms":
-          return execute_forms_mode(node, options, state)
-        else if mode == "structured":
-          return execute_structured_mode(node, options, state)
-        else if mode == "autonomous":
-          return execute_autonomous_mode(node, options, state, prompts_config.autonomous or {})
-        else:
-          throw Error("Unknown prompt mode: " + mode)
+          # Render options as markdown table, match user text to option IDs
+          response = render_table_and_match(node.prompt.question, options, state)
 
-      get_mode_for_interface: |
-        FUNCTION get_mode_for_interface(interface, prompts_config):
-          # Get modes configuration with defaults
-          modes = prompts_config.modes or {
-            claude_code: "interactive",
-            web: "forms",
-            api: "structured",
-            agent: "autonomous"
-          }
+        # Store response and route
+        state.user_responses[node_id] = { handler_id: response.selected_id }
 
-          # Return mode for detected interface
-          SWITCH interface:
-            CASE "claude_code":
-              RETURN modes.claude_code or "interactive"
-            CASE "web":
-              RETURN modes.web or "forms"
-            CASE "api":
-              RETURN modes.api or "structured"
-            CASE "agent":
-              RETURN modes.agent or "autonomous"
-            DEFAULT:
-              RETURN prompts_config.default_mode or "interactive"
+        handler = node.on_response[response.selected_id]
 
-      helpers:
-        resolve_options: |
-          FUNCTION resolve_options(node, state):
-            if node.prompt.options_from_state:
-              # Dynamic options: resolve from state and transform via mapping
-              source_items = get_state_value(node.prompt.options_from_state)
-              if source_items == null or source_items.length == 0:
-                throw Error("options_from_state resolved to empty array")
+        # Execute handler consequences if present
+        if handler.consequence:
+          for consequence in handler.consequence:
+            dispatch_consequence(consequence, state)
 
-              mapping = node.prompt.option_mapping
-              return source_items.map((item, index) => ({
-                id: evaluate_expression(mapping.id, item) or ("dynamic_" + index),
-                label: evaluate_expression(mapping.label, item),
-                description: evaluate_expression(mapping.description, item),
-                _source_item: item  # Preserve original item for handler
-              }))
-            else:
-              # Static options: use as-is
-              return node.prompt.options
-
-        execute_interactive_mode: |
-          FUNCTION execute_interactive_mode(node, options, state):
-            # Build AskUserQuestion payload
-            question_payload = {
-              questions: [{
-                question: node.prompt.question,
-                header: node.prompt.header,
-                options: options.map(opt => ({
-                  label: opt.label,
-                  description: opt.description
-                })),
-                multiSelect: false
-              }]
-            }
-
-            # Present question and await response
-            response = call_tool("AskUserQuestion", question_payload)
-
-            # Handle response and route
-            return handle_response(node, options, response, state, "interactive")
-
-        execute_tabular_mode: |
-          FUNCTION execute_tabular_mode(node, options, state, tabular_config):
-            # Check if resuming from awaiting_input
-            if state.awaiting_input and state.awaiting_input.node_id == node_id:
-              # Resuming - user_input contains their text response
-              user_input = state.awaiting_input.user_input
-              state.awaiting_input = null  # Clear awaiting state
-
-              # Match user input to options
-              match_result = match_user_input_to_option(user_input, options, tabular_config)
-
-              if match_result.matched:
-                # Found a match
-                response = { selected_id: match_result.option_id, text: user_input }
-                return handle_response(node, options, response, state, "tabular", match_result)
-              else:
-                # No match - handle based on other_handler config
-                other_handler = tabular_config.other_handler or "prompt"
-
-                if other_handler == "prompt":
-                  # Re-display table and re-prompt
-                  render_no_match_message(user_input)
-                  render_options_table(node.prompt.question, options, tabular_config)
-                  state.awaiting_input = { node_id: node_id, type: "tabular" }
-                  return { awaiting_input: true }
-
-                else if other_handler == "route":
-                  # Route to "other" handler
-                  if not node.on_response["other"]:
-                    throw Error("other_handler is 'route' but on_response.other not defined")
-                  state.user_responses[node_id] = { handler_id: "other", text: user_input }
-                  handler = node.on_response["other"]
-                  return execute_handler_and_route(handler, state)
-
-                else if other_handler == "fail":
-                  throw Error("No matching option for input: " + user_input)
-
-            else:
-              # First execution - render table and await input
-              render_options_table(node.prompt.question, options, tabular_config)
-              state.awaiting_input = { node_id: node_id, type: "tabular" }
-              return { awaiting_input: true }
-
-        render_options_table: |
-          FUNCTION render_options_table(question, options, tabular_config):
-            show_ids = tabular_config.show_option_ids != false
-            instruction = tabular_config.instruction_text or "**Please type the Option ID of your choice.**"
-
-            # Render question as heading
-            DISPLAY "## " + question
-            DISPLAY ""
-
-            # Render table header
-            if show_ids:
-              DISPLAY "| Option ID | Label | Description |"
-              DISPLAY "|-----------|-------|-------------|"
-            else:
-              DISPLAY "| Label | Description |"
-              DISPLAY "|-------|-------------|"
-
-            # Render options
-            for opt in options:
-              if show_ids:
-                DISPLAY "| " + opt.id + " | " + opt.label + " | " + opt.description + " |"
-              else:
-                DISPLAY "| " + opt.label + " | " + opt.description + " |"
-
-            DISPLAY ""
-            DISPLAY instruction
-
-        render_no_match_message: |
-          FUNCTION render_no_match_message(user_input):
-            DISPLAY "I didn't recognize \"" + user_input + "\" as a valid option."
-            DISPLAY ""
-
-        match_user_input_to_option: |
-          FUNCTION match_user_input_to_option(user_input, options, tabular_config):
-            strategy = tabular_config.match_strategy or "prefix"
-            case_sensitive = tabular_config.case_sensitive or false
-
-            # Normalize input
-            input = case_sensitive ? user_input : user_input.toLowerCase()
-            input = input.trim()
-
-            for opt in options:
-              opt_id = case_sensitive ? opt.id : opt.id.toLowerCase()
-
-              if strategy == "exact":
-                if input == opt_id:
-                  return { matched: true, option_id: opt.id, strategy: "exact" }
-
-              else if strategy == "prefix":
-                if opt_id.startsWith(input) or input.startsWith(opt_id):
-                  return { matched: true, option_id: opt.id, strategy: "prefix" }
-
-              else if strategy == "fuzzy":
-                threshold = tabular_config.fuzzy_threshold or 0.7
-                similarity = calculate_similarity(input, opt_id)
-                if similarity >= threshold:
-                  return { matched: true, option_id: opt.id, strategy: "fuzzy", similarity: similarity }
-
-            return { matched: false }
-
-        calculate_similarity: |
-          FUNCTION calculate_similarity(str1, str2):
-            # Levenshtein distance normalized to similarity score
-            # Returns value between 0.0 and 1.0
-            max_len = max(str1.length, str2.length)
-            if max_len == 0:
-              return 1.0
-            distance = levenshtein_distance(str1, str2)
-            return 1.0 - (distance / max_len)
-
-        execute_forms_mode: |
-          FUNCTION execute_forms_mode(node, options, state):
-            # Forms mode: render rich HTML-like forms for web interfaces
-            # Falls back to tabular for pure text interfaces
-            # The web interface renders this as clickable buttons/forms
-
-            DISPLAY "## " + node.prompt.question
-            DISPLAY ""
-
-            # Render options as a clean list (web UI will enhance to buttons)
-            for index, opt in enumerate(options):
-              DISPLAY "**{index + 1}. {opt.label}**"
-              DISPLAY "   {opt.description}"
-              DISPLAY ""
-
-            DISPLAY "_Select an option by number or name._"
-
-            # Set awaiting state for multi-turn
-            state.awaiting_input = { node_id: node_id, type: "forms" }
-            return { awaiting_input: true }
-
-        execute_structured_mode: |
-          FUNCTION execute_structured_mode(node, options, state):
-            # Structured mode: for API/programmatic access
-            # Returns JSON schema for expected response format
-
-            # Build structured prompt for API consumers
-            prompt_data = {
-              question: node.prompt.question,
-              options: options.map(opt => ({
-                id: opt.id,
-                label: opt.label,
-                description: opt.description
-              })),
-              response_format: {
-                selected_id: "string (required) - ID of selected option",
-                text: "string (optional) - Additional context"
-              }
-            }
-
-            # For API mode, we expect the response to come with the request
-            # Check if we have a pending response in state
-            if state.api_response and state.api_response.node_id == node_id:
-              response = state.api_response
-              state.api_response = null
-              return handle_response(node, options, response, state, "structured")
-
-            # Otherwise, return prompt data for API consumer
-            state.awaiting_input = {
-              node_id: node_id,
-              type: "structured",
-              prompt: prompt_data
-            }
-            return { awaiting_input: true, prompt: prompt_data }
-
-        execute_autonomous_mode: |
-          FUNCTION execute_autonomous_mode(node, options, state, autonomous_config):
-            # Autonomous mode: LLM evaluates options without user interaction
-            # Used for embedded agents that cannot prompt users
-
-            strategy = autonomous_config.strategy or "best_match"
-            context_fields = autonomous_config.context_fields or ["computed.intent_flags", "arguments"]
-            fallback = autonomous_config.fallback or "other"
-            confidence_threshold = autonomous_config.confidence_threshold or 0.5
-
-            # Gather context for evaluation
-            context = {}
-            for field in context_fields:
-              context[field] = get_nested(state, field)
-
-            # Evaluate options based on strategy
-            selected = null
-            confidence = 0
-
-            if strategy == "best_match":
-              # LLM evaluates which option best matches the context
-              # This is a conceptual evaluation - the LLM reasons about the options
-              for opt in options:
-                score = evaluate_option_match(opt, context, node.prompt.question)
-                if score > confidence:
-                  confidence = score
-                  selected = opt
-
-            else if strategy == "first_valid":
-              # Select first option that passes validation
-              for opt in options:
-                if validate_option(opt, context):
-                  selected = opt
-                  confidence = 1.0
-                  break
-
-            else if strategy == "weighted":
-              # Use weights from option metadata if available
-              for opt in options:
-                weight = opt.weight or 1.0
-                score = evaluate_option_match(opt, context, node.prompt.question) * weight
-                if score > confidence:
-                  confidence = score
-                  selected = opt
-
-            # Check confidence threshold
-            if selected == null or confidence < confidence_threshold:
-              # Use fallback handler
-              if node.on_response[fallback]:
-                state.user_responses[node_id] = {
-                  handler_id: fallback,
-                  autonomous: true,
-                  reason: "Below confidence threshold",
-                  confidence: confidence
-                }
-                handler = node.on_response[fallback]
-                return execute_handler_and_route(handler, state)
-              else:
-                throw Error("Autonomous mode: no match found and no fallback handler")
-
-            # Log selection if configured
-            if autonomous_config.explain_selection:
-              LOG_DEBUG "Autonomous selection: {selected.id} (confidence: {confidence})"
-              LOG_DEBUG "  Context: {JSON.stringify(context)}"
-
-            # Build response and route
-            response = { selected_id: selected.id, autonomous: true, confidence: confidence }
-            return handle_response(node, options, response, state, "autonomous")
-
-        evaluate_option_match: |
-          FUNCTION evaluate_option_match(option, context, question):
-            # Conceptual function: LLM evaluates how well the option matches
-            # Based on option description, context state, and the question
-            # Returns a confidence score between 0.0 and 1.0
-
-            # The LLM naturally performs this evaluation by reasoning about:
-            # - Does the option.label/description align with context.arguments?
-            # - Do any intent_flags suggest this option?
-            # - Is this option a logical answer to the question given context?
-
-            # This is interpreted by the LLM, not executed as code
-            RETURN evaluate_semantic_match(option.description, context)
-
-        validate_option: |
-          FUNCTION validate_option(option, context):
-            # Check if option is valid given current context
-            # Used by first_valid strategy
-            if option.requires:
-              for req in option.requires:
-                if not evaluate_precondition(req, context):
-                  return false
-            return true
-
-        handle_response: |
-          FUNCTION handle_response(node, options, response, state, mode, match_result = null):
-            # Determine handler based on response and options type
-            if node.prompt.options_from_state:
-              # Dynamic options handling
-              if response.is_other or (mode == "tabular" and not match_result):
-                state.user_responses[node_id] = { handler_id: "other", text: response.text }
-                handler = node.on_response["other"]
-              else:
-                selected_id = response.selected_id or find_selected_option_id(response, options)
-                selected_opt = options.find(opt => opt.id == selected_id)
-                state.user_responses[node_id] = {
-                  handler_id: "selected",
-                  selected: selected_opt._source_item,
-                  raw: { text: response.text, matched_by: match_result?.strategy },
-                  autonomous: response.autonomous or false
-                }
-                handler = node.on_response["selected"]
-            else:
-              # Static options handling
-              selected_id = response.selected_id or find_selected_option_id(response, options)
-              state.user_responses[node_id] = {
-                handler_id: selected_id,
-                raw: { text: response.text, matched_by: match_result?.strategy },
-                autonomous: response.autonomous or false
-              }
-              handler = node.on_response[selected_id]
-
-            return execute_handler_and_route(handler, state)
-
-        execute_handler_and_route: |
-          FUNCTION execute_handler_and_route(handler, state):
-            # Execute consequences if present
-            if handler.consequence:
-              for consequence in handler.consequence:
-                result = dispatch_consequence(consequence, state)
-                if result.failed:
-                  return route_to_error(result.error)
-
-            # Route to next node
-            return route_to(handler.next_node)
+        return route_to(handler.next_node)
 
       state_reads:
         - "state.prompts (for mode configuration)"
-        - "state.interface (for multi-modal dispatch)"
-        - "state.awaiting_input (for tabular/forms mode resumption)"
-        - "state.api_response (for structured mode)"
         - "Any fields referenced via ${} in consequence parameters"
         - "options_from_state path (if using dynamic options)"
-        - "autonomous.context_fields paths (for autonomous mode)"
       state_writes:
         - "user_responses.${node_id}"
-        - "awaiting_input (set when awaiting input, cleared when received)"
         - "Additional writes from consequence execution"
-
-    # Examples have been extracted to examples/nodes.yaml
 
     related:
       - conditional
       - action
     since: "1.0.0"
     updated: "2.4.0"
-    multi_modal_since: "2.4.0"

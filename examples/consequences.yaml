@@ -172,9 +172,6 @@ examples:
           - type: parse_intent_flags
             input: "${arguments}"
             flag_definitions:
-              wants_help:
-                keywords: ["help", "how", "what"]
-                negative_keywords: []
               wants_add:
                 keywords: ["add", "create", "new"]
                 negative_keywords: ["don't add", "not new"]
@@ -183,8 +180,8 @@ examples:
                 negative_keywords: ["not git"]
             store_as: computed.intent_flags
         explanation: |
-          Parses input into 3-valued logic flags (T/F/U).
-          Negative keywords are checked first for exclusions.
+          Parses input into 3VL flags (T/F/U) via keyword matching.
+          Negative keywords checked first. Default is U (Unknown).
 
     match_3vl_rules:
       - title: "Match intent flags against rule table"
@@ -194,24 +191,17 @@ examples:
             rules:
               - name: add_git_source
                 action: add_git
-                description: Add a git repository source
                 conditions:
                   wants_add: T
                   is_git: T
               - name: add_any_source
                 action: add_source
-                description: Add any type of source
                 conditions:
                   wants_add: T
-              - name: show_help
-                action: help
-                description: Show help information
-                conditions:
-                  wants_help: T
             store_as: computed.intent_matches
         explanation: |
           Matches 3VL flags against rules and ranks candidates.
-          Returns clear_winner flag and ranked candidates.
+          Returns { clear_winner, winner, top_candidates }.
 
     dynamic_route:
       - title: "Route based on matched intent"
@@ -609,29 +599,15 @@ examples:
           Runs script, auto-detecting interpreter from extension.
           .py -> python3, .sh -> bash, .js -> node
 
-      - title: "Run Python script with venv"
-        yaml: |
-          - type: run_command
-            interpreter: python
-            script: "scripts/process.py"
-            venv: ".venv"
-            args:
-              - "${computed.config_path}"
-            store_as: computed.processed_data
-        explanation: |
-          Runs Python script with virtual environment activation.
-
-      - title: "Run bash script with environment"
+      - title: "Run script in specific directory"
         yaml: |
           - type: run_command
             interpreter: bash
             script: "scripts/build.sh"
-            env:
-              BUILD_DIR: "${computed.build_path}"
-              VERSION: "${computed.version}"
+            working_directory: "${computed.build_path}"
             store_as: computed.build_output
         explanation: |
-          Runs bash script with environment variables.
+          Runs bash script with explicit working directory.
 
   # ==========================================================================
   # extensions/web - Web fetch and caching
