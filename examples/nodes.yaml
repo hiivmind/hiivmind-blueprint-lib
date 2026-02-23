@@ -141,7 +141,8 @@ examples:
           type: conditional
           description: Validate environment before proceeding
           condition:
-            type: all_of
+            type: composite
+            operator: all
             conditions:
               - type: path_check
                 path: "config.yaml"
@@ -182,7 +183,8 @@ examples:
           type: conditional
           description: Validate source configuration
           condition:
-            type: all_of
+            type: composite
+            operator: all
             conditions:
               - type: state_check
                 field: source_type
@@ -205,13 +207,14 @@ examples:
         Stores audit results at computed.source_validation instead of
         the default computed.audit_results.
 
-    - title: "Audit with any_of (flexible requirements)"
+    - title: "Audit with composite any (flexible requirements)"
       yaml: |
         check_yaml_processor:
           type: conditional
           description: Check for any available YAML processor
           condition:
-            type: any_of
+            type: composite
+            operator: any
             conditions:
               - type: tool_check
                 tool: yq
@@ -227,16 +230,17 @@ examples:
             on_true: process_yaml
             on_false: suggest_install
       explanation: |
-        For any_of with audit, all conditions are still evaluated to collect
-        complete results, but passed is true if ANY condition passed.
+        For composite operator: any with audit, all conditions are still evaluated
+        to collect complete results, but passed is true if ANY condition passed.
 
-    - title: "Audit with xor_of (exactly one)"
+    - title: "Audit with composite xor (exactly one)"
       yaml: |
         check_single_source_type:
           type: conditional
           description: Exactly one source type must be selected
           condition:
-            type: xor_of
+            type: composite
+            operator: xor
             conditions:
               - type: state_check
                 field: flags.is_git_source
@@ -255,8 +259,8 @@ examples:
             on_true: configure_source
             on_false: ask_source_type
       explanation: |
-        For xor_of with audit, passed is true only if exactly one condition
-        is true. If zero or multiple are true, routes to on_false.
+        For composite operator: xor with audit, passed is true only if exactly
+        one condition is true. If zero or multiple are true, routes to on_false.
 
   # ==========================================================================
   # reference - Load and execute reference document or workflow
@@ -711,7 +715,8 @@ examples:
         validate_env:
           type: conditional
           condition:
-            type: all_of
+            type: composite
+            operator: all
             conditions:
               - type: path_check
                 path: "config.yaml"
@@ -730,7 +735,7 @@ examples:
       explanation: |
         Migration steps:
         1. Change type from validation_gate to conditional
-        2. Wrap validations in condition.type: all_of
+        2. Wrap validations in condition.type: composite with operator: all
         3. Move error_message to audit.messages keyed by type
         4. Add audit.enabled: true
         5. Rename on_valid/on_invalid to branches.on_true/on_false

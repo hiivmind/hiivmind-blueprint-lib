@@ -11,147 +11,57 @@ preconditions:
   # ==========================================================================
 
   # --------------------------------------------------------------------------
-  # all_of
+  # composite
   # --------------------------------------------------------------------------
-  all_of:
+  composite:
     category: core/composite
     description:
-      brief: All nested conditions must be true (AND)
+      brief: Combine conditions with logical operators
       detail: |
-        Evaluates to true only if all nested conditions evaluate to true.
-        Implements logical AND operation with short-circuit evaluation.
-      notes:
-        - Short-circuits on first false condition
-        - Empty conditions array evaluates to true
-        - Recursive - nested conditions can be any precondition type
+        Evaluates nested conditions using the specified logical operator.
+        Supports AND (all), OR (any), NOR (none), and XOR (exactly one).
 
     parameters:
+      - name: operator
+        type: string
+        required: true
+        description: "Logical operator: all, any, none, xor"
+        enum:
+          - all
+          - any
+          - none
+          - xor
+        interpolatable: false
       - name: conditions
         type: array
         required: true
-        description: Array of precondition objects
+        description: Array of precondition objects to evaluate
         interpolatable: false
 
     evaluation:
       effect: |
-        for condition in conditions:
-          if not evaluate(condition):
-            return false
-        return true
-      reads:
-        - "varies by nested conditions"
-      functions:
-        - evaluate
+        if operator == "all":
+          for cond in conditions:
+            if not evaluate(cond): return false
+          return true
+        elif operator == "any":
+          for cond in conditions:
+            if evaluate(cond): return true
+          return false
+        elif operator == "none":
+          for cond in conditions:
+            if evaluate(cond): return false
+          return true
+        elif operator == "xor":
+          count = sum(1 for cond in conditions if evaluate(cond))
+          return count == 1
 
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # any_of
-  # --------------------------------------------------------------------------
-  any_of:
-    category: core/composite
-    description:
-      brief: At least one condition must be true (OR)
-      detail: |
-        Evaluates to true if at least one nested condition evaluates to true.
-        Implements logical OR operation with short-circuit evaluation.
-      notes:
-        - Short-circuits on first true condition
-        - Empty conditions array evaluates to false
-        - Recursive - nested conditions can be any precondition type
-
-    parameters:
-      - name: conditions
-        type: array
-        required: true
-        description: Array of precondition objects
-        interpolatable: false
-
-    evaluation:
-      effect: |
-        for condition in conditions:
-          if evaluate(condition):
-            return true
-        return false
-      reads:
-        - "varies by nested conditions"
-      functions:
-        - evaluate
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # none_of
-  # --------------------------------------------------------------------------
-  none_of:
-    category: core/composite
-    description:
-      brief: No conditions may be true (NOR)
-      detail: |
-        Evaluates to true only if no nested conditions evaluate to true.
-        Implements logical NOR (negated OR) operation.
-      notes:
-        - Returns false on first true condition
-        - Empty conditions array evaluates to true
-        - Useful for exclusion checks
-
-    parameters:
-      - name: conditions
-        type: array
-        required: true
-        description: Array of precondition objects
-        interpolatable: false
-
-    evaluation:
-      effect: |
-        for condition in conditions:
-          if evaluate(condition):
-            return false
-        return true
-      reads:
-        - "varies by nested conditions"
-      functions:
-        - evaluate
-
-    since: "1.0.0"
-
-  # --------------------------------------------------------------------------
-  # xor_of
-  # --------------------------------------------------------------------------
-  xor_of:
-    category: core/composite
-    description:
-      brief: Exactly one condition must be true (XOR)
-      detail: |
-        Evaluates to true if exactly one nested condition evaluates to true.
-        Returns false if zero or more than one condition is true.
-        Does not short-circuit - always evaluates all conditions.
-      notes:
-        - Always evaluates all conditions (no short-circuit)
-        - Empty conditions array evaluates to false
-        - Useful for mutually exclusive states (e.g., exactly one source type selected)
-        - Recursive - nested conditions can be any precondition type
-
-    parameters:
-      - name: conditions
-        type: array
-        required: true
-        description: Array of precondition objects
-        interpolatable: false
-
-    evaluation:
-      effect: |
-        true_count = 0
-        for condition in conditions:
-          if evaluate(condition):
-            true_count += 1
-        return true_count == 1
-      reads:
-        - "varies by nested conditions"
-      functions:
-        - evaluate
-
-    since: "2.0.0"
+    since: "4.0.0"
+    replaces:
+      - all_of
+      - any_of
+      - none_of
+      - xor_of
 
   # ==========================================================================
   # category: core/expression
