@@ -5,6 +5,57 @@ All notable changes to hiivmind-blueprint-lib will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] - 2026-02-24
+
+### BREAKING CHANGES
+
+Radical simplification: 50 types reduced to 36 types, ~56% line reduction across the library. **Existing workflows using v3.x type names must be updated.**
+
+#### Types Removed
+
+| Removed Type | Category | Replacement |
+|-------------|----------|-------------|
+| `init_log` | consequence/logging | Removed (auto-injection eliminated) |
+| `log_session_snapshot` | consequence/logging | Removed |
+| `finalize_log` | consequence/logging | Removed (auto-injection eliminated) |
+| `write_log` | consequence/logging | Removed (auto-injection eliminated) |
+| `apply_log_retention` | consequence/logging | Removed |
+| `output_ci_summary` | consequence/logging | Removed (CI coupling eliminated) |
+| `log_state` | precondition/logging | Removed |
+| `all_of` | precondition/composite | Use `composite` with `operator: all` |
+| `any_of` | precondition/composite | Use `composite` with `operator: any` |
+| `none_of` | precondition/composite | Use `composite` with `operator: none` |
+| `xor_of` | precondition/composite | Use `composite` with `operator: xor` |
+
+#### Parameter Changes
+
+| Type | Change |
+|------|--------|
+| `tool_check` | Removed `authenticated` and `daemon_ready` capabilities |
+| `reference` node | Removed `context` (use `input`), removed `next_node` (use `transitions`) |
+| `user_prompt` node | Removed multi-modal support (voice, visual, autonomous modes) |
+| `conditional` node | Removed `audit` mode |
+| `log_entry` | Simplified to 3 params: `level`, `message`, `context` |
+| `run_command` | Removed `venv` and `env` parameters |
+
+### Changed
+
+- **Execution engine**: Rewritten from 2,547 to 385 lines (-85%). Removed batching, CI annotations, auto-log-injection, interface detection, multi-modal dispatch
+- **Composite preconditions**: 4 types consolidated into single `composite` type with `operator` parameter
+- **Resolution chain**: 5 YAML files merged into `resolution/loader.yaml`. 3 JSON schemas merged into `schema/resolution/loader.json`
+- **Definition schemas**: 3 JSON schemas merged into `schema/definitions/type-definition.json`
+- **Logging schema**: Simplified to log_entry + log_node only (88 lines)
+- **Output config schema**: Removed batch/CI properties (101 lines)
+- **Prompts config schema**: Removed interface detection, multi-modal config (89 lines)
+- **user_prompt node**: Simplified from 553 to ~155 lines, single prompt format
+- **reference node**: Simplified from 344 to ~165 lines, uses `input` instead of `context`
+
+### Removed
+
+- All 4 content index files (`consequences/index.yaml`, `preconditions/index.yaml`, `nodes/index.yaml`, `execution/index.yaml`)
+- 12 resolution/schema files replaced by 3 consolidated files
+- `schema/_deprecated/` directory
+
 ## [3.1.1] - 2026-02-08
 
 ### Added

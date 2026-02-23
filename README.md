@@ -75,11 +75,10 @@ nodes:
   detect_intent:
     type: reference
     workflow: hiivmind/hiivmind-blueprint-lib@v3.0.0:intent-detection
-    context:
+    input:
       arguments: "${arguments}"
       intent_flags: "${intent_flags}"
       intent_rules: "${intent_rules}"
-    next_node: execute_dynamic_route
 ```
 
 ## Quick Start
@@ -299,33 +298,33 @@ Use `${...}` syntax to reference state values:
 
 All types are consolidated into single files per category for easier loading and reference.
 
-### Consequences (31 types in `consequences/consequences.yaml`)
+### Consequences (23 types in `consequences/consequences.yaml`)
 
 | Category | Types | Description |
 |----------|-------|-------------|
-| core/state | 3 | set_flag, mutate_state, inline |
+| core/state | 2 | set_flag, mutate_state |
 | core/evaluation | 2 | evaluate, compute |
 | core/interaction | 1 | display (text, table, markdown, json) |
-| core/control | 3 | create_checkpoint, rollback_checkpoint, spawn_agent |
-| core/skill | 2 | invoke_skill, invoke_pattern |
+| core/control | 4 | create_checkpoint, rollback_checkpoint, spawn_agent, inline |
 | core/utility | 2 | set_timestamp, compute_hash |
 | core/intent | 4 | evaluate_keywords, parse_intent_flags, match_3vl_rules, dynamic_route |
-| core/logging | 9 | init_log, log_node, log_entry, log_session_snapshot, finalize_log, write_log, apply_log_retention, output_ci_summary, install_tool |
-| core/filesystems | 1 | local_file_ops (read, write, mkdir, delete) |
-| core/git | 1 | git_ops_local (clone, pull, fetch, get-sha) |
-| core/web | 1 | web_ops (fetch, cache) |
-| core/scripting | 1 | run_command (bash, python, node, etc.) |
+| core/logging | 2 | log_node, log_entry |
+| extensions/file-system | 1 | local_file_ops (read, write, mkdir, delete) |
+| extensions/git | 1 | git_ops_local (clone, pull, fetch, get-sha) |
+| extensions/web | 1 | web_ops (fetch, cache) |
+| extensions/scripting | 1 | run_command (bash, python, node, etc.) |
+| extensions/package | 1 | install_tool |
+| core/control | 1 | invoke_skill |
 
-### Preconditions (14 types in `preconditions/preconditions.yaml`)
+### Preconditions (9 types in `preconditions/preconditions.yaml`)
 
 | Category | Types | Description |
 |----------|-------|-------------|
-| core/composite | 4 | all_of, any_of, none_of, xor_of |
+| core/composite | 1 | composite (operator: all, any, none, xor) |
 | core/expression | 1 | evaluate_expression |
 | core/filesystems | 1 | path_check (exists, is_file, is_directory, contains_text) |
-| core/logging | 1 | log_state (initialized, finalized, level_enabled) |
 | core/state | 1 | state_check (true, false, equals, not_null, null) |
-| core/tools | 1 | tool_check (available, version_gte, authenticated, daemon_ready) |
+| core/tools | 1 | tool_check (available, version_gte) |
 | core/network | 1 | network_available |
 | core/python | 1 | python_module_available |
 | core/git | 1 | source_check (exists, cloned, has_updates) |
@@ -408,9 +407,7 @@ The `resolution/` directory defines how types, workflows, and execution semantic
 
 | File | Purpose |
 |------|---------|
-| `resolution/type-loader.yaml` | Load types from GitHub URLs |
-| `resolution/workflow-loader.yaml` | Load reusable workflows |
-| `resolution/execution-loader.yaml` | Load execution semantics |
+| `resolution/loader.yaml` | Consolidated loader for types, workflows, and execution semantics |
 
 These files are the authoritative source for execution semantics. The LLM interprets them directly when executing workflows.
 
@@ -431,9 +428,9 @@ https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v3.0.0/
 ```
 
 The type loader fetches:
-1. `consequences/index.yaml` - consequence type registry
-2. `preconditions/index.yaml` - precondition type registry
-3. Individual type files on demand (lazy loading)
+1. `consequences/consequences.yaml` - all consequence type definitions
+2. `preconditions/preconditions.yaml` - all precondition type definitions
+3. `nodes/workflow_nodes.yaml` - all node type definitions
 
 ### Reference a Reusable Workflow
 
@@ -481,37 +478,25 @@ hiivmind-blueprint-lib/
 ├── CHANGELOG.md                  # Version history
 │
 ├── consequences/
-│   ├── index.yaml                # Type registry
-│   └── consequences.yaml         # All 31 consequence types
+│   └── consequences.yaml         # All 23 consequence types
 │
 ├── preconditions/
-│   ├── index.yaml                # Type registry
-│   └── preconditions.yaml        # All 14 precondition types
+│   └── preconditions.yaml        # All 9 precondition types
 │
 ├── nodes/
-│   ├── index.yaml                # Type registry
-│   └── workflow_nodes.yaml       # 5 node type definitions
+│   └── workflow_nodes.yaml       # 4 node type definitions
 │
 ├── execution/
-│   ├── index.yaml                # Execution semantics registry
-│   └── engine_execution.yaml     # Complete execution engine semantics
+│   └── engine_execution.yaml     # Execution engine semantics
 │
-├── resolution/                   # Type & workflow loading
-│   ├── index.yaml
-│   ├── type-loader.yaml          # Load types from GitHub URLs
-│   ├── workflow-loader.yaml      # Load reusable workflows
-│   └── execution-loader.yaml     # Load execution semantics
+├── resolution/
+│   └── loader.yaml               # Consolidated type/workflow/execution loader
 │
 ├── workflows/                    # Reusable workflow definitions
-│   ├── index.yaml
 │   └── core/
 │       └── intent-detection.yaml # 3VL intent detection workflow
 │
-├── lib/
-│   └── tool-registry.yaml        # Tool availability registry
-│
 ├── examples/                     # Usage examples
-│   ├── index.yaml
 │   ├── consequences.yaml
 │   ├── preconditions.yaml
 │   ├── nodes.yaml
@@ -519,24 +504,20 @@ hiivmind-blueprint-lib/
 │
 └── schema/                       # JSON schemas
     ├── common.json               # Shared definitions
-    ├── definitions/              # Type definition schemas
-    │   ├── consequence-definition.json
-    │   ├── precondition-definition.json
-    │   ├── node-definition.json
+    ├── definitions/
+    │   ├── type-definition.json  # Consolidated type definition schema
     │   └── execution-definition.json
-    ├── authoring/                # Workflow authoring schemas
+    ├── authoring/
     │   ├── workflow.json
     │   ├── node-types.json
     │   └── intent-mapping.json
-    ├── runtime/                  # Runtime configuration schemas
+    ├── runtime/
     │   └── logging.json
-    ├── config/                   # Configuration schemas
+    ├── config/
     │   ├── output-config.json
     │   └── prompts-config.json
-    └── resolution/               # Resolution schemas
-        ├── index.json
-        ├── type-loader.json
-        └── workflow-loader.json
+    └── resolution/
+        └── loader.json           # Consolidated resolution schema
 ```
 
 ## Versioning Policy

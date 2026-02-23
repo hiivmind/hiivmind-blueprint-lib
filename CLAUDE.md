@@ -6,9 +6,9 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 **hiivmind-blueprint-lib** is a type definition library for the [hiivmind-blueprint](https://github.com/hiivmind/hiivmind-blueprint) workflow system. It provides:
 
-- **43 consequence types** - Operations that workflows can execute
-- **27 precondition types** - Conditions workflows can check
-- **5 node types** - Building blocks for workflow graphs
+- **23 consequence types** - Operations that workflows can execute
+- **9 precondition types** - Conditions workflows can check
+- **4 node types** - Building blocks for workflow graphs
 - **1 reusable workflow** - Intent detection with 3-valued logic
 
 The key paradigm: **LLM-as-execution-engine**. Type definitions include `effect` pseudocode that the LLM interprets directly - no traditional runtime engine required.
@@ -18,25 +18,22 @@ The key paradigm: **LLM-as-execution-engine**. Type definitions include `effect`
 All types are consolidated into single YAML files per category:
 
 ```
-consequences/consequences.yaml    # All 43 consequence types
-preconditions/preconditions.yaml  # All 27 precondition types
-nodes/workflow_nodes.yaml         # All 5 node types
+consequences/consequences.yaml    # All 23 consequence types
+preconditions/preconditions.yaml  # All 9 precondition types
+nodes/workflow_nodes.yaml         # All 4 node types
 execution/engine_execution.yaml   # Execution engine semantics
+resolution/loader.yaml            # Consolidated type/workflow loader
 ```
-
-Each directory also has:
-- `index.yaml` - Registry pointing to the consolidated file
-- `_deprecated/` - Old directory structure (do not modify)
 
 ### Schema Directory
 
 ```
 schema/
-├── definitions/    # Type definition schemas (consequence, precondition, node, execution)
+├── definitions/    # Type definition schemas (type-definition, execution-definition)
 ├── authoring/      # Workflow authoring schemas (workflow, node-types, intent-mapping)
 ├── runtime/        # Runtime schemas (logging)
 ├── config/         # Configuration schemas (output-config, prompts-config)
-├── resolution/     # Type loading schemas
+├── resolution/     # Consolidated loader schema
 └── common.json     # Shared definitions
 ```
 
@@ -46,13 +43,10 @@ schema/
 
 Any change to these files:
 - `consequences/consequences.yaml`
-- `consequences/index.yaml`
 - `preconditions/preconditions.yaml`
-- `preconditions/index.yaml`
 - `nodes/workflow_nodes.yaml`
-- `nodes/index.yaml`
 - `execution/engine_execution.yaml`
-- `execution/index.yaml`
+- `resolution/loader.yaml`
 
 **MUST be synchronized with:**
 
@@ -150,9 +144,9 @@ Edit `execution/engine_execution.yaml`. This contains the complete execution eng
 ### Validating Changes
 
 JSON schemas in `schema/` define valid structures. Key schemas:
-- `schema/definitions/consequence-definition.json`
-- `schema/definitions/precondition-definition.json`
-- `schema/definitions/node-definition.json`
+- `schema/definitions/type-definition.json`
+- `schema/definitions/execution-definition.json`
+- `schema/resolution/loader.json`
 
 ## Versioning
 
