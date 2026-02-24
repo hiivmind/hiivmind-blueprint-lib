@@ -5,7 +5,8 @@ name: hiivmind-blueprint-lib
 version: "4.0.0"
 description: |
   Externalized type definitions and reusable workflows for hiivmind-blueprint.
-  Provides 23 consequence types, 9 precondition types, 4 node types, and
+  Provides 22 consequence types (13 core + 3 intent + 6 extensions),
+  9 precondition types (3 core + 6 extensions), 4 node types, and
   1 reusable workflow that can be referenced by URL.
 
 repository: https://github.com/hiivmind/hiivmind-blueprint-lib
@@ -20,16 +21,16 @@ schemas:
 
 # Statistics
 stats:
-  total_types: 36
-  consequence_types: 23
+  total_types: 35
+  consequence_types: 22
   precondition_types: 9
   node_types: 4
   workflows: 1
 
 # Artifacts produced by releases
 artifacts:
-  - consequences/ # Type definitions
-  - preconditions/ # Type definitions
+  - consequences/ # Type definitions (core.yaml, intent.yaml, extensions.yaml)
+  - preconditions/ # Type definitions (core.yaml, extensions.yaml)
   - nodes/ # Node type definitions
   - workflows/ # Reusable workflow definitions
   - execution/ # Execution engine semantics

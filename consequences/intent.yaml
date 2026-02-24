@@ -1,0 +1,151 @@
+# Blueprint Consequence Type Definitions — Intent
+# v4.0.0 - 3VL intent detection subsystem
+
+schema_version: "1.0"
+category: core/intent
+description: Intent detection consequence types using three-valued logic (3VL)
+
+consequences:
+  # ==========================================================================
+  # category: core/intent
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # evaluate_keywords
+  # --------------------------------------------------------------------------
+  evaluate_keywords:
+    category: core/intent
+    description:
+      brief: Match keywords to detect intent
+      detail: |
+        Matches user input against keyword sets to detect intent. Returns
+        the first matching intent (case-insensitive). For compound intent
+        handling, use parse_intent_flags + match_3vl_rules instead.
+      notes:
+        - Matches first keyword set containing a phrase found in input
+        - Case-insensitive matching
+        - Returns null if no match found
+        - Simple approach for single-intent detection
+
+    parameters:
+      - name: input
+        type: string
+        required: true
+        description: User input to match against
+        interpolatable: true
+
+      - name: keyword_sets
+        type: object
+        required: true
+        description: Map of intent names to keyword arrays
+        interpolatable: false
+
+      - name: store_as
+        type: string
+        required: true
+        description: State field for matched intent
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+        interpolatable: false
+
+    payload:
+      kind: computation
+      tool: null
+      effect: |
+        for keyword_set_name, keywords in keyword_sets:
+          for keyword in keywords:
+            if input.toLowerCase().includes(keyword.toLowerCase()):
+              set_state_value(store_as, keyword_set_name)
+              return success
+        set_state_value(store_as, null)
+        return success
+      state_writes:
+        - "${store_as}"
+      state_reads: []
+
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # parse_intent_flags
+  # --------------------------------------------------------------------------
+  parse_intent_flags:
+    category: core/intent
+    description:
+      brief: Parse 3VL flags from user input via keyword matching
+
+    parameters:
+      - name: input
+        type: string
+        required: true
+        description: User input to parse
+        interpolatable: true
+
+      - name: flag_definitions
+        type: object
+        required: true
+        description: Map of flag names to {keywords, negative_keywords} definitions
+        interpolatable: true
+
+      - name: store_as
+        type: string
+        required: true
+        description: State field for flag values
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+        interpolatable: false
+
+    payload:
+      kind: computation
+      tool: null
+      effect: |
+        # For each flag: default U. Check negative_keywords first (->F),
+        # then keywords (->T). Case-insensitive. Store map of flag->T/F/U.
+        set_state_value(store_as, flags)
+      state_writes:
+        - "${store_as}"
+      state_reads: []
+
+    since: "1.0.0"
+
+  # --------------------------------------------------------------------------
+  # match_3vl_rules
+  # --------------------------------------------------------------------------
+  match_3vl_rules:
+    category: core/intent
+    description:
+      brief: Match 3VL flags against rule table and rank candidates
+
+    parameters:
+      - name: flags
+        type: object
+        required: true
+        description: Map of flag names to 3VL values (T/F/U)
+        interpolatable: true
+
+      - name: rules
+        type: array
+        required: true
+        description: Array of intent rules with conditions
+        interpolatable: true
+
+      - name: store_as
+        type: string
+        required: true
+        description: State field for match results
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.\\[\\]]*$"
+        interpolatable: false
+
+    payload:
+      kind: computation
+      tool: null
+      effect: |
+        # For each rule, compare flags against rule.conditions:
+        #   Rule U = wildcard (skip). Same values = hard match.
+        #   State U vs Rule T/F = soft match. Contradiction = excluded.
+        # Rank by: most hard matches, fewest soft matches, fewest conditions.
+        # Result: { clear_winner, winner, top_candidates, all_candidates }
+        set_state_value(store_as, result)
+      state_writes:
+        - "${store_as}"
+      state_reads: []
+
+    since: "1.0.0"
+    updated: "2.1.0"

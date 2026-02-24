@@ -6,7 +6,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 **hiivmind-blueprint-lib** is a type definition library for the [hiivmind-blueprint](https://github.com/hiivmind/hiivmind-blueprint) workflow system. It provides:
 
-- **23 consequence types** - Operations that workflows can execute
+- **22 consequence types** - Operations that workflows can execute
 - **9 precondition types** - Conditions workflows can check
 - **4 node types** - Building blocks for workflow graphs
 - **1 reusable workflow** - Intent detection with 3-valued logic
@@ -15,11 +15,14 @@ The key paradigm: **LLM-as-execution-engine**. Type definitions include `effect`
 
 ## File Structure
 
-All types are consolidated into single YAML files per category:
+Types are split into core, intent, and extension files:
 
 ```
-consequences/consequences.yaml    # All 23 consequence types
-preconditions/preconditions.yaml  # All 9 precondition types
+consequences/core.yaml            # 13 core consequence types
+consequences/intent.yaml          # 3 intent detection (3VL) types
+consequences/extensions.yaml      # 6 extension consequence types
+preconditions/core.yaml           # 3 core precondition types
+preconditions/extensions.yaml     # 6 extension precondition types
 nodes/workflow_nodes.yaml         # All 4 node types
 execution/engine_execution.yaml   # Execution engine semantics
 resolution/loader.yaml            # Consolidated type/workflow loader
@@ -42,8 +45,8 @@ schema/
 **When modifying YAML type definitions, you MUST also update related files to prevent divergence.**
 
 Any change to these files:
-- `consequences/consequences.yaml`
-- `preconditions/preconditions.yaml`
+- `consequences/core.yaml`, `consequences/intent.yaml`, `consequences/extensions.yaml`
+- `preconditions/core.yaml`, `preconditions/extensions.yaml`
 - `nodes/workflow_nodes.yaml`
 - `execution/engine_execution.yaml`
 - `resolution/loader.yaml`
@@ -116,15 +119,18 @@ The `intent` category uses Kleene 3-valued logic:
 - `F` (False) - Definite non-match
 - `U` (Unknown) - Uncertain or "don't care" (in rules)
 
-Key types: `evaluate_keywords`, `parse_intent_flags`, `match_3vl_rules`, `dynamic_route`
+Key types: `evaluate_keywords`, `parse_intent_flags`, `match_3vl_rules`
 
 ## Common Tasks
 
 ### Adding a New Type
 
-1. Open the appropriate consolidated file:
-   - `consequences/consequences.yaml` for consequences
-   - `preconditions/preconditions.yaml` for preconditions
+1. Open the appropriate file based on where the type belongs:
+   - `consequences/core.yaml` for core consequences
+   - `consequences/intent.yaml` for 3VL intent types
+   - `consequences/extensions.yaml` for extension consequences
+   - `preconditions/core.yaml` for core preconditions
+   - `preconditions/extensions.yaml` for extension preconditions
 
 2. Add the type definition following the schema structure
 

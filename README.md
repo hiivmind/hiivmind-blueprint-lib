@@ -21,7 +21,7 @@ This library introduces a novel approach to workflow execution: **the LLM interp
 Each type definition includes an `effect` field containing pseudocode that the LLM interprets:
 
 ```yaml
-# From consequences/consequences.yaml
+# From consequences/core.yaml
 types:
   set_flag:
     description:
@@ -296,9 +296,9 @@ Use `${...}` syntax to reference state values:
 
 ## Type Inventory
 
-All types are consolidated into single files per category for easier loading and reference.
+Types are split into core, intent, and extension files for modular loading.
 
-### Consequences (23 types in `consequences/consequences.yaml`)
+### Consequences (22 types across `consequences/core.yaml`, `intent.yaml`, `extensions.yaml`)
 
 | Category | Types | Description |
 |----------|-------|-------------|
@@ -306,17 +306,18 @@ All types are consolidated into single files per category for easier loading and
 | core/evaluation | 2 | evaluate, compute |
 | core/interaction | 1 | display (text, table, markdown, json) |
 | core/control | 4 | create_checkpoint, rollback_checkpoint, spawn_agent, inline |
-| core/utility | 2 | set_timestamp, compute_hash |
-| core/intent | 4 | evaluate_keywords, parse_intent_flags, match_3vl_rules, dynamic_route |
+| core/utility | 1 | set_timestamp |
+| core/intent | 3 | evaluate_keywords, parse_intent_flags, match_3vl_rules |
 | core/logging | 2 | log_node, log_entry |
 | extensions/file-system | 1 | local_file_ops (read, write, mkdir, delete) |
 | extensions/git | 1 | git_ops_local (clone, pull, fetch, get-sha) |
+| extensions/hashing | 1 | compute_hash |
 | extensions/web | 1 | web_ops (fetch, cache) |
 | extensions/scripting | 1 | run_command (bash, python, node, etc.) |
 | extensions/package | 1 | install_tool |
 | core/control | 1 | invoke_skill |
 
-### Preconditions (9 types in `preconditions/preconditions.yaml`)
+### Preconditions (9 types across `preconditions/core.yaml`, `extensions.yaml`)
 
 | Category | Types | Description |
 |----------|-------|-------------|
@@ -393,7 +394,7 @@ When multiple rules match, candidates are ranked by:
 
 Where `effective_conditions` = number of non-`U` conditions in the rule.
 
-See `match_3vl_rules` consequence type in `consequences/consequences.yaml` for implementation details.
+See `match_3vl_rules` consequence type in `consequences/intent.yaml` for implementation details.
 
 ## Execution Pseudocode Reference
 
@@ -427,9 +428,9 @@ This resolves to:
 https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v3.0.0/
 ```
 
-The type loader fetches:
-1. `consequences/consequences.yaml` - all consequence type definitions
-2. `preconditions/preconditions.yaml` - all precondition type definitions
+The type loader fetches indexes, then lazily loads definitions from:
+1. `consequences/core.yaml`, `intent.yaml`, `extensions.yaml` - consequence type definitions
+2. `preconditions/core.yaml`, `extensions.yaml` - precondition type definitions
 3. `nodes/workflow_nodes.yaml` - all node type definitions
 
 ### Reference a Reusable Workflow
@@ -442,7 +443,7 @@ detect_intent:
     arguments: "${arguments}"
     intent_flags: "${intent_flags}"
     intent_rules: "${intent_rules}"
-  next_node: execute_dynamic_route
+  next_node: "${computed.intent_matches.winner.action}"
 ```
 
 ## Version Pinning
@@ -478,10 +479,13 @@ hiivmind-blueprint-lib/
 ├── CHANGELOG.md                  # Version history
 │
 ├── consequences/
-│   └── consequences.yaml         # All 23 consequence types
+│   ├── core.yaml                 # 13 core consequence types
+│   ├── intent.yaml               # 3 intent detection (3VL) types
+│   └── extensions.yaml           # 6 extension consequence types
 │
 ├── preconditions/
-│   └── preconditions.yaml        # All 9 precondition types
+│   ├── core.yaml                 # 3 core precondition types
+│   └── extensions.yaml           # 6 extension precondition types
 │
 ├── nodes/
 │   └── workflow_nodes.yaml       # 4 node type definitions

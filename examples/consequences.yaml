@@ -1,10 +1,10 @@
 # Consequence Examples
 # Documentary usage patterns for consequence types
-# v3.0.0 - Updated for consolidated types
+# v4.0.0 - Updated for core/intent/extensions split
 #
 # These examples are for human reference, not automated testing.
 
-schema_version: "3.0"
+schema_version: "4.0"
 description: |
   Example usage patterns for consequence types.
   These are documentary snippets for workflow authors.
@@ -149,7 +149,7 @@ examples:
           Build a path from components using string concatenation.
 
   # ==========================================================================
-  # core/intent - Intent detection and dynamic routing
+  # core/intent - Intent detection (3VL subsystem)
   # ==========================================================================
   core/intent:
     evaluate_keywords:
@@ -202,15 +202,6 @@ examples:
         explanation: |
           Matches 3VL flags against rules and ranks candidates.
           Returns { clear_winner, winner, top_candidates }.
-
-    dynamic_route:
-      - title: "Route based on matched intent"
-        yaml: |
-          - type: dynamic_route
-            action: "${computed.intent_matches.winner.action}"
-        explanation: |
-          Sets computed.dynamic_target for workflow routing.
-          Use with on_success: "${computed.dynamic_target}".
 
   # ==========================================================================
   # core/interaction - User display and feedback
@@ -388,16 +379,6 @@ examples:
         explanation: |
           Stores current ISO 8601 timestamp in state.
 
-    compute_hash:
-      - title: "Hash content for change detection"
-        yaml: |
-          - type: compute_hash
-            from: computed.file_content
-            store_as: computed.content_hash
-        explanation: |
-          Computes SHA-256 hash of content.
-          Output format: sha256:abc123...
-
   # ==========================================================================
   # extensions/file-system - File operations
   # ==========================================================================
@@ -568,3 +549,17 @@ examples:
             store_as: computed.cached_path
         explanation: |
           Saves fetched content to local file cache.
+
+  # ==========================================================================
+  # extensions/hashing - Content hashing
+  # ==========================================================================
+  extensions/hashing:
+    compute_hash:
+      - title: "Hash content for change detection"
+        yaml: |
+          - type: compute_hash
+            from: computed.file_content
+            store_as: computed.content_hash
+        explanation: |
+          Computes SHA-256 hash of content.
+          Output format: sha256:abc123...

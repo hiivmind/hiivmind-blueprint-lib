@@ -12,15 +12,19 @@
 
     "indexFile": {
       "type": "object",
-      "required": ["schema_version", "definition_file", "types"],
+      "required": ["schema_version", "definition_files", "types"],
       "additionalProperties": false,
       "description": "Schema for index.yaml files (consequences, preconditions, nodes, execution)",
       "properties": {
         "schema_version": { "$ref": "../common.json#/$defs/semver_short" },
-        "definition_file": {
-          "type": "string",
-          "pattern": "^[a-z_-]+\\.yaml$",
-          "examples": ["consequences.yaml", "preconditions.yaml", "workflow_nodes.yaml"]
+        "definition_files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z_-]+\\.yaml$"
+          },
+          "minItems": 1,
+          "examples": [["core.yaml", "intent.yaml", "extensions.yaml"], ["core.yaml", "extensions.yaml"]]
         },
         "description": { "type": "string" },
         "remote_sources": {
@@ -64,11 +68,16 @@
 
     "typeEntry": {
       "type": "object",
-      "required": ["category", "brief"],
+      "required": ["category", "brief", "source_file"],
       "additionalProperties": false,
       "properties": {
         "category": { "type": "string" },
         "brief": { "type": "string", "maxLength": 100 },
+        "source_file": {
+          "type": "string",
+          "pattern": "^[a-z_-]+\\.yaml$",
+          "description": "Which definition file contains this type (e.g., core.yaml, extensions.yaml)"
+        },
         "required_params": {
           "type": "array",
           "items": { "type": "string" }

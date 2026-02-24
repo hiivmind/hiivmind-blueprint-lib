@@ -294,7 +294,7 @@ examples:
             intent_flags: "${intent_flags}"
             intent_rules: "${intent_rules}"
           transitions:
-            on_success: execute_dynamic_route
+            on_success: "${computed.intent_matches.winner.action}"
             on_failure: error_intent
       explanation: |
         Fetches the intent-detection workflow from hiivmind-blueprint-lib

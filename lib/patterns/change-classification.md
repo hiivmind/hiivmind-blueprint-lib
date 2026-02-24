@@ -65,7 +65,7 @@ When commits lack conventional prefixes, analyze the diff by file:
 
 ### 4. Blueprint-Lib-Specific Heuristics
 
-Activate when type definition YAML files are detected in the diff (e.g., `consequences/consequences.yaml`, `preconditions/preconditions.yaml`).
+Activate when type definition YAML files are detected in the diff (e.g., `consequences/core.yaml`, `consequences/intent.yaml`, `consequences/extensions.yaml`, `preconditions/core.yaml`, `preconditions/extensions.yaml`).
 
 | Change | Bump | Detection |
 |--------|------|-----------|

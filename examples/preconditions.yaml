@@ -1,10 +1,10 @@
 # Precondition Examples
 # Documentary usage patterns for precondition types
-# v3.0.0 - Updated for consolidated types
+# v4.0.0 - Updated for core/extensions split
 #
 # These examples are for human reference, not automated testing.
 
-schema_version: "3.0"
+schema_version: "4.0"
 description: |
   Example usage patterns for precondition types.
   These are documentary snippets for workflow authors.
@@ -138,9 +138,9 @@ examples:
           Use built-in string functions for matching.
 
   # ==========================================================================
-  # core/filesystems - File and directory checks
+  # extensions/filesystem - File and directory checks
   # ==========================================================================
-  core/filesystems:
+  extensions/filesystem:
     path_check:
       - title: "Check for config file"
         yaml: |
@@ -268,9 +268,9 @@ examples:
           True if field is null or undefined.
 
   # ==========================================================================
-  # core/tools - Tool availability
+  # extensions/tools - Tool availability
   # ==========================================================================
-  core/tools:
+  extensions/tools:
     tool_check:
       - title: "Check for required tool (was tool_available)"
         yaml: |
@@ -295,9 +295,9 @@ examples:
           Falls back to existence check if version unknown.
 
   # ==========================================================================
-  # core/network - Network connectivity
+  # extensions/network - Network connectivity
   # ==========================================================================
-  core/network:
+  extensions/network:
     network_available:
       - title: "Check internet connectivity"
         yaml: |
@@ -317,9 +317,9 @@ examples:
           Uses 5 second timeout.
 
   # ==========================================================================
-  # core/python - Python module availability
+  # extensions/python - Python module availability
   # ==========================================================================
-  core/python:
+  extensions/python:
     python_module_available:
       - title: "Check for Python module"
         yaml: |
@@ -331,9 +331,9 @@ examples:
           Uses python3 interpreter.
 
   # ==========================================================================
-  # core/git - Source repository checks
+  # extensions/git - Source repository checks
   # ==========================================================================
-  core/git:
+  extensions/git:
     source_check:
       - title: "Check if source is configured (was source_exists)"
         yaml: |
@@ -365,9 +365,9 @@ examples:
           Performs network operation (git fetch).
 
   # ==========================================================================
-  # core/web_fetch - Web fetch result checks
+  # extensions/web - Web fetch result checks
   # ==========================================================================
-  core/web_fetch:
+  extensions/web:
     fetch_check:
       - title: "Check previous fetch succeeded (was fetch_succeeded)"
         yaml: |

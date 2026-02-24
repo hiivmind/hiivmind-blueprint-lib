@@ -1,11 +1,11 @@
 # Examples Index
 # Documentary reference for hiivmind-blueprint type usage patterns
-# v3.0.0 - Updated for consolidated types
+# v4.0.0 - Updated for core/intent/extensions split
 #
 # These examples are for human reference, not for automated testing.
 # They show how to use the various type definitions in workflows.
 
-schema_version: "3.0"
+schema_version: "4.0"
 description: |
   Example usage patterns for hiivmind-blueprint types.
   Documentary reference for workflow authors.
@@ -16,33 +16,38 @@ description: |
 files:
   consequences:
     description: Examples for consequence types (actions/effects)
-    categories:
-      - core/control
-      - core/evaluation
-      - core/intent
-      - core/interaction
-      - core/logging
-      - core/state
-      - core/utility
-      - extensions/file-system
-      - extensions/git
-      - extensions/package
-      - extensions/scripting
-      - extensions/web
+    source_files:
+      core.yaml:
+        - core/control
+        - core/evaluation
+        - core/interaction
+        - core/logging
+        - core/state
+        - core/utility
+      intent.yaml:
+        - core/intent
+      extensions.yaml:
+        - extensions/file-system
+        - extensions/git
+        - extensions/hashing
+        - extensions/package
+        - extensions/scripting
+        - extensions/web
 
   preconditions:
     description: Examples for precondition types (conditions)
-    categories:
-      - core/composite
-      - core/expression
-      - core/filesystems
-      - core/git
-      - core/logging
-      - core/network
-      - core/python
-      - core/state
-      - core/tools
-      - core/web_fetch
+    source_files:
+      core.yaml:
+        - core/composite
+        - core/expression
+        - core/state
+      extensions.yaml:
+        - extensions/filesystem
+        - extensions/git
+        - extensions/network
+        - extensions/python
+        - extensions/tools
+        - extensions/web
 
   nodes:
     description: Examples for node types (workflow elements)
@@ -76,4 +81,7 @@ usage: |
 
 migration_note: |
   v3.0 consolidated 38 specific types into 13 general-purpose types.
-  See docs/v3-migration.md for complete migration guide.
+  v4.0 split consolidated files into core/intent/extensions for consequences
+  and core/extensions for preconditions. Removed dynamic_route (redundant with
+  engine's resolve_routing_target). Moved compute_hash to extensions/hashing.
+  Re-categorized 6 precondition types from core/* to extensions/*.

@@ -1,0 +1,199 @@
+# Blueprint Precondition Type Definitions — Core
+# v4.0.0 - Fundamental workflow checks
+
+schema_version: "1.0"
+category: core
+description: Core precondition types for fundamental workflow conditions
+
+preconditions:
+  # ==========================================================================
+  # category: core/composite
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # composite
+  # --------------------------------------------------------------------------
+  composite:
+    category: core/composite
+    description:
+      brief: Combine conditions with logical operators
+      detail: |
+        Evaluates nested conditions using the specified logical operator.
+        Supports AND (all), OR (any), NOR (none), and XOR (exactly one).
+
+    parameters:
+      - name: operator
+        type: string
+        required: true
+        description: "Logical operator: all, any, none, xor"
+        enum:
+          - all
+          - any
+          - none
+          - xor
+        interpolatable: false
+      - name: conditions
+        type: array
+        required: true
+        description: Array of precondition objects to evaluate
+        interpolatable: false
+
+    evaluation:
+      effect: |
+        if operator == "all":
+          for cond in conditions:
+            if not evaluate(cond): return false
+          return true
+        elif operator == "any":
+          for cond in conditions:
+            if evaluate(cond): return true
+          return false
+        elif operator == "none":
+          for cond in conditions:
+            if evaluate(cond): return false
+          return true
+        elif operator == "xor":
+          count = sum(1 for cond in conditions if evaluate(cond))
+          return count == 1
+
+    since: "4.0.0"
+    replaces:
+      - all_of
+      - any_of
+      - none_of
+      - xor_of
+
+  # ==========================================================================
+  # category: core/expression
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # evaluate_expression
+  # --------------------------------------------------------------------------
+  evaluate_expression:
+    category: core/expression
+    description:
+      brief: Evaluate arbitrary boolean expression
+      detail: |
+        Evaluates a boolean expression string with access to state variables.
+        Supports comparisons, logical operators, and built-in functions.
+        Use for complex conditions that don't fit standard precondition types.
+
+        This is the recommended replacement for count_equals, count_above,
+        and count_below - use len() function instead.
+      notes:
+        - "Field access via dot notation: source_type, computed.count"
+        - "Comparisons: ==, !=, >, <, >=, <="
+        - "Logical: &&, ||, !"
+        - "Functions: len(), contains(), startswith(), endswith()"
+        - "Use len(field) for array length checks (replaces count_* types)"
+        - Use sparingly; prefer typed preconditions when possible
+
+    parameters:
+      - name: expression
+        type: string
+        required: true
+        description: Boolean expression to evaluate
+        interpolatable: false
+
+    evaluation:
+      effect: |
+        # Parse and evaluate expression with state context
+        result = eval_expression(expression, state)
+        return boolean(result)
+      reads:
+        - "varies by expression content"
+      functions:
+        - eval_expression
+        - len
+        - contains
+        - startswith
+        - endswith
+
+    since: "1.0.0"
+
+  # ==========================================================================
+  # category: core/state
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # state_check
+  # --------------------------------------------------------------------------
+  state_check:
+    category: core/state
+    description:
+      brief: Check state field values with various operators
+      detail: |
+        Unified state inspection precondition. The operator parameter determines
+        what type of check is performed on the specified field.
+
+        For flags, use field "flags.flag_name" with operator "true" or "false".
+      notes:
+        - "operator: equals - field equals value"
+        - "operator: not_equals - field does not equal value"
+        - "operator: null - field is null or undefined"
+        - "operator: not_null - field has a value"
+        - "operator: true - field is boolean true (for flags)"
+        - "operator: false - field is boolean false (for flags)"
+        - Supports dot notation for nested fields
+
+    parameters:
+      - name: field
+        type: string
+        required: true
+        description: State field path (dot notation for nested, e.g., "flags.initialized")
+        pattern: "^[a-zA-Z_][a-zA-Z0-9_.]*$"
+        interpolatable: false
+
+      - name: operator
+        type: string
+        required: true
+        description: "Comparison operator: equals, not_equals, null, not_null, true, false"
+        enum:
+          - equals
+          - not_equals
+          - "null"
+          - not_null
+          - "true"
+          - "false"
+        interpolatable: false
+
+      - name: value
+        type: any
+        required: false
+        description: Value for equals/not_equals operators
+        interpolatable: false
+
+    evaluation:
+      effect: |
+        actual = get_state_value(field)
+
+        if operator == "equals":
+          return actual == value
+
+        elif operator == "not_equals":
+          return actual != value
+
+        elif operator == "null":
+          return actual == null
+
+        elif operator == "not_null":
+          return actual != null
+
+        elif operator == "true":
+          return actual == true
+
+        elif operator == "false":
+          return actual != true
+      reads:
+        - "state.${field}"
+      functions:
+        - get_state_value
+
+    since: "3.0.0"
+    replaces:
+      - flag_set
+      - flag_not_set
+      - state_equals
+      - state_not_null
+      - state_is_null

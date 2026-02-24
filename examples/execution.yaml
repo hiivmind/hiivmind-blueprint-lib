@@ -190,13 +190,17 @@ examples:
           execute_matched_intent:
             type: action
             actions:
-              - type: dynamic_route
-                action: "${computed.intent_matches.winner.action}"
-            on_success: "${computed.dynamic_target}"
+              - type: match_3vl_rules
+                flags: "${computed.intent_flags}"
+                rules: "${intent_rules}"
+                store_as: computed.intent_matches
+            on_success: "${computed.intent_matches.winner.action}"
             on_failure: show_main_menu
         explanation: |
           Routing targets can use ${...} interpolation for
-          dynamic routing based on computed state.
+          dynamic routing based on computed state. The engine's
+          resolve_routing_target() handles interpolation directly
+          — no intermediate dynamic_route type needed.
 
     checkpoints:
       - title: "Checkpoint and rollback workflow"
