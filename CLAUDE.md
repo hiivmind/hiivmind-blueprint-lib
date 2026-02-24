@@ -4,18 +4,18 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Repository Overview
 
-**hiivmind-blueprint-lib** is a type definition library for the [hiivmind-blueprint](https://github.com/hiivmind/hiivmind-blueprint) workflow system. It provides:
+**hiivmind-blueprint-lib** is a type definition catalog for the [hiivmind-blueprint](https://github.com/hiivmind/hiivmind-blueprint) workflow system. It provides:
 
 - **22 consequence types** - Operations that workflows can execute
 - **9 precondition types** - Conditions workflows can check
-- **4 node types** - Building blocks for workflow graphs
+- **3 node types** - Building blocks for workflow graphs
 - **1 reusable workflow** - Intent detection with 3-valued logic
 
 The key paradigm: **LLM-as-execution-engine**. Type definitions include `effect` pseudocode that the LLM interprets directly - no traditional runtime engine required.
 
-## File Structure
+Types are deployed locally: authors copy needed definitions from this catalog into `.hiivmind/blueprint/definitions.yaml` in their repo. No remote loading or version resolution at runtime.
 
-Types are split into core, intent, and extension files:
+## File Structure
 
 ```
 consequences/core.yaml            # 13 core consequence types
@@ -23,9 +23,7 @@ consequences/intent.yaml          # 3 intent detection (3VL) types
 consequences/extensions.yaml      # 6 extension consequence types
 preconditions/core.yaml           # 3 core precondition types
 preconditions/extensions.yaml     # 6 extension precondition types
-nodes/workflow_nodes.yaml         # All 4 node types
-execution/engine_execution.yaml   # Execution engine semantics
-resolution/loader.yaml            # Consolidated type/workflow loader
+nodes/workflow_nodes.yaml         # All 3 node types
 ```
 
 ### Schema Directory
@@ -36,7 +34,7 @@ schema/
 ├── authoring/      # Workflow authoring schemas (workflow, node-types, intent-mapping)
 ├── runtime/        # Runtime schemas (logging)
 ├── config/         # Configuration schemas (output-config, prompts-config)
-├── resolution/     # Consolidated loader schema
+├── resolution/     # Definitions file schema (definitions.json)
 └── common.json     # Shared definitions
 ```
 
@@ -48,8 +46,6 @@ Any change to these files:
 - `consequences/core.yaml`, `consequences/intent.yaml`, `consequences/extensions.yaml`
 - `preconditions/core.yaml`, `preconditions/extensions.yaml`
 - `nodes/workflow_nodes.yaml`
-- `execution/engine_execution.yaml`
-- `resolution/loader.yaml`
 
 **MUST be synchronized with:**
 
@@ -57,8 +53,7 @@ Any change to these files:
 |----------|---------|
 | `schema/` (this repo) | JSON schemas must match YAML structure |
 | `examples/` (this repo) | Usage examples must reflect current API |
-| `hiivmind-blueprint-author/references/` | Reference documentation for authors |
-| `hiivmind-blueprint-author/lib/patterns/` | Pattern libraries using these types |
+| `hiivmind-blueprint/patterns/` | Authoring and execution guides |
 
 ### Synchronization Checklist
 
@@ -75,23 +70,22 @@ Before completing any YAML change:
    - New type added
    - Parameters renamed or removed
 
-3. **External reference sync** - Check and update:
-   - `/home/nathanielramm/git/hiivmind/hiivmind-blueprint-author/references/`
-   - `/home/nathanielramm/git/hiivmind/hiivmind-blueprint-author/lib/patterns/`
+3. **Guide sync** - Check and update:
+   - `hiivmind-blueprint/patterns/authoring-guide.md` (type reference tables)
+   - `hiivmind-blueprint/patterns/execution-guide.md` (dispatch semantics)
 
 ### Analysis Scope
 
 When analyzing or planning changes to type definitions, ALWAYS consider impact on:
 - Schema validation (will existing workflows fail validation?)
 - Examples (do they still work?)
-- External documentation (is it now incorrect?)
-- Pattern libraries (do patterns use the changed type?)
+- Pattern guides (are type tables now incorrect?)
 
 ## Key Concepts
 
-### Type Definition Structure
+### Type Definition Structure (Catalog Format)
 
-Each type follows this structure:
+Each type in the catalog follows this structure:
 
 ```yaml
 type_name:
@@ -106,11 +100,31 @@ type_name:
       default: value (if not required)
       description: What this parameter does
   payload:
-    kind: state_mutation|tool_call|composite|display
+    kind: state_mutation|tool_call|computation|side_effect
     effect: |
       # Pseudocode that the LLM interprets
       state.computed[params.store_as] = result
 ```
+
+### Slimmed-Down Format (definitions.yaml)
+
+When copied into `.hiivmind/blueprint/definitions.yaml`, types use a simpler format:
+
+```yaml
+consequences:
+  type_name:
+    description: "What this type does"
+    parameters:
+      - name: param_name
+        type: string
+        required: true
+    payload:
+      kind: state_mutation
+      effect: |
+        state[field] = value
+```
+
+Catalog metadata (category, since, replaces, related, state_reads/writes) is omitted.
 
 ### Three-Valued Logic (3VL)
 
@@ -132,27 +146,18 @@ Key types: `evaluate_keywords`, `parse_intent_flags`, `match_3vl_rules`
    - `preconditions/core.yaml` for core preconditions
    - `preconditions/extensions.yaml` for extension preconditions
 
-2. Add the type definition following the schema structure
+2. Add the type definition following the catalog schema structure
 
 3. Update `package.yaml` stats if needed
 
 4. Update README.md type counts if changed
 
-### Modifying Execution Semantics
-
-Edit `execution/engine_execution.yaml`. This contains the complete execution engine pseudocode including:
-- Traversal logic (3-phase model)
-- State management
-- Consequence dispatch
-- Precondition evaluation
-- Logging configuration
-
 ### Validating Changes
 
 JSON schemas in `schema/` define valid structures. Key schemas:
-- `schema/definitions/type-definition.json`
-- `schema/definitions/execution-definition.json`
-- `schema/resolution/loader.json`
+- `schema/definitions/type-definition.json` - Catalog type definitions
+- `schema/resolution/definitions.json` - Per-repo definitions.yaml format
+- `schema/authoring/workflow.json` - Workflow structure
 
 ## Versioning
 
@@ -174,7 +179,6 @@ Current version: Check `package.yaml`
 - **PRs to `main` must come from `release/*` or `hotfix/*` branches** — enforced by CI (`Validate PR Source Branch` required check)
 - Use `/prepare-release` to automate: create release branch, bump version, update changelog, and open PR to `main`
 - Releases are tagged (e.g., `v2.0.0`, `v2.1.0`) automatically when PRs to `main` are merged
-- Workflows reference specific versions via GitHub raw URLs
 - See `RELEASING.md` for the full release process
 
 ## GitHub Operations
@@ -195,10 +199,4 @@ Since types are interpreted by LLMs (not compiled code), validation focuses on:
 
 ## Dependencies
 
-This library has no runtime dependencies. It's fetched via raw GitHub URLs:
-
-```
-https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/
-```
-
-Consuming workflows specify the version in their `definitions` block.
+This library has no runtime dependencies. It serves as a catalog that authors copy from at authoring time.

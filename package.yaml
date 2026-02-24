@@ -2,12 +2,15 @@
 # Semantic type definitions and reusable workflows for hiivmind-blueprint
 
 name: hiivmind-blueprint-lib
-version: "4.0.0"
+version: "6.0.0"
 description: |
-  Externalized type definitions and reusable workflows for hiivmind-blueprint.
+  Type definition catalog for hiivmind-blueprint.
   Provides 22 consequence types (13 core + 3 intent + 6 extensions),
-  9 precondition types (3 core + 6 extensions), 4 node types, and
-  1 reusable workflow that can be referenced by URL.
+  9 precondition types (3 core + 6 extensions), 3 node types, and
+  1 reusable workflow.
+
+  Types are deployed locally via .hiivmind/blueprint/definitions.yaml
+  (no remote loading required).
 
 repository: https://github.com/hiivmind/hiivmind-blueprint-lib
 license: MIT
@@ -17,14 +20,15 @@ schemas:
   consequence: "2.0"
   precondition: "2.0"
   node: "2.0"
-  workflow: "1.0"
+  workflow: "3.0"
+  definitions: "1.0"
 
 # Statistics
 stats:
-  total_types: 35
+  total_types: 34
   consequence_types: 22
   precondition_types: 9
-  node_types: 4
+  node_types: 3
   workflows: 1
 
 # Artifacts produced by releases
@@ -33,32 +37,14 @@ artifacts:
   - preconditions/ # Type definitions (core.yaml, extensions.yaml)
   - nodes/ # Node type definitions
   - workflows/ # Reusable workflow definitions
-  - execution/ # Execution engine semantics
-  - resolution/ # Consolidated loader
   - schema/ # JSON Schema definitions
+  - examples/ # Usage examples
 
 # Compatibility
-minimum_blueprint_version: "4.0.0"
+minimum_blueprint_version: "6.0.0"
 
-# How to reference this package from a workflow
+# How to use this package
 usage: |
-  In your workflow.yaml:
-
-  ```yaml
-  definitions:
-    source: hiivmind/hiivmind-blueprint-lib@v4.0.0
-  ```
-
-  This fetches types from raw GitHub URLs at runtime.
-
-  Reference a reusable workflow:
-
-  ```yaml
-  detect_intent:
-    type: reference
-    workflow: hiivmind/hiivmind-blueprint-lib@v4.0.0:intent-detection
-    input:
-      arguments: "${arguments}"
-      intent_flags: "${intent_flags}"
-      intent_rules: "${intent_rules}"
-  ```
+  Copy the type definitions your workflows need into your repo's
+  .hiivmind/blueprint/definitions.yaml file. See the authoring guide
+  in hiivmind-blueprint/patterns/authoring-guide.md for details.

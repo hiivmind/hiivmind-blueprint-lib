@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/prompts-config.json",
-  "$comment": "Schema version 3.0 - Simplified user prompt configuration",
+  "$comment": "Schema version 4.0 - Client-agnostic prompt display configuration",
   "title": "Blueprint Prompts Configuration",
-  "description": "Schema for configuring user-prompt node execution. Supports interactive mode (AskUserQuestion tool) and tabular mode (markdown table with text matching).",
+  "description": "Schema for configuring user-prompt node display. Supports json mode (structured data, client renders natively) and tabular mode (markdown table with text matching).",
   "type": "object",
   "properties": {
     "prompts": {
@@ -16,11 +16,11 @@
       "type": "object",
       "description": "Prompts configuration for user_prompt node execution",
       "properties": {
-        "mode": {
+        "display": {
           "type": "string",
-          "description": "Prompt execution mode",
-          "enum": ["interactive", "tabular"],
-          "default": "interactive"
+          "description": "Prompt display mode (rendering hint, not tool prescription)",
+          "enum": ["json", "tabular"],
+          "default": "json"
         },
         "tabular": {
           "$ref": "#/$defs/tabularConfig"
@@ -63,12 +63,12 @@
   "examples": [
     {
       "prompts": {
-        "mode": "interactive"
+        "display": "json"
       }
     },
     {
       "prompts": {
-        "mode": "tabular",
+        "display": "tabular",
         "tabular": {
           "match_strategy": "prefix",
           "other_handler": "prompt"
@@ -77,7 +77,7 @@
     },
     {
       "prompts": {
-        "mode": "tabular",
+        "display": "tabular",
         "tabular": {
           "match_strategy": "fuzzy",
           "fuzzy_threshold": 0.7,

@@ -125,7 +125,7 @@ nodes:
       question: "Multiple intents detected. Which did you mean?"
       header: "Clarify"
       options_from_state: computed.intent_matches.top_candidates
-      option_mapping:
+      options:
         id: rule.name
         label: rule.name
         description: rule.description

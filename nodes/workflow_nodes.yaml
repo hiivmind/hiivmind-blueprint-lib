@@ -77,7 +77,6 @@ nodes:
 
     related:
       - conditional
-      - reference
     since: "1.0.0"
 
   # ==========================================================================
@@ -154,171 +153,6 @@ nodes:
     since: "1.0.0"
 
   # ==========================================================================
-  # category: core/reference
-  # ==========================================================================
-
-  # --------------------------------------------------------------------------
-  # reference
-  # --------------------------------------------------------------------------
-
-  reference:
-    description:
-      brief: Loads and executes a reference document or sub-workflow
-      detail: |
-        A reference node delegates execution to a local document, local workflow file,
-        or remote workflow.
-
-        Execution mode determines state handling:
-        - inline (default): State is SHARED with parent workflow
-        - spawn: State is COPIED, execution is isolated, only output_mapping returns
-      notes:
-        - Must specify either 'doc' (local doc) or 'workflow' (local/remote workflow)
-        - For doc, path is relative to plugin root
-        - For workflow, use owner/repo@version:name (remote) or ./path/file.yaml (local)
-        - Inline mode shares state; spawn mode isolates state
-
-    fields:
-      - name: type
-        type: string
-        required: true
-        value: "reference"
-        description: Node type discriminator
-
-      - name: description
-        type: string
-        required: false
-        description: Human-readable purpose for debugging and documentation
-
-      - name: doc
-        type: string
-        required_unless: workflow
-        description: |
-          Path to reference document, relative to plugin root.
-          Mutually exclusive with 'workflow'.
-
-      - name: workflow
-        type: string
-        required_unless: doc
-        description: |
-          Workflow reference. Formats:
-          - Remote: owner/repo@version:workflow-name
-          - Local file: ./path/to/workflow.yaml
-          - Local indexed: ./:workflow-name
-          Mutually exclusive with 'doc'.
-
-      - name: section
-        type: string
-        required: false
-        description: |
-          Section heading within document to execute (doc references only).
-          If omitted, the entire document is executed.
-
-      - name: mode
-        type: string
-        required: false
-        enum: ["inline", "spawn"]
-        default: "inline"
-        description: |
-          - inline (default): Shared state with parent.
-          - spawn: Copied state, isolated execution. Only output_mapping merges back on success.
-
-      - name: input
-        type: object
-        required: false
-        description: |
-          Inputs for the sub-workflow. Values are interpolated and merged into
-          the sub-execution state. For subflows with input_schema, validates
-          against declared inputs.
-        additionalProperties:
-          type: any
-          interpolatable: true
-
-      - name: output_mapping
-        type: object
-        required: false
-        description: |
-          Maps sub-workflow outputs back to parent state (spawn mode only).
-          Keys are parent state paths, values are sub-workflow output paths.
-          On failure, parent state is unchanged.
-        additionalProperties:
-          type: string
-
-      - name: transitions
-        type: object
-        required: true
-        description: Routing for success and failure outcomes.
-        properties:
-          - name: on_success
-            type: node_reference
-            required: true
-            description: Node or ending to route to on success
-          - name: on_failure
-            type: node_reference
-            required: true
-            description: Node or ending to route to on failure
-
-      - name: error_mapping
-        type: object
-        required: false
-        description: |
-          Maps specific sub-workflow error endings to recovery nodes.
-          Takes precedence over transitions.on_failure for matched errors.
-        additionalProperties:
-          type: node_reference
-
-    execution:
-      effect: |
-        # Resolve source: load workflow or read document
-        if node.workflow:
-          target = load_workflow(node.workflow)
-        else:
-          target = read_file(resolve_path(plugin_root, node.doc))
-          if node.section:
-            target = extract_section(target, node.section)
-
-        # Interpolate inputs
-        inputs = interpolate_all(node.input, state)
-
-        # Execute based on mode
-        if (node.mode or "inline") == "inline":
-          # Shared state: merge inputs, execute, route on outcome
-          merge_into(state, inputs)
-          result = execute(target, state)
-        else:
-          # Spawn: copy state, execute in isolation
-          isolated = deep_copy(state)
-          merge_into(isolated, inputs)
-          result = execute(target, isolated)
-
-          # On success: apply output_mapping to parent state
-          if result.success and node.output_mapping:
-            for parent_path, output_path in node.output_mapping:
-              set_nested(state, parent_path, get_nested(isolated, output_path))
-
-        # Route based on outcome
-        if result.success:
-          return route_to(node.transitions.on_success)
-        else:
-          if node.error_mapping and node.error_mapping[result.ending_id]:
-            return route_to(node.error_mapping[result.ending_id])
-          return route_to(node.transitions.on_failure)
-
-      state_reads:
-        - Fields referenced in input values via ${} interpolation
-        - All state (for spawn mode copy)
-      state_writes:
-        - "Inline mode: Depends on workflow/document execution (shared state)"
-        - "Spawn mode: Only fields specified in output_mapping (on success)"
-
-    related:
-      - action
-      - conditional
-    since: "1.0.0"
-    workflow_since: "2.1.0"
-    mode_since: "3.1.0"
-    transitions_since: "3.1.0"
-
-  # ==========================================================================
   # category: core/user_prompt
   # ==========================================================================
 
@@ -334,15 +168,16 @@ nodes:
         response. Each response option can optionally execute consequences before
         routing to the next node.
 
-        Supports two prompt modes:
-        - interactive (default) - Uses AskUserQuestion tool for structured prompts
-        - tabular - Renders markdown table, parses user text response
+        Supports two display modes (rendering hints, not tool prescriptions):
+        - json (default) - Structured data; client renders natively
+        - tabular - Markdown table, parses user text response
       notes:
-        - "Mode configured in initial_state.prompts (default: interactive)"
+        - "Display mode configured in initial_state.prompts (default: json)"
         - "Header must be 12 characters or less"
         - "Options array should have 2-4 items"
         - "User responses are stored in state.user_responses"
         - "Each response handler can execute consequences before routing"
+        - "Display modes are rendering hints — clients choose how to present"
 
     fields:
       - name: type
@@ -368,56 +203,61 @@ nodes:
             description: Short label displayed as a chip/tag (max 12 characters)
 
           - name: options
-            type: array
+            type: array | object
             required_unless: options_from_state
-            min_items: 2
-            max_items: 4
-            description: Static choices for the user (mutually exclusive with options_from_state)
-            items:
-              type: object
+            description: |
+              Polymorphic options field.
+
+              When array: Static choices for the user (2-4 items).
+                Each item has id, label, description.
+
+              When object: Mapping template for dynamic options (requires options_from_state).
+                Each field (id, label, description) is an expression applied to
+                each item from the options_from_state array.
+            array_form:
+              min_items: 2
+              max_items: 4
+              items:
+                type: object
+                properties:
+                  - name: id
+                    type: string
+                    required: true
+                    description: Unique identifier for this option, used in on_response
+
+                  - name: label
+                    type: string
+                    required: true
+                    description: Display text the user sees and selects
+
+                  - name: description
+                    type: string
+                    required: true
+                    description: Explanation of what this option means or does
+            object_form:
+              required_with: options_from_state
               properties:
                 - name: id
                   type: string
                   required: true
-                  description: Unique identifier for this option, used in on_response
+                  description: Expression for option ID (e.g., "rule.name")
 
                 - name: label
                   type: string
                   required: true
-                  description: Display text the user sees and selects
+                  description: Expression for display label
 
                 - name: description
                   type: string
                   required: true
-                  description: Explanation of what this option means or does
+                  description: Expression for description
 
           - name: options_from_state
             type: string
             required_unless: options
             description: |
               State path containing an array of items to use as dynamic options.
-              Use with option_mapping to transform items into option format.
-
-          - name: option_mapping
-            type: object
-            required_with: options_from_state
-            description: |
-              Expressions to transform each item from options_from_state into an option.
-            properties:
-              - name: id
-                type: string
-                required: true
-                description: Expression for option ID (e.g., "rule.name")
-
-              - name: label
-                type: string
-                required: true
-                description: Expression for display label
-
-              - name: description
-                type: string
-                required: true
-                description: Expression for description
+              When present, options must be an object (mapping template).
 
       - name: on_response
         type: object
@@ -444,16 +284,29 @@ nodes:
 
     execution:
       effect: |
-        # Resolve options (static from node.prompt.options, or dynamic from state)
-        options = resolve_options(node, state)
+        # Resolve options
+        if node.prompt.options_from_state:
+          # Dynamic: options is a mapping template (object)
+          items = get_nested(state, node.prompt.options_from_state)
+          mapping = node.prompt.options  # { id: "rule.name", label: "rule.name", ... }
+          options = []
+          for item in items:
+            options.append({
+              id: evaluate_expr(mapping.id, item),
+              label: evaluate_expr(mapping.label, item),
+              description: evaluate_expr(mapping.description, item)
+            })
+        else:
+          # Static: options is an array of {id, label, description}
+          options = node.prompt.options
 
-        # Get prompt mode from config (default: interactive)
-        mode = state.prompts.mode or "interactive"
+        # Get display mode from config (default: json)
+        display = state.prompts.display or "json"
 
-        # Display prompt and collect response
-        if mode == "interactive":
-          response = AskUserQuestion(node.prompt.question, node.prompt.header, options)
-        else if mode == "tabular":
+        # Present prompt and collect response
+        if display == "json":
+          response = present_prompt(node.prompt.question, node.prompt.header, options)
+        else if display == "tabular":
           # Render options as markdown table, match user text to option IDs
           response = render_table_and_match(node.prompt.question, options, state)
 
@@ -470,7 +323,7 @@ nodes:
         return route_to(handler.next_node)
 
       state_reads:
-        - "state.prompts (for mode configuration)"
+        - "state.prompts (for display configuration)"
         - "Any fields referenced via ${} in consequence parameters"
         - "options_from_state path (if using dynamic options)"
       state_writes:
@@ -481,4 +334,4 @@ nodes:
       - conditional
       - action
     since: "1.0.0"
-    updated: "2.4.0"
+    updated: "5.0.0"

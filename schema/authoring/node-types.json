@@ -3,7 +3,7 @@
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/node-types.json",
   "$comment": "Schema version 2.0 - Node type definitions. validation_gate deprecated in favor of conditional with audit.",
   "title": "Blueprint Node Types Schema",
-  "description": "Definitions for workflow node types: action, conditional, user_prompt, reference",
+  "description": "Definitions for workflow node types: action, conditional, user_prompt",
   "$defs": {
     "node": {
       "type": "object",
@@ -12,7 +12,7 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["action", "conditional", "user_prompt", "reference"],
+          "enum": ["action", "conditional", "user_prompt"],
           "description": "Node type"
         },
         "description": {
@@ -32,10 +32,6 @@
         {
           "if": { "properties": { "type": { "const": "user_prompt" } } },
           "then": { "$ref": "#/$defs/user_prompt_node" }
-        },
-        {
-          "if": { "properties": { "type": { "const": "reference" } } },
-          "then": { "$ref": "#/$defs/reference_node" }
         }
       ]
     },
@@ -132,107 +128,46 @@
         }
       }
     },
-    "reference_node": {
-      "type": "object",
-      "properties": {
-        "type": { "const": "reference" },
-        "description": { "type": "string" },
-        "doc": {
-          "type": "string",
-          "description": "Path to reference document (mutually exclusive with workflow)"
-        },
-        "workflow": {
-          "type": "string",
-          "description": "Workflow reference: owner/repo@version:name (remote), ./path/file.yaml (local file), or ./:name (local indexed)"
-        },
-        "section": {
-          "type": "string",
-          "description": "Specific section to execute (doc references only)"
-        },
-        "mode": {
-          "type": "string",
-          "enum": ["inline", "spawn"],
-          "default": "inline",
-          "description": "Execution mode: inline shares state, spawn isolates state"
-        },
-        "context": {
-          "type": "object",
-          "description": "Variables to pass to the referenced workflow/document",
-          "additionalProperties": true
-        },
-        "input": {
-          "type": "object",
-          "description": "Explicit inputs for sub-workflow (alternative to context, preferred for spawn mode)",
-          "additionalProperties": true
-        },
-        "output_mapping": {
-          "type": "object",
-          "description": "Maps sub-workflow outputs to parent state (spawn mode only)",
-          "additionalProperties": { "type": "string" }
-        },
-        "next_node": {
-          "$ref": "../common.json#/$defs/node_reference",
-          "description": "Node to transition to after reference executes (legacy, use transitions for spawn mode)"
-        },
-        "transitions": {
-          "type": "object",
-          "description": "Explicit success/failure routing (required for spawn mode)",
-          "required": ["on_success", "on_failure"],
-          "properties": {
-            "on_success": {
-              "$ref": "../common.json#/$defs/node_reference",
-              "description": "Node to transition to on successful execution"
-            },
-            "on_failure": {
-              "$ref": "../common.json#/$defs/node_reference",
-              "description": "Node to transition to on failed execution"
-            }
-          },
-          "additionalProperties": false
-        },
-        "error_mapping": {
-          "type": "object",
-          "description": "Maps specific sub-workflow error endings to recovery nodes",
-          "additionalProperties": { "$ref": "../common.json#/$defs/node_reference" }
-        }
-      },
-      "oneOf": [
-        { "required": ["doc"] },
-        { "required": ["workflow"] }
-      ],
-      "anyOf": [
-        { "required": ["next_node"] },
-        { "required": ["transitions"] }
-      ],
-      "allOf": [
-        {
-          "$comment": "spawn mode requires transitions, not next_node",
-          "if": {
-            "properties": { "mode": { "const": "spawn" } }
-          },
-          "then": {
-            "required": ["transitions"],
-            "properties": {
-              "next_node": { "not": {} }
-            }
-          }
-        }
-      ]
-    },
     "prompt": {
       "type": "object",
       "required": ["question", "header"],
       "oneOf": [
         {
+          "$comment": "Static options: options is array, no options_from_state",
           "required": ["options"],
           "properties": {
+            "options": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/prompt_option" },
+              "minItems": 2,
+              "maxItems": 4
+            },
             "options_from_state": { "not": {} }
           }
         },
         {
-          "required": ["options_from_state", "option_mapping"],
+          "$comment": "Dynamic options: options is mapping template object, options_from_state required",
+          "required": ["options_from_state", "options"],
           "properties": {
-            "options": { "not": {} }
+            "options": {
+              "type": "object",
+              "required": ["id", "label", "description"],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Expression for option ID (e.g., 'rule.name')"
+                },
+                "label": {
+                  "type": "string",
+                  "description": "Expression for display label"
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Expression for option description"
+                }
+              },
+              "additionalProperties": false
+            }
           }
         }
       ],
@@ -247,35 +182,11 @@
           "description": "Short header/tag (max 12 characters)"
         },
         "options": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/prompt_option" },
-          "minItems": 2,
-          "maxItems": 4,
-          "description": "Static choices (2-4 options). Mutually exclusive with options_from_state."
+          "description": "Polymorphic: array for static choices (2-4 options), object for mapping template (with options_from_state)"
         },
         "options_from_state": {
           "type": "string",
-          "description": "State path to array of items for dynamic options. Mutually exclusive with options."
-        },
-        "option_mapping": {
-          "type": "object",
-          "description": "Expressions to transform each item from options_from_state into an option",
-          "required": ["id", "label", "description"],
-          "properties": {
-            "id": {
-              "type": "string",
-              "description": "Expression for option ID (e.g., 'rule.name')"
-            },
-            "label": {
-              "type": "string",
-              "description": "Expression for display label"
-            },
-            "description": {
-              "type": "string",
-              "description": "Expression for option description"
-            }
-          },
-          "additionalProperties": false
+          "description": "State path to array of items for dynamic options. When present, options must be a mapping template object."
         }
       }
     },

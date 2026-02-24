@@ -3,7 +3,7 @@
 #
 # These examples are for human reference, not automated testing.
 
-schema_version: "3.0"
+schema_version: "6.0"
 description: |
   Example usage patterns for node types.
   These are documentary snippets for workflow authors.
@@ -263,98 +263,6 @@ examples:
         one condition is true. If zero or multiple are true, routes to on_false.
 
   # ==========================================================================
-  # reference - Load and execute reference document or workflow
-  # ==========================================================================
-  reference:
-    # --- Local document references (inline mode) ---
-    - title: "Execute git clone procedure (local doc)"
-      yaml: |
-        clone_repository:
-          type: reference
-          doc: "lib/corpus/patterns/sources/git.md"
-          section: "Clone Repository"
-          input:
-            repo_url: "${computed.repo_url}"
-            clone_path: "${computed.clone_path}"
-          transitions:
-            on_success: verify_clone
-            on_failure: error_clone
-      explanation: |
-        Loads the git.md document, extracts the "Clone Repository" section,
-        and executes it with the provided input variables.
-
-    # --- Remote workflow references (inline mode) ---
-    - title: "Remote workflow for intent detection"
-      yaml: |
-        detect_intent:
-          type: reference
-          workflow: hiivmind/hiivmind-blueprint-lib@v3.0.0:intent-detection
-          input:
-            arguments: "${arguments}"
-            intent_flags: "${intent_flags}"
-            intent_rules: "${intent_rules}"
-          transitions:
-            on_success: "${computed.intent_matches.winner.action}"
-            on_failure: error_intent
-      explanation: |
-        Fetches the intent-detection workflow from hiivmind-blueprint-lib
-        and executes it inline (shared state with parent).
-
-    # --- Local workflow file references ---
-    - title: "Local workflow file (direct path)"
-      yaml: |
-        load_skill:
-          type: reference
-          workflow: ./subflows/load-skill.yaml
-          input:
-            skill_path: "${args.path}"
-          transitions:
-            on_success: analyze_structure
-            on_failure: error_load
-      explanation: |
-        References a local workflow file directly by path.
-        Bypasses index resolution.
-
-    # --- Spawn mode (isolated execution) ---
-    - title: "Spawn mode with input/output mapping"
-      yaml: |
-        load_skill:
-          type: reference
-          mode: spawn
-          workflow: ./subflows/load-skill.yaml
-          input:
-            skill_path: "${args.path}"
-          output_mapping:
-            state.loaded.content: output.skill_content
-            state.loaded.name: output.skill_name
-          transitions:
-            on_success: analyze_structure
-            on_failure: error_load
-      explanation: |
-        Spawn mode copies state, runs in isolation. On success, only
-        output_mapping values merge back. On failure, parent state unchanged.
-
-    - title: "Spawn mode with error mapping"
-      yaml: |
-        load_skill:
-          type: reference
-          mode: spawn
-          workflow: ./subflows/load-skill.yaml
-          input:
-            skill_path: "${args.path}"
-          output_mapping:
-            state.loaded.content: output.skill_content
-          transitions:
-            on_success: analyze_structure
-            on_failure: error_generic
-          error_mapping:
-            error_prereqs: error_prerequisites
-            error_locate: ask_user_for_path
-      explanation: |
-        Error mapping routes to specific recovery nodes based on which
-        error ending the sub-workflow reached.
-
-  # ==========================================================================
   # user_prompt - Present question and route based on response
   # ==========================================================================
   user_prompt:
@@ -432,7 +340,7 @@ examples:
             question: "Multiple intents detected. Which did you mean?"
             header: "Clarify"
             options_from_state: computed.intent_matches.top_candidates
-            option_mapping:
+            options:
               id: rule.name
               label: rule.name
               description: rule.description
@@ -452,7 +360,9 @@ examples:
                   value: "${user_responses.show_disambiguation.text}"
               next_node: parse_intent_flags
       explanation: |
-        Uses dynamic options from state array. When user selects, the original
+        Uses dynamic options from state array. When options_from_state is present,
+        options is an object (mapping template) — each field is an expression
+        applied to each item from the state array. When user selects, the original
         item is available at user_responses.{node_id}.selected. When user types
         custom text, it's at user_responses.{node_id}.text.
 

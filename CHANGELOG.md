@@ -5,6 +5,45 @@ All notable changes to hiivmind-blueprint-lib will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] - 2026-02-24
+
+### BREAKING CHANGES
+
+#### `reference` Node Removed
+
+The `reference` node type has been removed entirely. It introduced complexity around remote workflow loading with security/prompt injection risks from loading remote documents and workflows.
+
+**Migration:** Replace `reference` nodes with direct workflow composition or `action` nodes that handle the same logic inline.
+
+**Removed from:**
+- `nodes/workflow_nodes.yaml` — node definition deleted
+- `schema/authoring/node-types.json` — schema definition deleted
+- `schema/authoring/workflow.json` — `input_schema`, `output_schema`, ending `output`, and `schema_parameter` removed (only existed for spawn-mode reference)
+- `execution/engine_execution.yaml` — dispatch case removed
+- `resolution/loader.yaml` — `workflow_loading` section removed (section 4), section 5 renumbered to 4
+- `schema/resolution/loader.json` — `workflowLoader` definition removed
+
+#### `user_prompt` Node Simplified
+
+1. **`option_mapping` merged into `options`**: The `options` field is now polymorphic:
+   - **Array** (static): `options: [{id, label, description}, ...]` — unchanged
+   - **Object** (dynamic mapping): `options: {id: "rule.name", label: "rule.name", ...}` — replaces `option_mapping`
+
+   **Migration:** Rename `option_mapping:` to `options:` in any node that uses `options_from_state`. Remove the old `options:` field (which was absent when using dynamic options).
+
+2. **`mode` renamed to `display`**: The prompt rendering configuration field is now `display` instead of `mode`.
+
+3. **`interactive` renamed to `json`**: The default display mode is now `json` (structured data, client renders natively) instead of `interactive` (which was tied to `AskUserQuestion`).
+
+   **Migration:** In `initial_state.prompts`, change `mode: interactive` to `display: json` and `mode: tabular` to `display: tabular`.
+
+### Changed
+
+- Node type count: 4 → 3 (reference removed)
+- Total type count: 35 → 34
+- `prompts-config.json` schema updated: `mode` → `display`, `interactive` → `json`
+- Loader sections renumbered: 5 sections → 4 sections
+
 ## [4.0.0] - 2026-02-24
 
 ### BREAKING CHANGES

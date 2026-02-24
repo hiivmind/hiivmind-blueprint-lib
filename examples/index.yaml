@@ -1,11 +1,11 @@
 # Examples Index
 # Documentary reference for hiivmind-blueprint type usage patterns
-# v4.0.0 - Updated for core/intent/extensions split
+# v6.0.0 - Updated for local definitions model
 #
 # These examples are for human reference, not for automated testing.
 # They show how to use the various type definitions in workflows.
 
-schema_version: "4.0"
+schema_version: "6.0"
 description: |
   Example usage patterns for hiivmind-blueprint types.
   Documentary reference for workflow authors.
@@ -54,19 +54,20 @@ files:
     categories:
       - action
       - conditional
-      - reference
       - user_prompt
-      - validation_gate
 
   execution:
     description: Examples for execution patterns
     categories:
       - consequence-dispatch
       - precondition-dispatch
-      - logging
-      - display
       - state
       - traversal
+
+  definitions:
+    description: Example .hiivmind/blueprint/definitions.yaml format
+    categories:
+      - local-definitions
 
 usage: |
   These examples are documentary only - they are snippets and fragments
@@ -78,10 +79,3 @@ usage: |
   2. Adapt the YAML to your workflow context
   3. Ensure all required parameters are provided
   4. Validate your complete workflow against the schema
-
-migration_note: |
-  v3.0 consolidated 38 specific types into 13 general-purpose types.
-  v4.0 split consolidated files into core/intent/extensions for consequences
-  and core/extensions for preconditions. Removed dynamic_route (redundant with
-  engine's resolve_routing_target). Moved compute_hash to extensions/hashing.
-  Re-categorized 6 precondition types from core/* to extensions/*.

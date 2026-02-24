@@ -2,7 +2,7 @@
 # Documentary usage patterns for execution concepts.
 # These are for human reference, not automated testing.
 
-schema_version: "3.0"
+schema_version: "6.0"
 description: |
   Example usage patterns for the execution engine.
   Covers dispatch, preconditions, state, interpolation, and checkpoints.
@@ -243,13 +243,14 @@ examples:
     phases:
       - title: "Phase 1: Initialize"
         yaml: |
+          definitions = parse_yaml(read_file(".hiivmind/blueprint/definitions.yaml"))
           workflow = parse_yaml(read_file(workflow_path))
-          types = load_types(workflow.definitions)
-          validate_schema(workflow)
+          types = build_registry(definitions)
+          validate_workflow_types(workflow, types)
           check_entry_preconditions(workflow)
           state = initialize_state(workflow)
         explanation: |
-          Load workflow, resolve types, initialize state.
+          Read local definitions, load workflow, build type registry, initialize state.
 
       - title: "Phase 2: Execute"
         yaml: |
@@ -280,6 +281,5 @@ examples:
             CASE "action":      execute_action_node(node, types, state)
             CASE "conditional":  execute_conditional_node(node, types, state)
             CASE "user_prompt":  execute_user_prompt_node(node, types, state)
-            CASE "reference":    execute_reference_node(node, types, state)
         explanation: |
           Routes to handler based on node.type.
