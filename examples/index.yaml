@@ -1,6 +1,6 @@
 # Examples Index
 # Documentary reference for hiivmind-blueprint type usage patterns
-# v6.0.0 - Updated for local definitions model
+# v6.1.0 - Added endings examples (behaviors, consequences, indeterminate)
 #
 # These examples are for human reference, not for automated testing.
 # They show how to use the various type definitions in workflows.
@@ -55,6 +55,16 @@ files:
       - action
       - conditional
       - user_prompt
+
+  endings:
+    description: Examples for ending definitions (outcome types, behaviors, consequences)
+    categories:
+      - display
+      - delegate
+      - restart
+      - silent
+      - error_with_consequences
+      - indeterminate
 
   execution:
     description: Examples for execution patterns

@@ -2,7 +2,7 @@
 # Semantic type definitions and reusable workflows for hiivmind-blueprint
 
 name: hiivmind-blueprint-lib
-version: "6.0.0"
+version: "6.1.0"
 description: |
   Type definition catalog for hiivmind-blueprint.
   Provides 22 consequence types (13 core + 3 intent + 6 extensions),
@@ -41,7 +41,7 @@ artifacts:
   - examples/ # Usage examples
 
 # Compatibility
-minimum_blueprint_version: "6.0.0"
+minimum_blueprint_version: "6.1.0"
 
 # How to use this package
 usage: |

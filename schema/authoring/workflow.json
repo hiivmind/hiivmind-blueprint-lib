@@ -78,8 +78,8 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["success", "failure", "error", "cancelled"],
-          "description": "Ending type (success, failure/error, or cancelled)"
+          "enum": ["success", "failure", "error", "cancelled", "indeterminate"],
+          "description": "Ending outcome type"
         },
         "category": {
           "type": "string",
@@ -120,6 +120,79 @@
                 "retry_node": {
                   "type": "string",
                   "description": "Node to retry from"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "consequences": {
+          "type": "array",
+          "description": "Consequence operations to execute before completing. Failures are logged but do not prevent completion.",
+          "items": {
+            "$ref": "node-types.json#/$defs/consequence"
+          }
+        },
+        "behavior": {
+          "description": "Terminal behavior. Defaults to display (show message/summary) when omitted.",
+          "oneOf": [
+            {
+              "type": "object",
+              "description": "Delegate execution to another skill",
+              "required": ["type", "skill"],
+              "properties": {
+                "type": {
+                  "const": "delegate"
+                },
+                "skill": {
+                  "type": "string",
+                  "description": "Skill to invoke (supports ${} interpolation)"
+                },
+                "args": {
+                  "type": "string",
+                  "description": "Arguments to pass (supports ${} interpolation)"
+                },
+                "context": {
+                  "type": "object",
+                  "description": "Context object to pass (values support ${} interpolation)",
+                  "additionalProperties": true
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "description": "Restart the workflow from a target node",
+              "required": ["type"],
+              "properties": {
+                "type": {
+                  "const": "restart"
+                },
+                "target_node": {
+                  "$ref": "../common.json#/$defs/node_reference",
+                  "description": "Node to restart from (defaults to workflow start_node)"
+                },
+                "reset_state": {
+                  "type": "boolean",
+                  "description": "Whether to reset state to initial_state (preserves _restart_count)",
+                  "default": false
+                },
+                "max_restarts": {
+                  "type": "integer",
+                  "description": "Maximum restart iterations before forcing failure",
+                  "default": 3,
+                  "minimum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "description": "Complete silently with no output",
+              "required": ["type"],
+              "properties": {
+                "type": {
+                  "const": "silent"
                 }
               },
               "additionalProperties": false

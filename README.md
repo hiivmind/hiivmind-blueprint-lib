@@ -103,6 +103,18 @@ preconditions:
 
 Workflows no longer need a `definitions` block — types are resolved from the local file by convention.
 
+## Skills vs Workflows
+
+A **skill** is a prose orchestrator (`SKILL.md`) that guides Claude through a multi-phase procedure. A **workflow** is a structured YAML definition that a skill can delegate specific phases to. This library provides type definitions for building **workflows** — the execution building blocks that skills use.
+
+| Concept | What It Is | Defined By |
+|---------|-----------|------------|
+| Skill | Prose orchestrator with phases | `SKILL.md` with frontmatter |
+| Workflow | Structured YAML execution graph | `workflows/*.yaml` within a skill |
+| Type | Building block for workflows | This catalog (`consequences/`, `preconditions/`, `nodes/`) |
+
+A skill may have zero, some, or all of its phases backed by workflows. This library's types are only relevant for the workflow-backed phases. See `hiivmind-blueprint/patterns/authoring-guide.md` for the full authoring guide covering both skills and workflows.
+
 ## Quick Start
 
 1. Copy needed type definitions from this catalog into `.hiivmind/blueprint/definitions.yaml`
@@ -141,6 +153,31 @@ endings:
     type: success
     message: "Configuration loaded"
 ```
+
+## Endings
+
+Endings define the outcome and terminal behavior of a workflow path. Every graph path must terminate at an ending.
+
+### Outcome Types
+
+| Type | Meaning |
+|------|---------|
+| `success` | Completed successfully |
+| `failure` | Failed due to a known condition |
+| `error` | Failed due to an unexpected error |
+| `cancelled` | Cancelled by user |
+| `indeterminate` | Outcome is ambiguous (maps to 3VL Unknown) |
+
+### Behaviors
+
+| Behavior | What It Does |
+|----------|-------------|
+| *(default)* display | Show message and summary |
+| `delegate` | Hand off to another skill |
+| `restart` | Loop back to a node |
+| `silent` | Complete with no output |
+
+Endings can also execute `consequences` (best-effort, logged on failure) before completing. See `examples/endings.yaml` for full patterns.
 
 ## Node Types
 
@@ -285,6 +322,7 @@ hiivmind-blueprint-lib/
 │   ├── consequences.yaml
 │   ├── preconditions.yaml
 │   ├── nodes.yaml
+│   ├── endings.yaml
 │   └── execution.yaml
 │
 └── schema/                       # JSON schemas

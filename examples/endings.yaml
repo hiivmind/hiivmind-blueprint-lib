@@ -1,0 +1,156 @@
+# Ending Examples
+# Documentary usage patterns for ending definitions
+#
+# These examples are for human reference, not automated testing.
+
+schema_version: "6.1"
+description: |
+  Example usage patterns for workflow endings.
+  Endings define an outcome type and a terminal behavior.
+
+examples:
+  # ==========================================================================
+  # Display behavior (default — no behavior block needed)
+  # ==========================================================================
+  display:
+    - title: "Success with message and summary"
+      yaml: |
+        done:
+          type: success
+          message: "Corpus initialized: ${computed.corpus_name}"
+          summary:
+            sources_added: "${computed.source_count}"
+            config_path: "${computed.config_path}"
+      explanation: |
+        Default display behavior. When no behavior block is present, the
+        ending displays the interpolated message and summary. This is
+        backward compatible with all pre-6.1 endings.
+
+  # ==========================================================================
+  # Delegate behavior — hand off to another skill
+  # ==========================================================================
+  delegate:
+    - title: "Delegate to another skill with context"
+      yaml: |
+        hand_off_to_init:
+          type: success
+          message: "Handing off to corpus-init..."
+          behavior:
+            type: delegate
+            skill: "corpus-init"
+            args: "--name ${computed.corpus_name}"
+            context:
+              source_type: "${computed.source_type}"
+              repo_url: "${computed.repo_url}"
+      explanation: |
+        After displaying the optional message, invokes the corpus-init skill
+        with interpolated arguments and a context object. The context object
+        values are interpolated from state before being passed.
+
+  # ==========================================================================
+  # Restart behavior — loop back to a workflow node
+  # ==========================================================================
+  restart:
+    - title: "Loop back to menu node"
+      yaml: |
+        back_to_menu:
+          type: success
+          message: "Returning to main menu..."
+          behavior:
+            type: restart
+            target_node: show_menu
+            max_restarts: 10
+      explanation: |
+        Loops back to the show_menu node. The engine increments
+        state._restart_count on each restart and forces a failure ending
+        when max_restarts (10) is exceeded. State is preserved across
+        restarts so user responses and computed values carry forward.
+
+    - title: "Restart with state reset (retry from scratch)"
+      yaml: |
+        retry_from_start:
+          type: failure
+          message: "Validation failed. Retrying from the beginning..."
+          consequences:
+            - type: log_entry
+              event: "retry_triggered"
+              data:
+                attempt: "${_restart_count}"
+                reason: "${computed.last_error}"
+          behavior:
+            type: restart
+            reset_state: true
+            max_restarts: 3
+      explanation: |
+        Resets state to initial_state before restarting, giving a clean
+        slate. The _restart_count is preserved even when reset_state is
+        true, preventing infinite loops. Defaults to restarting from
+        start_node since no target_node is specified. Consequences
+        execute before the restart to log the retry attempt.
+
+  # ==========================================================================
+  # Silent behavior — complete with no output
+  # ==========================================================================
+  silent:
+    - title: "Gateway delegation (no output)"
+      yaml: |
+        delegated:
+          type: success
+          behavior:
+            type: silent
+      explanation: |
+        Completes the workflow silently. Useful for gateway workflows that
+        resolve intent and delegate to a matched skill — the delegated
+        skill handles all user-facing output. No message or summary is
+        displayed.
+
+  # ==========================================================================
+  # Error with consequences
+  # ==========================================================================
+  error_with_consequences:
+    - title: "Log error and provide recovery guidance"
+      yaml: |
+        clone_failed:
+          type: error
+          category: external
+          consequences:
+            - type: log_entry
+              event: "clone_error"
+              data:
+                url: "${computed.repo_url}"
+                error: "${computed.last_error}"
+            - type: mutate_state
+              operation: set
+              field: computed.error_context
+              value: "git_clone"
+          message: "Failed to clone repository: ${computed.repo_url}"
+          details: "${computed.last_error}"
+          recovery:
+            suggestion: "Check the URL and your network connection"
+            related_skill: "corpus-init"
+            retry_node: collect_git_url
+      explanation: |
+        Ending consequences execute best-effort before the message is
+        displayed. Here a log entry is written and error context is stored.
+        If either consequence fails, execution continues — endings must
+        never fail. The recovery block provides structured guidance.
+
+  # ==========================================================================
+  # Indeterminate outcome
+  # ==========================================================================
+  indeterminate:
+    - title: "Ambiguous analysis result"
+      yaml: |
+        ambiguous:
+          type: indeterminate
+          message: "Analysis could not determine a definitive classification"
+          summary:
+            confidence: "${computed.confidence_score}"
+            top_candidate: "${computed.top_match.name}"
+            runner_up: "${computed.runner_up.name}"
+      explanation: |
+        Maps to 3VL's Unknown value. Used when a workflow reaches a
+        conclusion that is neither clearly successful nor clearly failed —
+        e.g., an intent that matched multiple rules with similar scores,
+        or a validation where results are mixed. The caller decides how
+        to interpret an indeterminate outcome.
