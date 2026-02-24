@@ -2,7 +2,7 @@
 # Authoritative source for how the LLM interprets and executes workflows.
 # The LLM reads these patterns directly - no traditional runtime needed.
 
-schema_version: "2.3"
+schema_version: "4.0"
 category: execution
 
 execution:
@@ -120,12 +120,16 @@ execution:
 
   precondition_dispatch:
     description:
-      brief: Type-based precondition evaluation
+      brief: Type-driven precondition evaluation
       detail: |
         Preconditions are pure boolean evaluations that do not modify state.
         Used in conditional nodes and entry checks. Supports ${...} interpolation
-        in parameters. Composite types (all_of, any_of, none_of, xor_of) combine
-        multiple conditions with short-circuit evaluation (except xor_of).
+        in parameters. Composite preconditions combine conditions with logical
+        operators (all, any, none, xor).
+
+        Fully type-driven: the engine resolves the type definition and interprets
+        its evaluation.effect pseudocode. New precondition types work automatically
+        without engine changes.
 
     evaluation:
       effect: |
@@ -135,50 +139,7 @@ execution:
                 THROW "Unknown precondition type: {precondition.type}"
 
             params = interpolate_params(precondition, type_def, state)
-
-            SWITCH precondition.type:
-                # Unified types (v3)
-                CASE "path_check":       RETURN evaluate_path_check(params)
-                CASE "state_check":      RETURN evaluate_state_check(params, state)
-                CASE "tool_check":       RETURN evaluate_tool_check(params)
-
-                # Composite (short-circuit except xor_of)
-                CASE "all_of":
-                    FOR each cond IN params.conditions:
-                        IF NOT evaluate_precondition(cond, types, state): RETURN false
-                    RETURN true
-                CASE "any_of":
-                    FOR each cond IN params.conditions:
-                        IF evaluate_precondition(cond, types, state): RETURN true
-                    RETURN false
-                CASE "none_of":
-                    FOR each cond IN params.conditions:
-                        IF evaluate_precondition(cond, types, state): RETURN false
-                    RETURN true
-                CASE "xor_of":
-                    count = sum(1 FOR cond IN params.conditions
-                                IF evaluate_precondition(cond, types, state))
-                    RETURN count == 1
-
-                # Expression
-                CASE "evaluate_expression":
-                    RETURN evaluate_expression(params.expression, state)
-
-                # Fallback: interpret the type definition's evaluation field
-                DEFAULT:
-                    RETURN evaluate_from_definition(type_def, params, state)
-
-    supported_types:
-      - category: filesystem
-        types: [path_check]
-      - category: state
-        types: [state_check]
-      - category: tool
-        types: [tool_check]
-      - category: composite
-        types: [all_of, any_of, none_of, xor_of]
-      - category: expression
-        types: [evaluate_expression]
+            RETURN evaluate_from_definition(type_def, params, state)
 
   # ==========================================================================
   # Consequence Dispatch
@@ -221,11 +182,6 @@ execution:
                     result = CALL type_def.payload.tool with build_tool_call(type_def.payload.effect, params)
                     IF consequence.store_as: set_nested(state.computed, consequence.store_as, result)
 
-                CASE "composite":
-                    # Execute sub-consequences in sequence
-                    FOR each sub IN type_def.payload.consequences:
-                        execute_consequence(sub, types, state)
-
                 CASE "side_effect":
                     # Display output without modifying state
                     apply_effect(type_def.payload.effect, params, state)
@@ -242,8 +198,6 @@ execution:
                     execute_consequence(action, types, state)
                 RETURN { success: true, next_node: node.on_success }
             CATCH error:
-                IF node.checkpoint_rollback:
-                    rollback_checkpoint(node.checkpoint_rollback, state)
                 RETURN { success: false, next_node: node.on_failure, error }
 
   # ==========================================================================

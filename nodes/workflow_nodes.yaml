@@ -77,7 +77,7 @@ nodes:
 
     related:
       - conditional
-      - validation_gate
+      - reference
     since: "1.0.0"
 
   # ==========================================================================
@@ -98,7 +98,7 @@ nodes:
 
         The condition is evaluated once; the result determines which branch is taken.
       notes:
-        - Condition is a single precondition object (often a composite like all_of, any_of, xor_of)
+        - Condition is a single precondition object (often a composite with operator: all, any, xor)
         - Both true and false branches are required
         - Use for binary decisions based on state
 
@@ -120,7 +120,7 @@ nodes:
         description: |
           A single precondition object that evaluates to true or false.
           Must have a 'type' field matching a defined precondition type
-          (e.g., state_check, path_check, all_of, any_of, xor_of).
+          (e.g., state_check, path_check, composite).
 
       - name: branches
         type: object

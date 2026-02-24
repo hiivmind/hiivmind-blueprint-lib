@@ -37,11 +37,11 @@ resolution:
         yq: |
           {
             "phases": [.execution.traversal.phases[].id],
-            "node_types": ["action", "conditional", "user_prompt", "validation_gate", "reference"]
+            "node_types": ["action", "conditional", "user_prompt", "reference"]
           }
         expected:
           phases: ["initialize", "execute", "complete"]
-          node_types: ["action", "conditional", "user_prompt", "validation_gate", "reference"]
+          node_types: ["action", "conditional", "user_prompt", "reference"]
 
       type_loading:
         file: resolution/loader.yaml
@@ -95,7 +95,10 @@ resolution:
         use_when: Reaching an ending node
 
       consequence_type:
-        file: consequences/consequences.yaml
+        description: Look up type in index to find source file, then fetch from that file
+        resolve: |
+          file = registry.consequences[type_name].source_file
+          # file is one of: core.yaml, intent.yaml, extensions.yaml
         yq: '.consequences.${type_name}'
         param: type_name
         use_when: Executing a consequence you haven't seen before
@@ -206,31 +209,34 @@ resolution:
                          preconditions: { _index: preconditions_index },
                          source: source_parts }
 
+            # Index maps each type to its source_file (e.g., core.yaml, intent.yaml, extensions.yaml)
             FOR each type_name, info IN consequences_index.types:
                 registry.consequences[type_name] = {
                     category: info.category, brief: info.brief,
-                    required_params: info.required_params, loaded: false
+                    required_params: info.required_params,
+                    source_file: info.source_file, loaded: false
                 }
             FOR each type_name, info IN preconditions_index.types:
                 registry.preconditions[type_name] = {
                     category: info.category, brief: info.brief,
-                    required_params: info.required_params, loaded: false
+                    required_params: info.required_params,
+                    source_file: info.source_file, loaded: false
                 }
             RETURN registry
 
     lazy_loading:
-      description: Load full definitions on first use from consolidated file
+      description: Load definitions on first use, grouped by source file
       effect: |
         FUNCTION get_type_definition(registry, type_name, kind):
             entry = registry[kind][type_name]
             IF NOT entry: THROW "Unknown {kind} type: {type_name}"
 
             IF NOT entry.loaded:
-                definition_file = registry[kind]._index.definition_file
-                definitions = fetch(registry.source, "{kind}/" + definition_file)
-                # Cache all definitions from consolidated file
-                FOR each name, def IN definitions.types:
-                    IF name IN registry[kind]:
+                source_file = entry.source_file
+                definitions = fetch(registry.source, "{kind}/" + source_file)
+                # Cache all definitions from same source file
+                FOR each name, def IN definitions[kind]:
+                    IF name IN registry[kind] AND registry[kind][name].source_file == source_file:
                         registry[kind][name].definition = def
                         registry[kind][name].loaded = true
 
@@ -246,8 +252,8 @@ resolution:
 
             needed = extract_workflow_types(workflow)
             # Validate all needed types exist in indexes; throw on unknown
-            consequence_defs = fetch_selective_types(parts, needed.consequences, "consequences")
-            precondition_defs = fetch_selective_types(parts, needed.preconditions, "preconditions")
+            consequence_defs = fetch_selective_types(parts, needed.consequences, "consequences", consequences_index)
+            precondition_defs = fetch_selective_types(parts, needed.preconditions, "preconditions", preconditions_index)
 
             # Build minimal registry with pre-loaded definitions
             registry = { consequences: {}, preconditions: {}, source: parts }
@@ -265,14 +271,25 @@ resolution:
 
         FUNCTION extract_workflow_types(workflow):
             consequences = Set(); preconditions = Set()
-            # Scan entry_preconditions, all nodes (action/conditional/user_prompt/validation_gate)
-            # Recurse into composite conditions (all_of, any_of, xor_of, none_of)
+            # Scan entry_preconditions, all nodes (action/conditional/user_prompt/reference)
+            # Recurse into composite conditions
             RETURN { consequences, preconditions }
 
-        FUNCTION fetch_selective_types(source_parts, type_names, kind):
-            query = '.{kind} | with_entries(select(' + type_names.map(n => '.key == "'+n+'"').join(" or ") + '))'
-            # Apply yq query to {kind}/{kind}.yaml via local/gh api/raw URL
-            RETURN filtered_types   # on error, throw with context
+        FUNCTION fetch_selective_types(source_parts, type_names, kind, index):
+            # Group needed types by source_file
+            file_groups = {}
+            FOR each type_name IN type_names:
+                source_file = index.types[type_name].source_file
+                file_groups[source_file] = file_groups[source_file] ?? []
+                file_groups[source_file].push(type_name)
+
+            # Fetch each source file once, extract needed types via yq
+            all_types = {}
+            FOR each source_file, names IN file_groups:
+                query = '.{kind} | with_entries(select(' + names.map(n => '.key == "'+n+'"').join(" or ") + '))'
+                fetched = apply_yq(source_parts, "{kind}/" + source_file, query)
+                all_types = merge(all_types, fetched)
+            RETURN all_types
 
     hybrid_loading:
       description: Auto-select strategy based on type count
@@ -298,15 +315,18 @@ resolution:
       effect: |
         FUNCTION validate_workflow_types(workflow, registry):
             # Check all consequence types in action nodes exist
-            # Check all precondition types in conditional/validation_gate nodes exist
+            # Check all precondition types in conditional nodes exist
             # Recurse into composite conditions
             # On unknown type: THROW with context
 
     strategy_comparison: |
-      | Strategy  | Upfront Cost | First Use Cost | Best For     | Fetches         |
-      |-----------|-------------|----------------|--------------|-----------------|
-      | Lazy      | Low (indexes) | High (~2500 lines) | >30 types  | 2 + 1-2 on use |
-      | Selective | Medium      | None (pre-loaded)  | <30 types  | 2 + 2 selective |
+      | Strategy  | Upfront Cost | First Use Cost | Best For     | Fetches             |
+      |-----------|-------------|----------------|--------------|---------------------|
+      | Lazy      | Low (indexes) | Medium (1 file)  | >30 types  | 2 + 1-3 on use     |
+      | Selective | Medium      | None (pre-loaded)  | <30 types  | 2 + 1-3 selective   |
+      Note: Types are split across multiple files per kind (e.g., core.yaml, intent.yaml,
+      extensions.yaml for consequences). Lazy loading fetches one file at a time on first
+      use of a type from that file. Selective loading groups needed types by source file.
 
   # ============================================================================
   # 4. WORKFLOW LOADING - Reusable workflow resolution
@@ -373,18 +393,10 @@ resolution:
                      version: match[3], workflow_name: match[4] }
 
     execution:
-      description: Reference nodes share state with parent workflow
-      effect: |
-        FUNCTION execute_reference_node(node, types, state):
-            workflow = load_workflow(node.workflow)
-
-            # Map context into shared state
-            FOR each key, value IN node.context:
-                state[key] = interpolate(value, state)
-
-            execute_workflow(workflow, types, state)
-            target = resolve_routing_target(node.next_node, state)
-            RETURN { next_node: target }
+      description: |
+        Reference node execution supports inline (shared state) and spawn (isolated state)
+        modes with input/output_mapping and transitions-based routing.
+        See canonical definition: nodes/workflow_nodes.yaml → reference.execution.effect
 
     state_sharing:
       reference: "Shared state - sub-workflow reads/writes parent state directly"
