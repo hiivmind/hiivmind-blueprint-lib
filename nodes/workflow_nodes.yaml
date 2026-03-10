@@ -97,7 +97,7 @@ nodes:
 
         The condition is evaluated once; the result determines which branch is taken.
       notes:
-        - Condition is a single precondition object (often a composite with operator: all, any, xor)
+        - Condition is a single precondition object (often a composite with operator - all, any, xor)
         - Both true and false branches are required
         - Use for binary decisions based on state
 
