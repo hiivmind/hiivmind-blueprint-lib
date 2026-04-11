@@ -91,12 +91,14 @@ headings. Preconditions split into `### Core` and `### Extensions`.
   keys, not positional arguments.
 - `X ∈ {a, b, c}` — enum variants on the line below the signature, indented.
 - `→` — marks the outcome / return meaning.
-- Interpolation rule: string parameters that name *content* or *locations*
-  (`path`, `url`, `content`, `message`, `prompt`) support `${}` state
-  interpolation. Enum variants (`operation`, `check`, `aspect`) and identifier
-  slots (field paths, flag names, `store_as`) are literal unless explicitly
-  noted otherwise. This replaces the per-parameter `interpolatable: true/false`
-  flag in the current catalog.
+- **All string parameters support `${}` state interpolation.** This replaces
+  the per-parameter `interpolatable: true/false` flag in the current catalog,
+  which was inconsistent in practice (e.g., `store_as` was marked interpolatable
+  on `spawn_agent`/`display` but non-interpolatable on `set_timestamp`/`compute`
+  for no principled reason). Universal interpolation is strictly more flexible,
+  removes per-parameter bookkeeping, and costs the executing LLM nothing —
+  literal strings remain literal by default; an author writing `${...}` is
+  always expressing intent to interpolate.
 - Preconditions always return boolean. Consequences mutate state or the world.
 
 **Expected size:** ~150 lines for all 34 types. From 2,218 → ~150 is a ~93%
@@ -118,9 +120,8 @@ type definition file.
   params. The actual YAML call site uses sibling keys, not positional args.
 - `X ∈ {a, b, c}` — enum variants on the line below the signature.
 - `→` — outcome / return meaning.
-- String params that name content or locations (`path`, `url`, `content`,
-  `message`, `prompt`) support `${}` state interpolation. Enum variants and
-  identifier slots (field paths, flag names, `store_as`) are literal.
+- All string parameters support `${}` state interpolation. Literals are
+  literal; `${...}` always expresses intent to interpolate.
 - Preconditions return boolean. Consequences mutate state or the world.
 
 ---
@@ -406,6 +407,43 @@ same release window:
 The implementation plan will enumerate the specific sections that need edits
 in the downstream repo.
 
+### Branch strategy
+
+All implementation work for v7.0.0 lands on a dedicated feature branch
+(`refactor/type-catalog-collapse`, branched from the current tip of
+`refactor/simpilfy` which already hosts this design doc). No work touches
+`main` directly. When the branch is complete and verified, it merges into
+`refactor/simpilfy` (or directly into the release branch created by
+`/prepare-release`, whichever is cleaner at the time).
+
+This keeps the catalog-collapse refactor isolated from any concurrent work
+and lets us abandon or rework it without affecting the broader simplify
+effort.
+
+### No-ghost-definitions audit
+
+A "ghost definition" is any lingering reference — in code, docs, scripts,
+schemas, examples, or CI — to the old catalog structure after the work is
+done. Before the v7.0.0 branch is considered complete, a repo-wide scan must
+find **zero** matches for any of the following patterns:
+
+- `consequences/core.yaml`, `consequences/intent.yaml`, `consequences/extensions.yaml`
+- `preconditions/core.yaml`, `preconditions/extensions.yaml`
+- `nodes/workflow_nodes.yaml`
+- `schema/definitions/` (any file inside)
+- `schema/resolution/` (any file inside)
+- `.hiivmind/blueprint/definitions.yaml` (unless inside a historical
+  `docs/` changelog explicitly describing the deprecation)
+- The `definitions: "1.0"` entry in `package.yaml.schemas`
+
+Files that are expected to mention these paths for historical reasons
+(`CHANGELOG.md` v7.0.0 entry, any `docs/superpowers/specs/*` from this
+session, `docs/refactor/*` plans) are explicitly exempted, but only for
+prose *describing* the removal — not for instructions that a reader could
+still act on.
+
+The implementation plan enumerates the specific scan commands.
+
 ### Versioning
 
 This is a **major** version bump: **v7.0.0**.
@@ -462,3 +500,7 @@ None at design time. All decisions locked in the brainstorm:
    `patterns/execution-guide.md` updated to reference `blueprint-types.md`.
 9. No catalog content (type name, parameter name, enum variant) that existed
    pre-change is missing from `blueprint-types.md`.
+10. The no-ghost-definitions audit (see *Design → No-ghost-definitions audit*)
+    returns zero actionable references across the repo.
+11. All work lands on `refactor/type-catalog-collapse`; `main` is never
+    touched directly.
