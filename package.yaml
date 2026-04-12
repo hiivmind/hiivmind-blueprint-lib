@@ -1,27 +1,24 @@
 # Blueprint Types Library Package Manifest
-# Semantic type definitions and reusable workflows for hiivmind-blueprint
+# Semantic type definitions for hiivmind-blueprint
 
 name: hiivmind-blueprint-lib
-version: "6.1.0"
+version: "7.0.0"
 description: |
-  Type definition catalog for hiivmind-blueprint.
-  Provides 22 consequence types (13 core + 3 intent + 6 extensions),
-  9 precondition types (3 core + 6 extensions), 3 node types, and
-  1 reusable workflow.
+  Single-file type catalog for hiivmind-blueprint. Defines 22 consequence
+  types, 9 precondition types, and 3 node types in blueprint-types.md at
+  the repo root.
 
-  Types are deployed locally via .hiivmind/blueprint/definitions.yaml
-  (no remote loading required).
+  The hiivmind-blueprint skill ships blueprint-types.md as skill-embedded
+  reference. There is no per-repo definitions file; all workflow
+  authoring LLMs read this single canonical document.
 
 repository: https://github.com/hiivmind/hiivmind-blueprint-lib
 license: MIT
 
-# Schema versions for each type system
+# Schema versions for each authoring system
 schemas:
-  consequence: "2.0"
-  precondition: "2.0"
-  node: "2.0"
   workflow: "3.0"
-  definitions: "1.0"
+  node: "2.0"
 
 # Statistics
 stats:
@@ -33,18 +30,18 @@ stats:
 
 # Artifacts produced by releases
 artifacts:
-  - consequences/ # Type definitions (core.yaml, intent.yaml, extensions.yaml)
-  - preconditions/ # Type definitions (core.yaml, extensions.yaml)
-  - nodes/ # Node type definitions
-  - workflows/ # Reusable workflow definitions
-  - schema/ # JSON Schema definitions
-  - examples/ # Usage examples
+  - blueprint-types.md  # The canonical type catalog
+  - workflows/          # Reusable workflow definitions
+  - schema/             # Authoring, config, and runtime JSON schemas
+  - examples/           # Workflow call-site snippets
 
 # Compatibility
-minimum_blueprint_version: "6.1.0"
+minimum_blueprint_version: "7.0.0"
 
 # How to use this package
 usage: |
-  Copy the type definitions your workflows need into your repo's
-  .hiivmind/blueprint/definitions.yaml file. See the authoring guide
-  in hiivmind-blueprint/patterns/authoring-guide.md for details.
+  The hiivmind-blueprint skill ships blueprint-types.md at build time
+  from a pinned version of this library. Workflow authors reference
+  types by name in their workflow YAML; the skill (and its LLM) knows
+  what each name means by loading blueprint-types.md. Consuming repos
+  do not keep a local copy of the catalog.
