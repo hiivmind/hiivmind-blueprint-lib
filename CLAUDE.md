@@ -39,7 +39,7 @@ Any change to `blueprint-types.md` MUST be synchronized with:
 
 | Location | Purpose |
 |----------|---------|
-| `examples/` (this repo) | Workflow call-site snippets must use current type names and enum variants |
+| `examples.md` (this repo) | Composite workflow examples must use current type names and enum variants |
 | `hiivmind-blueprint/lib/patterns/authoring-guide.md` | Authoring guidance referencing the catalog |
 | `hiivmind-blueprint/lib/patterns/execution-guide.md` | Execution guidance referencing the catalog |
 | `hiivmind-blueprint` skill bundle | The skill ships `blueprint-types.md` at build time; bundle must re-copy after changes |
@@ -48,7 +48,7 @@ Any change to `blueprint-types.md` MUST be synchronized with:
 
 Before completing any change to `blueprint-types.md`:
 
-1. **Examples sync** — update `examples/*.yaml` if a type, parameter, or enum variant was renamed or removed.
+1. **Examples sync** — update `examples.md` if a type, parameter, or enum variant was renamed or removed.
 2. **Patterns sync** — update the two `hiivmind-blueprint/lib/patterns/*` files if the change affects authoring or execution guidance.
 3. **Skill bundle** — ensure the next `hiivmind-blueprint` skill release re-ships the updated file.
 
@@ -78,7 +78,7 @@ type_name(required_param, optional?)
 - All string parameters support `${}` state interpolation.
 - Preconditions return boolean. Consequences mutate state or the world.
 
-Workflow YAML references types via `type: <name>` plus sibling keys for parameters. See `examples/` for concrete call-site snippets.
+Workflow YAML references types via `type: <name>` plus sibling keys for parameters. See `examples.md` for composite workflow examples.
 
 ### Three-Valued Logic (3VL)
 
@@ -97,7 +97,7 @@ Key types: `evaluate_keywords`, `parse_intent_flags`, `match_3vl_rules`
 2. Add the type to the appropriate section (`## Nodes`, `## Preconditions` → `### Core`/`### Extensions`, or `## Consequences` → the appropriate category).
 3. Write the signature in the established format (`name(params) → meaning`, with enum variants indented below if applicable).
 4. Update `package.yaml.stats` if counts changed.
-5. Add a workflow call-site example in `examples/`.
+5. Ensure the type is demonstrated in `examples.md` (add to an existing workflow or note if a new workflow is needed).
 6. Update the two pattern guides in `hiivmind-blueprint/lib/patterns/` if the new type affects authoring or execution guidance.
 
 ### Validating Changes
@@ -106,7 +106,7 @@ There is no JSON schema for `blueprint-types.md` — it is a human/LLM reference
 
 - Does the signature format match the conventions in the file's header?
 - Do the parameters and enum variants match the behavior documented in the `→` line?
-- Are existing examples in `examples/` still consistent with the type?
+- Are existing examples in `examples.md` still consistent with the type?
 
 Workflow authoring schemas (`schema/authoring/*`) are type-agnostic: they validate workflow structure but delegate type-specific validation to runtime (the LLM). Changes to `blueprint-types.md` never require schema changes.
 
@@ -146,7 +146,7 @@ Since types are interpreted by LLMs (not compiled code), validation focuses on:
 1. Schema compliance - JSON schemas validate structure
 2. Pseudocode clarity - `effect` blocks must be unambiguous
 3. Parameter completeness - Required params must be documented
-4. Example coverage - Types should have usage examples
+4. Example coverage - Types should appear in `examples.md` workflows
 
 ## Dependencies
 

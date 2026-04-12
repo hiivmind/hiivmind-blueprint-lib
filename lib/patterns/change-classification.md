@@ -76,7 +76,7 @@ Activate when the unified type catalog file is detected in the diff (e.g., `blue
 | Optional parameter added | MINOR | New entry with `required: false` or `default:` present |
 | Effect pseudocode changed | MINOR | `effect:` block differs |
 | Description or docs changed | PATCH | Only `description:`, `brief:`, `detailed:` differ |
-| Example changed | PATCH | Only `examples/` files differ |
+| Example changed | PATCH | Only `examples.md` differs |
 
 ## Output Format
 

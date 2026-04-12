@@ -113,7 +113,7 @@ Endings define the outcome and terminal behavior of a workflow path. Every graph
 | `restart` | Loop back to a node |
 | `silent` | Complete with no output |
 
-Endings can also execute `consequences` (best-effort, logged on failure) before completing. See `examples/endings.yaml` for full patterns.
+Endings can also execute `consequences` (best-effort, logged on failure) before completing. See `examples.md` for full ending patterns in context.
 
 ## Node Types
 
@@ -164,7 +164,7 @@ All 34 types are defined in `blueprint-types.md` at the repo root:
 - **9 precondition types** — 3 core + 6 extensions
 - **22 consequence types** — 13 core + 3 intent (3VL) + 6 extensions
 
-See `blueprint-types.md` for signatures, parameters, and enum variants. See `examples/` for workflow call-site snippets.
+See `blueprint-types.md` for signatures, parameters, and enum variants. See `examples.md` for composite workflow examples.
 
 ### Workflows (1 workflow)
 
@@ -209,12 +209,7 @@ hiivmind-blueprint-lib/
 │   └── core/
 │       └── intent-detection.yaml # 3VL intent detection workflow
 │
-├── examples/                     # Workflow call-site snippets
-│   ├── consequences.yaml
-│   ├── preconditions.yaml
-│   ├── nodes.yaml
-│   ├── endings.yaml
-│   └── execution.yaml
+├── examples.md                   # 3 composite workflow examples
 │
 └── schema/                       # JSON schemas
     ├── common.json               # Shared definitions

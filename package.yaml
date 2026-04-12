@@ -33,7 +33,7 @@ artifacts:
   - blueprint-types.md  # The canonical type catalog
   - workflows/          # Reusable workflow definitions
   - schema/             # Authoring, config, and runtime JSON schemas
-  - examples/           # Workflow call-site snippets
+  - examples.md         # Composite workflow examples
 
 # Compatibility
 minimum_blueprint_version: "7.0.0"
