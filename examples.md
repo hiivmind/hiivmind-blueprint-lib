@@ -544,8 +544,38 @@ nodes:
         value: "${computed.match_result.winner}"
       - type: invoke_skill
         skill: "${computed.routed_skill}"
-    on_success: done
+      - type: mutate_state
+        operation: append
+        field: computed.completed_skills
+        value: "${computed.routed_skill}"
+    on_success: ask_continue
     on_failure: error_skill
+
+  ask_continue:
+    type: user_prompt
+    description: FSM loop — return to main menu or exit
+    prompt:
+      question: "Skill complete. What next?"
+      header: "Continue?"
+      options:
+        - id: again
+          label: "Do something else"
+          description: "Return to the main menu"
+        - id: done
+          label: "I'm finished"
+          description: "Exit the workflow"
+    on_response:
+      again:
+        consequence:
+          - type: mutate_state
+            operation: clear
+            field: computed.match_result
+          - type: log_entry
+            level: info
+            message: "Looping back to main menu"
+        next_node: get_input
+      done:
+        next_node: exit_success
 
   show_capabilities:
     type: action
@@ -562,12 +592,9 @@ nodes:
     on_failure: error_display
 
 endings:
-  done:
+  exit_success:
     type: success
-    message: "Routed to ${computed.routed_skill}"
-    behavior:
-      type: delegate
-      skill: "${computed.routed_skill}"
+    message: "Session complete. Skills used: ${computed.completed_skills}"
   error_parse:
     type: error
     message: "Failed to parse intent"
