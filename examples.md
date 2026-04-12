@@ -515,16 +515,24 @@ nodes:
       on_false: show_candidates
 
   show_candidates:
-    type: action
-    description: Display top candidates for user to choose
-    actions:
-      - type: display
-        format: table
-        title: "Possible matches"
-        headers: [Name, Score]
-        content: "${computed.match_result.top_candidates}"
-    on_success: get_input
-    on_failure: error_display
+    type: user_prompt
+    description: Present top candidates as dynamic options for user to choose
+    prompt:
+      question: "Multiple matches found. Which skill do you want?"
+      header: "Choose"
+      options_from_state: computed.match_result.top_candidates
+      options:
+        id: "candidate.action"
+        label: "candidate.name"
+        description: "candidate.score"
+    on_response:
+      selected:
+        consequence:
+          - type: mutate_state
+            operation: set
+            field: computed.routed_skill
+            value: "${user_responses.show_candidates.handler_id}"
+        next_node: route_to_skill
 
   route_to_skill:
     type: action
