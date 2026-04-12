@@ -299,7 +299,7 @@ def evaluate_expression(expr: str, state: dict) -> Any:
 
 Each of the 5 node types becomes a Python executor that mirrors the pseudocode in `workflow_nodes.yaml`:
 
-**ActionNode** (mirrors `nodes/workflow_nodes.yaml` action executor):
+**ActionNode** (mirrors the `action` node type from `blueprint-types.md`):
 ```python
 async def execute_action(node, state, dispatch_consequence):
     for action in node["actions"]:
@@ -1147,7 +1147,7 @@ Phases 3, 4, and 5 are independent of each other and can be developed in paralle
 | `execution/engine_execution.yaml` | The 3-phase execution model the interpreter must replicate |
 | `consequences/consequences.yaml` | All 43 consequence types → Python handler functions |
 | `preconditions/preconditions.yaml` | All 27 precondition types → Python evaluator functions |
-| `nodes/workflow_nodes.yaml` | 5 node types → Python node executors |
+| `blueprint-types.md` (Nodes section) | 3 node types → Python node executors |
 | `resolution/type-loader.yaml` | Type loading protocol to replicate |
 | `resolution/workflow-loader.yaml` | Workflow loading protocol to replicate |
 | `docs/spoon-core-integration-analysis.md` | Direction B discussion, ADRs 1-5, token model |

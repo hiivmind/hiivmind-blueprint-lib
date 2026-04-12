@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/workflow.json",
-  "$comment": "Schema version 3.0 - Removed definitions block (types now local via .hiivmind/blueprint/definitions.yaml)",
+  "$comment": "Schema version 3.0 - Types defined in blueprint-types.md (skill-embedded, no per-repo definitions file)",
   "title": "Blueprint Workflow Schema",
   "description": "JSON Schema for hiivmind-blueprint workflow.yaml files",
   "type": "object",

@@ -324,7 +324,7 @@ Resolution order: remote source → embedded fallback → error.
 
 **Implementation sketch:**
 - `embedded_types` key in `definitions` block (optional)
-- Schema addition to `schema/resolution/`
+- Schema addition (pre-v7.0.0: was `schema/resolution/`, now eliminated)
 - Python runtime: try remote fetch, fall back to embedded
 - LLM runtime: instruction in execution semantics for fallback order
 - Tooling: `blueprint pack` command could auto-generate `embedded_types` from a resolved workflow
