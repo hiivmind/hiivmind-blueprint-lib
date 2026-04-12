@@ -243,14 +243,14 @@ examples:
     phases:
       - title: "Phase 1: Initialize"
         yaml: |
-          definitions = parse_yaml(read_file(".hiivmind/blueprint/definitions.yaml"))
+          types = load_types_from_blueprint_types_md()  # types shipped in blueprint-types.md
           workflow = parse_yaml(read_file(workflow_path))
-          types = build_registry(definitions)
           validate_workflow_types(workflow, types)
           check_entry_preconditions(workflow)
           state = initialize_state(workflow)
         explanation: |
-          Read local definitions, load workflow, build type registry, initialize state.
+          Load types from blueprint-types.md (shipped with the plugin), load workflow,
+          validate types, initialize state.
 
       - title: "Phase 2: Execute"
         yaml: |
