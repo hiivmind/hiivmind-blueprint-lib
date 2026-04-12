@@ -5,6 +5,53 @@ All notable changes to hiivmind-blueprint-lib will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0] - 2026-04-13
+
+### BREAKING CHANGES
+
+#### Type catalog collapsed into a single markdown file
+
+The six catalog YAML files are replaced by one file at the repo root: `blueprint-types.md`. All 34 type definitions (3 nodes + 9 preconditions + 22 consequences) are preserved verbatim — no type names, parameter names, or enum variants changed. The compression is pure: 2,218 lines → ~180 lines.
+
+**Removed:**
+- `consequences/core.yaml`, `consequences/intent.yaml`, `consequences/extensions.yaml`
+- `preconditions/core.yaml`, `preconditions/extensions.yaml`
+- `nodes/workflow_nodes.yaml`
+- `consequences/`, `preconditions/`, `nodes/` directories
+
+**Added:**
+- `blueprint-types.md` at the repo root — single-file type catalog in signature-style prose
+
+**Migration for workflow authors:** None required. Workflow YAML type names, parameter names, and enum variants are all unchanged. Existing workflows continue to work.
+
+#### Obsolete schemas deleted
+
+Three JSON schemas are removed because they no longer have validation targets:
+
+- `schema/definitions/type-definition.json` — validated the catalog YAML files
+- `schema/definitions/execution-definition.json` — orphaned since v6.0.0 when `execution/` was removed
+- `schema/resolution/definitions.json` — validated per-repo `.hiivmind/blueprint/definitions.yaml`, which is eliminated
+
+The `schema/definitions/` and `schema/resolution/` directories are removed. Authoring schemas (`schema/authoring/*`), common definitions, config schemas, and runtime schemas are unaffected.
+
+#### Per-repo `definitions.yaml` eliminated
+
+Previously, consuming repos copied catalog types into `.hiivmind/blueprint/definitions.yaml`. That concept is gone: the `hiivmind-blueprint` skill ships `blueprint-types.md` as skill-embedded reference at build time. Consuming repos should delete any existing `.hiivmind/blueprint/definitions.yaml` after upgrading.
+
+#### Universal `${}` interpolation
+
+String parameters are now uniformly interpolatable. The previous per-parameter `interpolatable: true/false` flags (inconsistent in the old catalog) are gone. Literal strings remain literal; `${...}` always expresses intent to interpolate. This is strictly more flexible than the old behavior.
+
+### Changed
+
+- Version: `6.1.0` → `7.0.0`
+- `package.yaml` artifacts: drop `consequences/`, `preconditions/`, `nodes/`; add `blueprint-types.md`
+- `package.yaml` schemas block: drop `definitions: "1.0"` entry
+- `README.md`: File Structure, Type Inventory, Quick Start, How It Works sections updated
+- `CLAUDE.md`: File Structure, Sync Checklist, Key Concepts, Common Tasks sections updated
+- `examples/index.yaml`: removed `source_files:` mapping to deleted YAML files
+- Cross-repo: `hiivmind-blueprint/lib/patterns/authoring-guide.md` and `execution-guide.md` updated to reference `blueprint-types.md`
+
 ## [5.0.0] - 2026-02-24
 
 ### BREAKING CHANGES
