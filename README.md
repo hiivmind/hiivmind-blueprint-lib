@@ -21,87 +21,23 @@ This library introduces a novel approach to workflow execution: **the LLM interp
 Each type definition includes an `effect` field containing pseudocode that the LLM interprets:
 
 ```yaml
-# From consequences/core.yaml
-types:
-  set_flag:
-    description:
-      brief: Sets a boolean flag in workflow state
-    parameters:
-      - name: flag
-        type: string
-        required: true
-      - name: value
-        type: boolean
-        default: true
-    payload:
-      kind: state_mutation
-      effect: |
-        state.flags[params.flag] = params.value
+# From blueprint-types.md
+set_flag(flag, value)
+  value ∈ {true, false}
+  → state.flags[flag] = value
 ```
 
 When executing a workflow, the LLM:
-1. Reads the local definitions file (`.hiivmind/blueprint/definitions.yaml`)
+1. Reads `blueprint-types.md` (shipped by the hiivmind-blueprint skill)
 2. Reads the workflow YAML (nodes, consequences, preconditions)
-3. Interprets the `effect` pseudocode to perform each operation
-4. Naturally handles interpolation, error recovery, and tool calls
+3. Interprets each type by its documented signature and semantics
+4. Naturally handles `${}` interpolation, error recovery, and tool calls
 
 ## Overview
 
-This package provides semantic type definitions that are deployed locally with each repo. Authors copy the types their workflows need from this catalog into a centralized definitions file:
+This package provides a single-file type catalog at `blueprint-types.md`. The `hiivmind-blueprint` skill ships this file at build time from a pinned version of the library. There is no per-repo definitions file.
 
-```yaml
-# .hiivmind/blueprint/definitions.yaml
-nodes:
-  action:
-    description: "Execute consequences, route on success/failure"
-    execution:
-      effect: |
-        for action in node.actions:
-          result = dispatch_consequence(action, state)
-          if result.failed: return route_to(node.on_failure)
-        return route_to(node.on_success)
-
-consequences:
-  mutate_state:
-    description: "Modify workflow state"
-    parameters:
-      - name: operation
-        type: string
-        required: true
-        enum: [set, append, clear, merge]
-      - name: field
-        type: string
-        required: true
-      - name: value
-        type: any
-        required: false
-    payload:
-      kind: state_mutation
-      effect: |
-        if operation == "set":   state[field] = value
-        if operation == "append": state[field].push(value)
-        if operation == "clear":  state[field] = null
-        if operation == "merge":  state[field] = merge(state[field], value)
-
-preconditions:
-  state_check:
-    description: "Check state field against a condition"
-    parameters:
-      - name: field
-        type: string
-        required: true
-      - name: operator
-        type: string
-        required: true
-    evaluation:
-      effect: |
-        val = resolve_path(state, field)
-        if operator == "not_null": return val != null
-        if operator == "equals":  return val == value
-        if operator == "true":    return val == true
-```
-
-Workflows no longer need a `definitions` block — types are resolved from the local file by convention.
+Workflow authors reference types by name; the workflow-executing LLM reads `blueprint-types.md` to interpret each name. Every type is documented as a short function-style signature with parameters, enum variants, and a one-line semantic description. See `blueprint-types.md` for the full catalog.
 
 ## Skills vs Workflows
 
@@ -111,13 +47,13 @@ A **skill** is a prose orchestrator (`SKILL.md`) that guides Claude through a mu
 |---------|-----------|------------|
 | Skill | Prose orchestrator with phases | `SKILL.md` with frontmatter |
 | Workflow | Structured YAML execution graph | `workflows/*.yaml` within a skill |
-| Type | Building block for workflows | This catalog (`consequences/`, `preconditions/`, `nodes/`) |
+| Type | Building block for workflows | `blueprint-types.md` (this repo) |
 
 A skill may have zero, some, or all of its phases backed by workflows. This library's types are only relevant for the workflow-backed phases. See `hiivmind-blueprint/patterns/authoring-guide.md` for the full authoring guide covering both skills and workflows.
 
 ## Quick Start
 
-1. Copy needed type definitions from this catalog into `.hiivmind/blueprint/definitions.yaml`
+1. Install the `hiivmind-blueprint` skill (ships `blueprint-types.md` automatically)
 2. Write your workflow YAML using those types
 3. See `hiivmind-blueprint/patterns/authoring-guide.md` for the full authoring guide
 
@@ -222,48 +158,13 @@ Use `${...}` syntax to reference state values:
 
 ## Type Inventory
 
-Types are split into core, intent, and extension files.
+All 34 types are defined in `blueprint-types.md` at the repo root:
 
-### Consequences (22 types across `consequences/core.yaml`, `intent.yaml`, `extensions.yaml`)
+- **3 node types** — `action`, `conditional`, `user_prompt`
+- **9 precondition types** — 3 core + 6 extensions
+- **22 consequence types** — 13 core + 3 intent (3VL) + 6 extensions
 
-| Category | Types | Description |
-|----------|-------|-------------|
-| core/state | 2 | set_flag, mutate_state |
-| core/evaluation | 2 | evaluate, compute |
-| core/interaction | 1 | display (text, table, markdown, json) |
-| core/control | 4 | create_checkpoint, rollback_checkpoint, spawn_agent, inline |
-| core/utility | 1 | set_timestamp |
-| core/intent | 3 | evaluate_keywords, parse_intent_flags, match_3vl_rules |
-| core/logging | 2 | log_node, log_entry |
-| extensions/file-system | 1 | local_file_ops (read, write, mkdir, delete) |
-| extensions/git | 1 | git_ops_local (clone, pull, fetch, get-sha) |
-| extensions/hashing | 1 | compute_hash |
-| extensions/web | 1 | web_ops (fetch, cache) |
-| extensions/scripting | 1 | run_command (bash, python, node, etc.) |
-| extensions/package | 1 | install_tool |
-| core/control | 1 | invoke_skill |
-
-### Preconditions (9 types across `preconditions/core.yaml`, `extensions.yaml`)
-
-| Category | Types | Description |
-|----------|-------|-------------|
-| core/composite | 1 | composite (operator: all, any, none, xor) |
-| core/expression | 1 | evaluate_expression |
-| core/state | 1 | state_check (true, false, equals, not_null, null) |
-| extensions/filesystem | 1 | path_check (exists, is_file, is_directory, contains_text) |
-| extensions/tools | 1 | tool_check (available, version_gte) |
-| extensions/network | 1 | network_available |
-| extensions/python | 1 | python_module_available |
-| extensions/git | 1 | source_check (exists, cloned, has_updates) |
-| extensions/web | 1 | fetch_check (succeeded, has_content) |
-
-### Node Types (3 types in `nodes/workflow_nodes.yaml`)
-
-| Type | Description |
-|------|-------------|
-| action | Execute operations, route on success/failure |
-| conditional | Branch based on precondition evaluation |
-| user_prompt | Present structured prompt, route on response |
+See `blueprint-types.md` for signatures, parameters, and enum variants. See `examples/` for workflow call-site snippets.
 
 ### Workflows (1 workflow)
 
@@ -299,26 +200,16 @@ When multiple rules match, candidates are ranked by:
 
 ```
 hiivmind-blueprint-lib/
+├── blueprint-types.md            # Single-file type catalog (3 nodes,
+│                                 # 9 preconditions, 22 consequences)
 ├── package.yaml                  # Package manifest
 ├── CHANGELOG.md                  # Version history
-│
-├── consequences/
-│   ├── core.yaml                 # 13 core consequence types
-│   ├── intent.yaml               # 3 intent detection (3VL) types
-│   └── extensions.yaml           # 6 extension consequence types
-│
-├── preconditions/
-│   ├── core.yaml                 # 3 core precondition types
-│   └── extensions.yaml           # 6 extension precondition types
-│
-├── nodes/
-│   └── workflow_nodes.yaml       # 3 node type definitions
 │
 ├── workflows/                    # Reusable workflow definitions
 │   └── core/
 │       └── intent-detection.yaml # 3VL intent detection workflow
 │
-├── examples/                     # Usage examples
+├── examples/                     # Workflow call-site snippets
 │   ├── consequences.yaml
 │   ├── preconditions.yaml
 │   ├── nodes.yaml
@@ -327,20 +218,15 @@ hiivmind-blueprint-lib/
 │
 └── schema/                       # JSON schemas
     ├── common.json               # Shared definitions
-    ├── definitions/
-    │   ├── type-definition.json  # Catalog type definition schema
-    │   └── execution-definition.json
-    ├── authoring/
+    ├── authoring/                # Workflow authoring validation
     │   ├── workflow.json
     │   ├── node-types.json
     │   └── intent-mapping.json
-    ├── runtime/
-    │   └── logging.json
-    ├── config/
+    ├── config/                   # Runtime configuration
     │   ├── output-config.json
     │   └── prompts-config.json
-    └── resolution/
-        └── definitions.json      # Per-repo definitions.yaml schema
+    └── runtime/                  # Runtime output validation
+        └── logging.json
 ```
 
 ## Versioning Policy
