@@ -42,6 +42,28 @@ Previously, consuming repos copied catalog types into `.hiivmind/blueprint/defin
 
 String parameters are now uniformly interpolatable. The previous per-parameter `interpolatable: true/false` flags (inconsistent in the old catalog) are gone. Literal strings remain literal; `${...}` always expresses intent to interpolate. This is strictly more flexible than the old behavior.
 
+#### Workflow schema compressed
+
+Six structural changes reduce workflow YAML verbosity by ~30-40%:
+
+1. **`consequences:` everywhere** — `actions:` (on action nodes) and `consequence:` (in response handlers) renamed to `consequences:` for consistency with endings and paralleling `preconditions`.
+2. **Default failure routing** — New required `default_error` field on workflows. `on_failure` on action nodes and `on_unknown` on conditional nodes are now optional; when omitted, they route to `default_error`.
+3. **Ternary conditionals** — Conditionals now support `on_true`, `on_false`, and `on_unknown` as direct keys (flattened from `branches:` wrapper). `on_unknown` handles evaluation failure, distinct from "condition is false."
+4. **Condition shorthand** — `condition: "expression"` is sugar for `{type: evaluate_expression, expression: "..."}`. `condition: {all: [...]}` is sugar for `{type: composite, operator: all, conditions: [...]}`. Full object form still works.
+5. **Response handler shorthand** — `option_id: "node_name"` is sugar for `{next_node: "node_name"}`. `next_node` supports `${}` interpolation for dynamic routing.
+6. **Optional `initial_state`** — When omitted, walker initializes with empty defaults. When provided, no need for empty `flags: {}` or `computed: {}`.
+
+**Renamed:**
+- Action node: `actions:` → `consequences:`
+- Response handler: `consequence:` → `consequences:`
+- Conditional: `branches: {on_true, on_false}` → `on_true`, `on_false` (direct keys)
+
+**Added:**
+- `default_error` (required workflow field)
+- `on_unknown` (optional on conditional nodes)
+- Condition string shorthand and composite shorthand
+- Response handler string shorthand and dynamic `${}` routing
+
 ### Changed
 
 - Version: `6.1.0` → `7.0.0`
