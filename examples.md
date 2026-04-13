@@ -1,7 +1,10 @@
 # hiivmind-blueprint Examples
 
 Three composite workflows demonstrating all 34 types from `blueprint-types.md`
-in realistic end-to-end context. Each workflow is valid Blueprint YAML.
+in realistic end-to-end context. Each workflow is valid Blueprint YAML using
+the compressed schema (v3.0): `consequences:` everywhere, flattened
+`on_true`/`on_false`, optional `on_failure`, condition shorthand, and
+response handler string sugar.
 
 ---
 
@@ -16,17 +19,19 @@ state before risky operations.
 `git_ops_local`, `set_timestamp`, `create_checkpoint`, `rollback_checkpoint`,
 `install_tool`
 
+**Compression patterns:** `consequences:` rename, composite `all:` shorthand,
+default `on_failure` routing, bare response handler (`local: done`)
+
 ```yaml
 name: source-onboarding
 version: "1.0.0"
 description: Onboard a new git source — check tools, prompt for details, clone and configure.
 
 start_node: check_prerequisites
+default_error: error_generic
 
 initial_state:
   phase: setup
-  flags: {}
-  computed: {}
   output:
     level: normal
 
@@ -35,9 +40,7 @@ nodes:
     type: conditional
     description: Verify required tools and network
     condition:
-      type: composite
-      operator: all
-      conditions:
+      all:
         - type: tool_check
           tool: git
           capability: available
@@ -47,14 +50,13 @@ nodes:
           args:
             min_version: "4.0"
         - type: network_available
-    branches:
-      on_true: check_config
-      on_false: install_missing_tools
+    on_true: check_config
+    on_false: install_missing_tools
 
   install_missing_tools:
     type: action
     description: Attempt to install yq if missing
-    actions:
+    consequences:
       - type: install_tool
         tool: yq
         install_command: "snap install yq"
@@ -62,7 +64,6 @@ nodes:
         level: info
         message: "Installed missing tool: yq"
     on_success: check_config
-    on_failure: error_missing_tools
 
   check_config:
     type: conditional
@@ -71,14 +72,13 @@ nodes:
       type: path_check
       path: "data/config.yaml"
       check: is_file
-    branches:
-      on_true: load_config
-      on_false: ask_source_type
+    on_true: load_config
+    on_false: ask_source_type
 
   load_config:
     type: action
     description: Read existing config and verify it has a sources array
-    actions:
+    consequences:
       - type: local_file_ops
         operation: read
         path: "data/config.yaml"
@@ -99,19 +99,17 @@ nodes:
       type: state_check
       field: computed.config.sources
       operator: not_null
-    branches:
-      on_true: ask_source_type
-      on_false: init_sources
+    on_true: ask_source_type
+    on_false: init_sources
 
   init_sources:
     type: action
-    actions:
+    consequences:
       - type: mutate_state
         operation: set
         field: computed.config.sources
         value: []
     on_success: ask_source_type
-    on_failure: error_config_read
 
   ask_source_type:
     type: user_prompt
@@ -127,24 +125,18 @@ nodes:
           description: "Index files from a local path"
     on_response:
       git:
-        consequence:
+        consequences:
           - type: mutate_state
             operation: set
             field: source_type
             value: git
         next_node: checkpoint_before_clone
-      local:
-        consequence:
-          - type: mutate_state
-            operation: set
-            field: source_type
-            value: local
-        next_node: done
+      local: done
 
   checkpoint_before_clone:
     type: action
     description: Save state before clone (risky network operation)
-    actions:
+    consequences:
       - type: create_checkpoint
         name: before_clone
       - type: set_timestamp
@@ -152,12 +144,11 @@ nodes:
       - type: display
         content: "Cloning repository..."
     on_success: clone_repo
-    on_failure: error_checkpoint
 
   clone_repo:
     type: action
     description: Clone the git repository
-    actions:
+    consequences:
       - type: git_ops_local
         operation: clone
         args:
@@ -175,28 +166,24 @@ nodes:
   rollback_clone:
     type: action
     description: Restore state after failed clone
-    actions:
+    consequences:
       - type: rollback_checkpoint
         name: before_clone
       - type: log_entry
         level: error
         message: "Clone failed, state restored from checkpoint"
     on_success: error_clone_failed
-    on_failure: error_clone_failed
 
 endings:
   done:
     type: success
     message: "Source onboarded: ${computed.source_id}"
-  error_missing_tools:
+  error_generic:
     type: error
-    message: "Required tools not available"
+    message: "Unexpected failure at ${current_node}"
   error_config_read:
     type: error
     message: "Failed to read config.yaml"
-  error_checkpoint:
-    type: error
-    message: "Failed to create checkpoint"
   error_clone_failed:
     type: failure
     message: "Clone failed for ${computed.repo_url}"
@@ -214,17 +201,19 @@ change detection, process with a Python script, spawn a parallel indexing agent.
 `web_ops`, `compute_hash`, `run_command`, `compute`, `evaluate`,
 `spawn_agent`, `inline`
 
+**Compression patterns:** condition string shorthand
+(`"flags.content_changed == true"`), default `on_failure` routing
+
 ```yaml
 name: web-content-pipeline
 version: "1.0.0"
 description: Fetch web content, detect changes via hashing, process with Python.
 
 start_node: verify_source
+default_error: error_generic
 
 initial_state:
   phase: pipeline
-  flags: {}
-  computed: {}
 
 nodes:
   verify_source:
@@ -234,9 +223,8 @@ nodes:
       type: source_check
       source_id: "${computed.source_id}"
       aspect: cloned
-    branches:
-      on_true: check_python
-      on_false: error_no_source
+    on_true: check_python
+    on_false: error_no_source
 
   check_python:
     type: conditional
@@ -244,9 +232,8 @@ nodes:
     condition:
       type: python_module_available
       module: yaml
-    branches:
-      on_true: check_cache
-      on_false: error_no_python
+    on_true: check_cache
+    on_false: error_no_python
 
   check_cache:
     type: conditional
@@ -255,14 +242,13 @@ nodes:
       type: path_check
       path: ".cache/${computed.source_id}.md"
       check: is_file
-    branches:
-      on_true: done_cached
-      on_false: fetch_content
+    on_true: done_cached
+    on_false: fetch_content
 
   fetch_content:
     type: action
     description: Fetch web page and store result
-    actions:
+    consequences:
       - type: web_ops
         operation: fetch
         url: "${computed.page_url}"
@@ -270,7 +256,6 @@ nodes:
         allow_failure: true
         store_as: computed.fetch_result
     on_success: check_fetch
-    on_failure: error_fetch
 
   check_fetch:
     type: conditional
@@ -279,14 +264,13 @@ nodes:
       type: fetch_check
       from: computed.fetch_result
       aspect: has_content
-    branches:
-      on_true: hash_content
-      on_false: error_empty_fetch
+    on_true: hash_content
+    on_false: error_empty_fetch
 
   hash_content:
     type: action
     description: Hash fetched content and check for changes
-    actions:
+    consequences:
       - type: compute_hash
         from: computed.fetch_result.content
         store_as: computed.new_hash
@@ -294,22 +278,18 @@ nodes:
         expression: "computed.new_hash != computed.previous_hash"
         set_flag: content_changed
     on_success: check_changed
-    on_failure: error_hash
 
   check_changed:
     type: conditional
     description: Only process if content actually changed
-    condition:
-      type: evaluate_expression
-      expression: "flags.content_changed == true"
-    branches:
-      on_true: process_content
-      on_false: done_no_changes
+    condition: "flags.content_changed == true"
+    on_true: process_content
+    on_false: done_no_changes
 
   process_content:
     type: action
     description: Clean content, compute output path, run processing script
-    actions:
+    consequences:
       - type: compute
         expression: "computed.output_dir + '/' + computed.source_id + '.md'"
         store_as: computed.output_path
@@ -328,30 +308,27 @@ nodes:
           - "${computed.output_path}"
         store_as: computed.process_output
     on_success: spawn_indexer
-    on_failure: error_process
 
   spawn_indexer:
     type: action
     description: Spawn parallel agent to update the index
-    actions:
+    consequences:
       - type: spawn_agent
         subagent_type: general-purpose
         prompt: "Update the index at data/index.md to include ${computed.source_id}"
         store_as: computed.index_result
         run_in_background: true
     on_success: cache_content
-    on_failure: done_processed
 
   cache_content:
     type: action
     description: Cache fetched content locally for next run
-    actions:
+    consequences:
       - type: web_ops
         operation: cache
         from: computed.fetch_result
         dest: ".cache/${computed.source_id}.md"
     on_success: done_processed
-    on_failure: done_processed
 
 endings:
   done_processed:
@@ -363,24 +340,18 @@ endings:
   done_cached:
     type: success
     message: "Using cached content for ${computed.source_id}"
+  error_generic:
+    type: error
+    message: "Unexpected failure at ${current_node}"
   error_no_source:
     type: error
     message: "Source not cloned: ${computed.source_id}"
   error_no_python:
     type: error
     message: "Python yaml module not available"
-  error_fetch:
-    type: error
-    message: "Failed to fetch ${computed.page_url}"
   error_empty_fetch:
     type: failure
     message: "Fetch returned empty content"
-  error_hash:
-    type: error
-    message: "Failed to hash content"
-  error_process:
-    type: error
-    message: "Processing script failed"
 ```
 
 ---
@@ -394,17 +365,21 @@ display candidates if ambiguous, route to the winning skill.
 `evaluate_expression`, `evaluate_keywords`, `parse_intent_flags`,
 `match_3vl_rules`, `display`, `invoke_skill`, `mutate_state`, `log_entry`
 
+**Compression patterns:** composite `all:` shorthand, condition string
+shorthand, bare response handler (`browse: show_capabilities`,
+`done: exit_success`), dynamic `${}` routing
+(`"${user_responses.show_candidates.action}"`), FSM loop pattern
+
 ```yaml
 name: intent-router
 version: "1.0.0"
 description: Parse user input with 3VL intent detection and route to the matching skill.
 
 start_node: get_input
+default_error: error_generic
 
 initial_state:
   phase: routing
-  flags: {}
-  computed: {}
 
 nodes:
   get_input:
@@ -421,24 +396,18 @@ nodes:
           description: "See a list of available skills"
     on_response:
       typed:
-        consequence:
+        consequences:
           - type: mutate_state
             operation: set
             field: computed.mode
             value: parse
         next_node: parse_keywords
-      browse:
-        consequence:
-          - type: mutate_state
-            operation: set
-            field: computed.mode
-            value: browse
-        next_node: show_capabilities
+      browse: show_capabilities
 
   parse_keywords:
     type: action
     description: Quick keyword check before full 3VL parsing
-    actions:
+    consequences:
       - type: evaluate_keywords
         input: "${computed.user_input}"
         keyword_sets:
@@ -447,28 +416,24 @@ nodes:
           maintain: [update, refresh, sync, check]
         store_as: computed.keyword_match
     on_success: check_keyword_match
-    on_failure: error_parse
 
   check_keyword_match:
     type: conditional
     description: If keyword match is confident, skip full 3VL parse
     condition:
-      type: composite
-      operator: all
-      conditions:
+      all:
         - type: state_check
           field: computed.keyword_match
           operator: not_null
         - type: evaluate_expression
           expression: "computed.confidence > 0.8"
-    branches:
-      on_true: route_to_skill
-      on_false: full_3vl_parse
+    on_true: route_to_skill
+    on_false: full_3vl_parse
 
   full_3vl_parse:
     type: action
     description: Parse intent flags and match against rule table
-    actions:
+    consequences:
       - type: parse_intent_flags
         input: "${computed.user_input}"
         flag_definitions:
@@ -501,18 +466,13 @@ nodes:
         context:
           flags: "${computed.intent_flags}"
     on_success: check_clear_winner
-    on_failure: error_parse
 
   check_clear_winner:
     type: conditional
     description: Check if 3VL produced a clear winner
-    condition:
-      type: state_check
-      field: computed.match_result.clear_winner
-      operator: "true"
-    branches:
-      on_true: route_to_skill
-      on_false: show_candidates
+    condition: "computed.match_result.clear_winner == true"
+    on_true: route_to_skill
+    on_false: show_candidates
 
   show_candidates:
     type: user_prompt
@@ -526,18 +486,12 @@ nodes:
         label: "candidate.name"
         description: "candidate.score"
     on_response:
-      selected:
-        consequence:
-          - type: mutate_state
-            operation: set
-            field: computed.routed_skill
-            value: "${user_responses.show_candidates.handler_id}"
-        next_node: route_to_skill
+      selected: "${user_responses.show_candidates.action}"
 
   route_to_skill:
     type: action
     description: Invoke the matched skill
-    actions:
+    consequences:
       - type: mutate_state
         operation: set
         field: computed.routed_skill
@@ -549,7 +503,6 @@ nodes:
         field: computed.completed_skills
         value: "${computed.routed_skill}"
     on_success: ask_continue
-    on_failure: error_skill
 
   ask_continue:
     type: user_prompt
@@ -566,7 +519,7 @@ nodes:
           description: "Exit the workflow"
     on_response:
       again:
-        consequence:
+        consequences:
           - type: mutate_state
             operation: clear
             field: computed.match_result
@@ -574,13 +527,12 @@ nodes:
             level: info
             message: "Looping back to main menu"
         next_node: get_input
-      done:
-        next_node: exit_success
+      done: exit_success
 
   show_capabilities:
     type: action
     description: List available skills
-    actions:
+    consequences:
       - type: display
         format: markdown
         content: |
@@ -589,19 +541,12 @@ nodes:
           - **navigate** — Search and browse documentation
           - **maintain** — Update, refresh, and check existing work
     on_success: get_input
-    on_failure: error_display
 
 endings:
   exit_success:
     type: success
     message: "Session complete. Skills used: ${computed.completed_skills}"
-  error_parse:
+  error_generic:
     type: error
-    message: "Failed to parse intent"
-  error_display:
-    type: error
-    message: "Display error"
-  error_skill:
-    type: error
-    message: "Failed to invoke skill"
+    message: "Unexpected failure at ${current_node}"
 ```
