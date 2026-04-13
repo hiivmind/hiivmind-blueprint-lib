@@ -1,11 +1,11 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/workflow.json",
-  "$comment": "Schema version 3.0 - Types defined in blueprint-types.md (skill-embedded, no per-repo definitions file)",
+  "$comment": "Schema version 3.1 - Added default_error for implicit failure routing. Types defined in blueprint-types.md.",
   "title": "Blueprint Workflow Schema",
   "description": "JSON Schema for hiivmind-blueprint workflow.yaml files",
   "type": "object",
-  "required": ["name", "version", "start_node", "nodes", "endings"],
+  "required": ["name", "version", "start_node", "default_error", "nodes", "endings"],
   "properties": {
     "name": {
       "type": "string",
@@ -55,6 +55,10 @@
     "start_node": {
       "$ref": "../common.json#/$defs/node_reference",
       "description": "ID of the first node to execute"
+    },
+    "default_error": {
+      "$ref": "../common.json#/$defs/node_reference",
+      "description": "Default ending for unhandled failures. Action nodes without on_failure and conditional nodes without on_unknown route here. Must reference a valid ending."
     },
     "nodes": {
       "type": "object",
