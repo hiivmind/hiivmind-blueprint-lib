@@ -13,20 +13,24 @@ type definition file.
 - `→` — outcome / return meaning.
 - All string parameters support `${}` state interpolation. Literals are
   literal; `${...}` always expresses intent to interpolate.
-- Preconditions return boolean. Consequences mutate state or the world.
+- Preconditions return true, false, or unknown (when evaluation fails).
+  Consequences mutate state or the world.
 
 ---
 
 ## Nodes
 
-action(actions[], on_success, on_failure)
-  actions = array of consequence objects, executed sequentially
+action(consequences[], on_success, on_failure?)
+  consequences = array of consequence objects, executed sequentially
+  on_failure defaults to workflow default_error when omitted
   → route to on_success if all succeed; on_failure at first failure
 
-conditional(condition, branches{on_true, on_false}, audit?)
-  condition = a single precondition object (often a `composite`)
+conditional(condition, on_true, on_false, on_unknown?, audit?)
+  condition = precondition object, OR string (evaluate_expression shorthand),
+              OR {all|any|none|xor: [...]} (composite shorthand)
+  on_unknown defaults to workflow default_error when omitted
   audit     = {enabled, output, messages} — evaluate without short-circuit
-  → route to branches.on_true or branches.on_false
+  → route to on_true, on_false, or on_unknown
 
 user_prompt(prompt{question, header, options|options_from_state+options}, on_response)
   header          ≤ 12 chars
