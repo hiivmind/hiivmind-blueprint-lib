@@ -62,6 +62,7 @@ name: my-workflow
 version: "1.0.0"
 
 start_node: check_config
+default_error: error_generic
 
 nodes:
   check_config:
@@ -70,24 +71,25 @@ nodes:
       type: path_check
       path: "config.yaml"
       check: is_file
-    branches:
-      on_true: load_config
-      on_false: create_config
+    on_true: load_config
+    on_false: create_config
 
   load_config:
     type: action
-    actions:
+    consequences:
       - type: local_file_ops
         operation: read
         path: "config.yaml"
         store_as: config
     on_success: done
-    on_failure: error_reading
 
 endings:
   done:
     type: success
     message: "Configuration loaded"
+  error_generic:
+    type: error
+    message: "Unexpected failure at ${current_node}"
 ```
 
 ## Endings
@@ -121,8 +123,8 @@ The library defines 3 node types for workflow construction:
 
 | Node Type | Purpose | Routing |
 |-----------|---------|---------|
-| `action` | Execute consequences (operations) | `on_success` / `on_failure` |
-| `conditional` | Branch based on a precondition | `branches.on_true` / `branches.on_false` |
+| `action` | Execute consequences (operations) | `on_success` / `on_failure?` (defaults to `default_error`) |
+| `conditional` | Branch on a precondition | `on_true` / `on_false` / `on_unknown?` (defaults to `default_error`) |
 | `user_prompt` | Present structured prompt to user | Routes by `handler_id` from options |
 
 ## State Management
