@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/node-types.json",
-  "$comment": "Schema version 2.0 - Node type definitions. validation_gate deprecated in favor of conditional with audit.",
+  "$comment": "Schema version 3.0 - Workflow schema compression: consequences rename, ternary conditionals, condition/handler sugar.",
   "title": "Blueprint Node Types Schema",
   "description": "Definitions for workflow node types: action, conditional, user_prompt",
   "$defs": {
@@ -37,11 +37,11 @@
     },
     "action_node": {
       "type": "object",
-      "required": ["actions", "on_success", "on_failure"],
+      "required": ["consequences", "on_success"],
       "properties": {
         "type": { "const": "action" },
         "description": { "type": "string" },
-        "actions": {
+        "consequences": {
           "type": "array",
           "items": { "$ref": "#/$defs/consequence" },
           "minItems": 1,
@@ -53,19 +53,34 @@
         },
         "on_failure": {
           "$ref": "../common.json#/$defs/node_reference",
-          "description": "Node or ending to transition to on failure"
+          "description": "Node or ending to transition to on failure. When omitted, routes to workflow default_error."
         }
       }
     },
     "conditional_node": {
       "type": "object",
-      "required": ["condition", "branches"],
+      "required": ["condition", "on_true", "on_false"],
       "properties": {
         "type": { "const": "conditional" },
         "description": { "type": "string" },
         "condition": {
-          "$ref": "#/$defs/precondition",
-          "description": "Condition to evaluate (often a composite like all_of, any_of, xor_of)"
+          "oneOf": [
+            { "type": "string" },
+            { "type": "object" }
+          ],
+          "description": "Condition to evaluate. String = evaluate_expression shorthand. Object with all/any/none/xor key (no type key) = composite shorthand. Object with type key = canonical precondition."
+        },
+        "on_true": {
+          "$ref": "../common.json#/$defs/node_reference",
+          "description": "Node to transition to if condition is true"
+        },
+        "on_false": {
+          "$ref": "../common.json#/$defs/node_reference",
+          "description": "Node to transition to if condition is false"
+        },
+        "on_unknown": {
+          "$ref": "../common.json#/$defs/node_reference",
+          "description": "Node to transition to if condition result is unknown (3VL)"
         },
         "audit": {
           "type": "object",
@@ -90,22 +105,6 @@
             }
           },
           "additionalProperties": false
-        },
-        "branches": {
-          "type": "object",
-          "description": "Branch targets for true/false conditions",
-          "required": ["on_true", "on_false"],
-          "properties": {
-            "on_true": {
-              "$ref": "../common.json#/$defs/node_reference",
-              "description": "Node to transition to if condition is true"
-            },
-            "on_false": {
-              "$ref": "../common.json#/$defs/node_reference",
-              "description": "Node to transition to if condition is false"
-            }
-          },
-          "additionalProperties": false
         }
       }
     },
@@ -121,9 +120,12 @@
         },
         "on_response": {
           "type": "object",
-          "description": "Map of option IDs to response handlers",
+          "description": "Map of option IDs to response handlers. String value = next_node shorthand (no consequences).",
           "additionalProperties": {
-            "$ref": "#/$defs/response_handler"
+            "oneOf": [
+              { "type": "string" },
+              { "$ref": "#/$defs/response_handler" }
+            ]
           }
         }
       }
@@ -212,14 +214,14 @@
     "response_handler": {
       "type": "object",
       "properties": {
-        "consequence": {
+        "consequences": {
           "type": "array",
           "items": { "$ref": "#/$defs/consequence" },
           "description": "Consequences to apply when this option is selected"
         },
         "next_node": {
           "$ref": "../common.json#/$defs/node_reference",
-          "description": "Node to transition to"
+          "description": "Node to transition to. Supports ${} interpolation for dynamic routing."
         }
       }
     },
