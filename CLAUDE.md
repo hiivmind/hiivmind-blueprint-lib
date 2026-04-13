@@ -76,7 +76,7 @@ type_name(required_param, optional?)
 - `X ∈ {a, b, c}` lists enum variants.
 - `→` marks the outcome.
 - All string parameters support `${}` state interpolation.
-- Preconditions return boolean. Consequences mutate state or the world.
+- Preconditions return true, false, or unknown. Consequences mutate state or the world.
 
 Workflow YAML references types via `type: <name>` plus sibling keys for parameters. See `examples.md` for composite workflow examples.
 
