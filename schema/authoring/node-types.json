@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/node-types.json",
-  "$comment": "Schema version 3.0 - Workflow schema compression: consequences rename, ternary conditionals, condition/handler sugar.",
+  "$comment": "Schema version 3.1 - Composite node support: confirm and gated_action sugar expand to primitives via walker in hiivmind-blueprint-mcp.",
   "title": "Blueprint Node Types Schema",
   "description": "Definitions for workflow node types: action, conditional, user_prompt",
   "$defs": {
