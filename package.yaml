@@ -18,7 +18,7 @@ license: MIT
 # Schema versions for each authoring system
 schemas:
   workflow: "3.0"
-  node: "2.0"
+  node: "3.1"
 
 # Statistics
 stats:

@@ -31,6 +31,13 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 # because ajv-cli's -s flag takes a schema file, not a JSON pointer. We
 # point ajv at this wrapper; it follows the absolute $ref to the node
 # def registered under node-types.json's $id.
+#
+# IMPORTANT: the $ref URL below MUST match node-types.json's $id exactly.
+# ajv registers the schema (via -r $SCHEMA_NODE below) under its $id and
+# resolves the wrapper's $ref against that registration — so no network
+# call occurs during validation. If node-types.json's $id ever changes
+# (branch rename, repo move), update this URL in lockstep or the wrapper
+# will fail to resolve (or worse, silently fall back to a network fetch).
 WRAPPER_SCHEMA="$TMP_DIR/node-wrapper.json"
 cat > "$WRAPPER_SCHEMA" <<'SCHEMA_EOF'
 {
