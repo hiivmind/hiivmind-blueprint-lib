@@ -27,6 +27,18 @@ SCHEMA_COMMON="$REPO_ROOT/schema/common.json"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
+# Wrapper schema that targets the authoring node def via $ref. Required
+# because ajv-cli's -s flag takes a schema file, not a JSON pointer. We
+# point ajv at this wrapper; it follows the absolute $ref to the node
+# def registered under node-types.json's $id.
+WRAPPER_SCHEMA="$TMP_DIR/node-wrapper.json"
+cat > "$WRAPPER_SCHEMA" <<'SCHEMA_EOF'
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/node-types.json#/$defs/node"
+}
+SCHEMA_EOF
+
 command -v yq  >/dev/null 2>&1 || { echo -e "${RED}yq not found${NC}"; exit 3; }
 command -v npx >/dev/null 2>&1 || { echo -e "${RED}npx not found (install Node.js)${NC}"; exit 3; }
 
@@ -49,8 +61,9 @@ validate_file() {
         local node_json="$TMP_DIR/${node_id}.json"
         yq -o=json ".\"$node_id\"" "$yaml_file" > "$node_json"
 
-        if npx --yes ajv-cli@5 validate \
-            -s "$SCHEMA_NODE#/\$defs/node" \
+        if npx --yes ajv-cli@5 validate --spec=draft2020 \
+            -s "$WRAPPER_SCHEMA" \
+            -r "$SCHEMA_NODE" \
             -r "$SCHEMA_COMMON" \
             -d "$node_json" \
             --strict=false \
