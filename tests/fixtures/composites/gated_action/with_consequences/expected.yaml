@@ -1,0 +1,29 @@
+review_decision__case_0:
+  type: conditional
+  condition: "flags.status == 'approved'"
+  on_true: review_decision__case_0__act
+  on_false: review_decision__case_1
+  on_unknown: halt_for_audit
+
+review_decision__case_0__act:
+  type: action
+  consequences:
+    - type: mutate_state
+      operation: set
+      field: approval_ts
+      value: "${now}"
+  on_success: publish
+
+review_decision__case_1:
+  type: conditional
+  condition: { all: [{ type: state_check, field: flags.merge_ok, operator: "true" }] }
+  on_true: merge_upstream
+  on_false: review_decision__case_2
+  on_unknown: halt_for_audit
+
+review_decision__case_2:
+  type: conditional
+  condition: "flags.status == 'rejected'"
+  on_true: notify_author
+  on_false: needs_review
+  on_unknown: halt_for_audit

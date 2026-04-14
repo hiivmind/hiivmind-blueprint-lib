@@ -1,0 +1,11 @@
+route_on_env__case_0:
+  type: conditional
+  condition: "env.stage == 'production'"
+  on_true: prod_flow
+  on_false: route_on_env__case_1
+
+route_on_env__case_1:
+  type: conditional
+  condition: "env.stage == 'staging'"
+  on_true: stage_flow
+  on_false: dev_flow
