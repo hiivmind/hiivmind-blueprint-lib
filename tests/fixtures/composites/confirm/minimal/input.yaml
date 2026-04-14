@@ -1,0 +1,8 @@
+destroy_branch:
+  type: confirm
+  prompt: "Delete the branch '${branch_name}'?"
+  store_as: confirmations.delete_branch_x
+  on_confirmed:
+    next_node: branch_gone
+  on_declined:
+    next_node: cancelled

@@ -1,0 +1,8 @@
+destroy_branch:
+  type: confirm
+  prompt: "Delete the branch?"
+  # store_as intentionally omitted — must fail validation
+  on_confirmed:
+    next_node: do_delete
+  on_declined:
+    next_node: cancelled

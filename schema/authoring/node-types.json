@@ -32,6 +32,10 @@
         {
           "if": { "properties": { "type": { "const": "user_prompt" } } },
           "then": { "$ref": "#/$defs/user_prompt_node" }
+        },
+        {
+          "if": { "properties": { "type": { "const": "confirm" } } },
+          "then": { "$ref": "#/$defs/confirm_node" }
         }
       ]
     },
@@ -129,6 +133,67 @@
           }
         }
       }
+    },
+    "confirm_node": {
+      "type": "object",
+      "description": "Confirmation composite — yes/no prompt with structural state gating. Expands to user_prompt → mutate_state → conditional → (optional action). See principle: confirmations-as-explicit-state.",
+      "required": ["prompt", "store_as", "on_confirmed", "on_declined"],
+      "properties": {
+        "type": { "const": "confirm" },
+        "description": { "type": "string" },
+        "prompt": {
+          "type": "string",
+          "description": "Question to ask the user"
+        },
+        "header": {
+          "type": "string",
+          "maxLength": 12,
+          "default": "CONFIRM",
+          "description": "Short header/tag (max 12 chars). Defaults to CONFIRM if omitted."
+        },
+        "store_as": {
+          "$ref": "../common.json#/$defs/state_path",
+          "description": "Dot-notation state field to hold the boolean decision (convention: confirmations.<name>). REQUIRED — the confirm composite always writes this field true|false before routing."
+        },
+        "on_confirmed": {
+          "type": "object",
+          "required": ["next_node"],
+          "properties": {
+            "label": {
+              "type": "string",
+              "default": "Yes",
+              "description": "Label for the yes option. Defaults to 'Yes'."
+            },
+            "consequences": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/consequence" },
+              "description": "Optional consequences to run AFTER the conditional gate, before routing to next_node."
+            },
+            "next_node": {
+              "$ref": "../common.json#/$defs/node_reference",
+              "description": "Node to transition to when the user confirms."
+            }
+          },
+          "additionalProperties": false
+        },
+        "on_declined": {
+          "type": "object",
+          "required": ["next_node"],
+          "properties": {
+            "label": {
+              "type": "string",
+              "default": "No",
+              "description": "Label for the no option. Defaults to 'No'."
+            },
+            "next_node": {
+              "$ref": "../common.json#/$defs/node_reference",
+              "description": "Node to transition to when the user declines."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     },
     "prompt": {
       "type": "object",
