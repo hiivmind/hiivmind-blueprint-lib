@@ -1,0 +1,9 @@
+review_decision:
+  type: gated_action
+  when:
+    - condition: "flags.status == 'approved'"
+      next_node: publish
+    - condition: "flags.status == 'rejected'"
+      next_node: notify_author
+  else: needs_review
+  on_unknown: halt_for_audit

@@ -1,0 +1,4 @@
+review_decision:
+  type: gated_action
+  when: []   # empty — must fail validation (minItems 1)
+  else: needs_review

@@ -1,0 +1,13 @@
+review_decision__case_0:
+  type: conditional
+  condition: "flags.status == 'approved'"
+  on_true: publish
+  on_false: review_decision__case_1
+  on_unknown: halt_for_audit
+
+review_decision__case_1:
+  type: conditional
+  condition: "flags.status == 'rejected'"
+  on_true: notify_author
+  on_false: needs_review
+  on_unknown: halt_for_audit

@@ -1,0 +1,7 @@
+review_decision:
+  type: gated_action
+  when:
+    - condition: "flags.status == 'approved'"
+      next_node: publish
+  # else intentionally omitted — must fail validation
+  on_unknown: halt_for_audit
