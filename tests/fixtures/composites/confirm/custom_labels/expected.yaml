@@ -1,0 +1,29 @@
+accept_offer__ask:
+  type: user_prompt
+  prompt:
+    question: "Accept the offer?"
+    header: "OFFER"
+    options:
+      - { id: "yes", label: "Accept it"   }
+      - { id: "no",  label: "Walk away"   }
+  on_response:
+    "yes":
+      consequences:
+        - type: mutate_state
+          operation: set
+          field: confirmations.offer_accepted
+          value: true
+      next_node: accept_offer__gate
+    "no":
+      consequences:
+        - type: mutate_state
+          operation: set
+          field: confirmations.offer_accepted
+          value: false
+      next_node: accept_offer__gate
+
+accept_offer__gate:
+  type: conditional
+  condition: "confirmations.offer_accepted == true"
+  on_true: finalize
+  on_false: closed_nothanks

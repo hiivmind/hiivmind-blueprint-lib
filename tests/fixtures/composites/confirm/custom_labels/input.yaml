@@ -1,0 +1,11 @@
+accept_offer:
+  type: confirm
+  prompt: "Accept the offer?"
+  header: "OFFER"
+  store_as: confirmations.offer_accepted
+  on_confirmed:
+    label: "Accept it"
+    next_node: finalize
+  on_declined:
+    label: "Walk away"
+    next_node: closed_nothanks

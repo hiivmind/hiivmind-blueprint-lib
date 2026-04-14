@@ -1,0 +1,13 @@
+destroy_branch:
+  type: confirm
+  prompt: "Delete the branch '${branch_name}'?"
+  header: "DELETE"
+  store_as: confirmations.delete_branch_x
+  on_confirmed:
+    consequences:
+      - type: git_ops_local
+        operation: delete_branch
+        args: { name: "${branch_name}" }
+    next_node: branch_gone
+  on_declined:
+    next_node: cancelled

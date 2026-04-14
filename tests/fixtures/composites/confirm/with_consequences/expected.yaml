@@ -1,0 +1,37 @@
+destroy_branch__ask:
+  type: user_prompt
+  prompt:
+    question: "Delete the branch '${branch_name}'?"
+    header: "DELETE"
+    options:
+      - { id: "yes", label: "Yes" }
+      - { id: "no",  label: "No"  }
+  on_response:
+    "yes":
+      consequences:
+        - type: mutate_state
+          operation: set
+          field: confirmations.delete_branch_x
+          value: true
+      next_node: destroy_branch__gate
+    "no":
+      consequences:
+        - type: mutate_state
+          operation: set
+          field: confirmations.delete_branch_x
+          value: false
+      next_node: destroy_branch__gate
+
+destroy_branch__gate:
+  type: conditional
+  condition: "confirmations.delete_branch_x == true"
+  on_true: destroy_branch__act
+  on_false: cancelled
+
+destroy_branch__act:
+  type: action
+  consequences:
+    - type: git_ops_local
+      operation: delete_branch
+      args: { name: "${branch_name}" }
+  on_success: branch_gone
