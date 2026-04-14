@@ -80,6 +80,23 @@ type_name(required_param, optional?)
 
 Workflow YAML references types via `type: <name>` plus sibling keys for parameters. See `examples.md` for composite workflow examples.
 
+### Composite Node Types (Authoring Sugar)
+
+In addition to the three primitive node types, blueprint supports **composite nodes** — author-time syntactic sugar documented in `blueprint-composites.md` (separate from `blueprint-types.md`). v1 composites:
+
+- `confirm` — yes/no prompt with structural state gating
+- `gated_action` — multi-way CASE/WHEN dispatch
+
+Composites are walker-expanded into primitive nodes before execution. The walker implementation lives in `hiivmind-blueprint-mcp` (separate repo). **This repo contains only the catalog, schema, and fixture corpus** — no walker code, no Python runtime.
+
+When modifying composite definitions, also update:
+
+1. `schema/authoring/node-types.json` — composite sub-schemas
+2. `blueprint-composites.md` — author-facing signature
+3. `tests/fixtures/composites/` — expansion contract fixtures (the authoritative walker target)
+
+When modifying primitives in a way that could affect composite expansion, notify `hiivmind-blueprint-mcp` maintainers — walker expanders may need updates to stay contract-valid.
+
 ### Three-Valued Logic (3VL)
 
 The `intent` category uses Kleene 3-valued logic:

@@ -168,6 +168,19 @@ All 34 types are defined in `blueprint-types.md` at the repo root:
 
 See `blueprint-types.md` for signatures, parameters, and enum variants. See `examples.md` for composite workflow examples.
 
+### Composite Node Catalog — `blueprint-composites.md`
+
+Alongside the runtime type catalog, `blueprint-composites.md` documents **composite node types** — authoring-time syntactic sugar that expands to primitive nodes before the LLM interprets anything. v1 ships `confirm` and `gated_action`.
+
+The runtime LLM does not read `blueprint-composites.md`. Composite definitions are stripped by the walker (implemented in the `hiivmind-blueprint-mcp` package — Python and TypeScript flavors) before execution begins.
+
+Behavioral invariants governing each composite live in principle documents in `hiivmind-blueprint-central`:
+
+- `composite-primitive-canary` (c.type-system)
+- `confirmations-as-explicit-state` (g.trust-governance)
+
+Walker-expansion fixtures live under `tests/fixtures/composites/` and serve as the cross-language contract for walker implementations.
+
 ### Workflows (1 workflow)
 
 | Workflow | Description |
