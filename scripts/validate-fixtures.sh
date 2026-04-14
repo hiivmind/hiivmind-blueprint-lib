@@ -106,7 +106,7 @@ validate_file() {
 echo "=== Positive fixtures (must pass) ==="
 while IFS= read -r -d '' f; do
     validate_file "$f" "true"
-done < <(find "$FIXTURES_DIR" -type f \( -name 'input.yaml' -o -name 'expected.yaml' \) -not -path '*/_negative/*' -print0)
+done < <(find "$FIXTURES_DIR" -type f \( -name 'input.yaml' -o -name 'expected.yaml' \) -not -path '*/_negative/*' -not -path '*/_walker_only/*' -print0)
 
 echo ""
 echo "=== Negative fixtures (must fail) ==="
