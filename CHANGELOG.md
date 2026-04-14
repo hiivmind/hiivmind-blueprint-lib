@@ -5,6 +5,48 @@ All notable changes to hiivmind-blueprint-lib will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.1.0] - 2026-04-14
+
+### Added
+
+#### Composite node types (authoring-time sugar)
+
+Two new composite node types expand to primitive nodes via a walker implemented in `hiivmind-blueprint-mcp` (separate repo). The LLM at runtime still sees only the three primitive node types (`action`, `conditional`, `user_prompt`) — composites never reach runtime.
+
+- **`confirm`** — yes/no prompt with structural state gating. Required fields: `prompt`, `store_as`, `on_confirmed`, `on_declined`. Expands to `user_prompt → mutate_state → conditional → (optional action)`. The `store_as` field is required and always written `true`/`false` before routing, per the [confirmations-as-explicit-state](https://github.com/hiivmind/hiivmind-blueprint-central/blob/main/02.principles/g.trust-governance/confirmations-as-explicit-state.md) principle.
+- **`gated_action`** — multi-way CASE/WHEN dispatch. Required fields: `when[]` (minItems 1), `else`. Optional: `on_unknown` (defaults to workflow `default_error`). Expands to a chain of `conditional` nodes, each optionally followed by an intermediate `action` for per-branch consequences. First-match-wins, 3VL short-circuit on unknown.
+
+#### New author-time catalog: `blueprint-composites.md`
+
+Composite signatures and expansion shapes live in a new file at the repo root, separate from `blueprint-types.md`. The runtime LLM continues to read only `blueprint-types.md`; the composite catalog is consumed at authoring time.
+
+#### Walker-expansion fixture corpus
+
+`tests/fixtures/composites/` contains paired `input.yaml` / `expected.yaml` fixtures covering:
+
+- `confirm/minimal`, `confirm/with_consequences`, `confirm/custom_labels`
+- `gated_action/basic`, `gated_action/with_consequences`, `gated_action/default_on_unknown`
+- `_negative/` cases: `confirm_missing_store_as`, `gated_action_missing_else`, `gated_action_empty_when`
+
+These are the authoritative contract that future Python and TypeScript walker implementations in `hiivmind-blueprint-mcp` must satisfy (bit-identical expansion from each input).
+
+### Changed
+
+- `schema/authoring/node-types.json` — bumped `$comment` to Schema version 3.1. Adds `confirm` and `gated_action` to the `type` enum plus two new `$defs` (`confirm_node`, `gated_action_node`) with `allOf` dispatch. Existing primitive validation unchanged.
+
+### Related principles
+
+Two new principles codify the discipline governing this feature. Committed in `hiivmind-blueprint-central` on branch `principle/composite-primitive-canary`:
+
+- [composite-primitive-canary](https://github.com/hiivmind/hiivmind-blueprint-central/blob/main/02.principles/c.type-system/composite-primitive-canary.md) — composites are sugar; awkward composites are diagnostic signals that primitives need extension.
+- [confirmations-as-explicit-state](https://github.com/hiivmind/hiivmind-blueprint-central/blob/main/02.principles/g.trust-governance/confirmations-as-explicit-state.md) — confirmations decompose into classify → record → evaluate; structure is the policy.
+
+### Migration
+
+Purely additive. No existing workflow breaks. Authors who want to use the new composites can opt in; hand-written primitive patterns continue to work unchanged.
+
+---
+
 ## [7.0.0] - 2026-04-13
 
 ### BREAKING CHANGES
