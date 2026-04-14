@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/node-types.json",
-  "$comment": "Schema version 3.1 - Composite node support: confirm and gated_action sugar expand to primitives via walker in hiivmind-blueprint-mcp.",
+  "$comment": "Schema version 3.2 - Adds goal_seek composite (bounded dispatcher loop). Composites (confirm, gated_action, goal_seek) expand to primitives via walker in hiivmind-blueprint-mcp.",
   "title": "Blueprint Node Types Schema",
   "description": "Definitions for workflow node types: action, conditional, user_prompt",
   "$defs": {
@@ -244,6 +244,65 @@
         "on_unknown": {
           "$ref": "../common.json#/$defs/node_reference",
           "description": "Destination when any condition returns unknown (3VL short-circuit). Optional — defaults to workflow default_error."
+        }
+      },
+      "additionalProperties": false
+    },
+    "goal_seek_node": {
+      "type": "object",
+      "description": "Goal-seeking composite. Walker expands to a bounded dispatcher loop that iterates sub-processes until every goal's status is 'satisfied' or 'ignored', the abort flag is set, or the iteration budget is exhausted. See blueprint-composites.md and principle: goal-seeking-as-bounded-loop.",
+      "required": ["goals", "max_iterations", "on_complete"],
+      "properties": {
+        "type": { "const": "goal_seek" },
+        "description": { "type": "string" },
+        "goals": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "starting_node"],
+            "properties": {
+              "name": {
+                "$ref": "../common.json#/$defs/identifier",
+                "description": "Goal identifier. Namespaced into goal_seek.<node_id>.goals.<name>.status."
+              },
+              "starting_node": {
+                "$ref": "../common.json#/$defs/node_reference",
+                "description": "Entry node for this goal's sub-process. Sub-process terminals must route back to the goal_seek node id."
+              },
+              "success_condition": {
+                "oneOf": [
+                  { "type": "string" },
+                  { "type": "object" }
+                ],
+                "description": "Optional precondition re-checked on every loop iteration. If omitted, the walker flips status to 'satisfied' as soon as the sub-process returns. If present, the return edge is a pass-through and the loop continues until the condition holds."
+              },
+              "run_as": {
+                "type": "string",
+                "enum": ["inline", "subagent"],
+                "default": "inline",
+                "description": "Execution mode for this goal's sub-process. 'subagent' delegates to a separate agent context at runtime (declared here, honored by hiivmind-blueprint-mcp). Default 'inline'."
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "max_iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Hard cap on loop iterations. When exceeded, routes to on_budget_exceeded (or workflow default_error)."
+        },
+        "on_complete": {
+          "$ref": "../common.json#/$defs/node_reference",
+          "description": "Destination when every goal's status is 'satisfied' or 'ignored'."
+        },
+        "on_abort": {
+          "$ref": "../common.json#/$defs/node_reference",
+          "description": "Destination when any sub-process sets goal_seek.<node_id>.aborted = true. Optional — defaults to workflow default_error."
+        },
+        "on_budget_exceeded": {
+          "$ref": "../common.json#/$defs/node_reference",
+          "description": "Destination when iterations exceed max_iterations. Optional — defaults to workflow default_error."
         }
       },
       "additionalProperties": false
