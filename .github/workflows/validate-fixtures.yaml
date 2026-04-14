@@ -1,0 +1,37 @@
+name: Validate Composite Fixtures
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+      - "release/**"
+      - "feature/**"
+      - "hotfix/**"
+    paths:
+      - "schema/**"
+      - "tests/fixtures/composites/**"
+      - "scripts/validate-fixtures.sh"
+      - ".github/workflows/validate-fixtures.yaml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: Validate fixtures against authoring schema
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Setup Node.js (for npx / ajv-cli)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run validator
+        run: ./scripts/validate-fixtures.sh
