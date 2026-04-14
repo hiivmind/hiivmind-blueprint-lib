@@ -12,8 +12,8 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["action", "conditional", "user_prompt"],
-          "description": "Node type"
+          "enum": ["action", "conditional", "user_prompt", "confirm", "gated_action"],
+          "description": "Node type (primitive: action/conditional/user_prompt; composite: confirm/gated_action)"
         },
         "description": {
           "type": "string",
