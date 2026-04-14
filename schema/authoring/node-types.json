@@ -12,8 +12,8 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["action", "conditional", "user_prompt", "confirm", "gated_action"],
-          "description": "Node type (primitive: action/conditional/user_prompt; composite: confirm/gated_action)"
+          "enum": ["action", "conditional", "user_prompt", "confirm", "gated_action", "goal_seek"],
+          "description": "Node type (primitive: action/conditional/user_prompt; composite: confirm/gated_action/goal_seek)"
         },
         "description": {
           "type": "string",
@@ -40,6 +40,10 @@
         {
           "if": { "properties": { "type": { "const": "gated_action" } } },
           "then": { "$ref": "#/$defs/gated_action_node" }
+        },
+        {
+          "if": { "properties": { "type": { "const": "goal_seek" } } },
+          "then": { "$ref": "#/$defs/goal_seek_node" }
         }
       ]
     },
