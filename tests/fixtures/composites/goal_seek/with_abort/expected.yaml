@@ -1,0 +1,87 @@
+guided_setup__entry:
+  type: conditional
+  condition: "goal_seek.guided_setup.iterations == null"
+  on_true: guided_setup__init
+  on_false: guided_setup__tick
+
+guided_setup__init:
+  type: action
+  consequences:
+    - type: mutate_state
+      operation: set
+      field: goal_seek.guided_setup.iterations
+      value: 0
+    - type: mutate_state
+      operation: set
+      field: goal_seek.guided_setup.goals.project_name.status
+      value: incomplete
+    - type: mutate_state
+      operation: set
+      field: goal_seek.guided_setup.goals.project_dir.status
+      value: incomplete
+  on_success: guided_setup__dispatch_case_0
+
+guided_setup__tick:
+  type: action
+  consequences:
+    - type: mutate_state
+      operation: increment
+      field: goal_seek.guided_setup.iterations
+  on_success: guided_setup__budget_check
+
+guided_setup__budget_check:
+  type: conditional
+  condition: "goal_seek.guided_setup.iterations > 5"
+  on_true: default_error
+  on_false: guided_setup__abort_check
+
+guided_setup__abort_check:
+  type: conditional
+  condition: "goal_seek.guided_setup.aborted == true"
+  on_true: user_cancelled
+  on_false: guided_setup__complete_check
+
+guided_setup__complete_check:
+  type: conditional
+  condition:
+    all:
+      - type: state_check
+        field: goal_seek.guided_setup.goals.project_name.status
+        operator: in
+        value: [satisfied, ignored]
+      - type: state_check
+        field: goal_seek.guided_setup.goals.project_dir.status
+        operator: in
+        value: [satisfied, ignored]
+  on_true: scaffold
+  on_false: guided_setup__dispatch_case_0
+
+guided_setup__dispatch_case_0:
+  type: conditional
+  condition: "goal_seek.guided_setup.goals.project_name.status == 'incomplete'"
+  on_true: ask_project_name
+  on_false: guided_setup__dispatch_case_1
+
+guided_setup__dispatch_case_1:
+  type: conditional
+  condition: "goal_seek.guided_setup.goals.project_dir.status == 'incomplete'"
+  on_true: ask_project_dir
+  on_false: default_error
+
+guided_setup__return_project_name:
+  type: action
+  consequences:
+    - type: mutate_state
+      operation: set
+      field: goal_seek.guided_setup.goals.project_name.status
+      value: satisfied
+  on_success: guided_setup__entry
+
+guided_setup__return_project_dir:
+  type: action
+  consequences:
+    - type: mutate_state
+      operation: set
+      field: goal_seek.guided_setup.goals.project_dir.status
+      value: satisfied
+  on_success: guided_setup__entry

@@ -1,0 +1,10 @@
+guided_setup:
+  type: goal_seek
+  goals:
+    - name: project_name
+      starting_node: ask_project_name
+    - name: project_dir
+      starting_node: ask_project_dir
+  max_iterations: 5
+  on_complete: scaffold
+  on_abort: user_cancelled
