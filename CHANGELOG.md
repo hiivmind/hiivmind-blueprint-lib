@@ -5,6 +5,24 @@ All notable changes to hiivmind-blueprint-lib will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.2.0] - 2026-04-15
+
+### Added
+- `goal_seek` composite node type — bounded dispatcher loop over a list of goals, each with an optional `success_condition` precondition and optional `run_as: subagent` delegation hint. Walker-expanded to primitives (`action`, `conditional`), no new primitive introduced.
+- `tests/fixtures/composites/goal_seek/` — four positive fixtures (`minimal`, `with_success_conditions`, `with_subagent`, `with_abort`) pinning down the walker contract including the pass-through return edge when a goal has a `success_condition`.
+- `tests/fixtures/composites/_negative/goal_seek_*` — six negative fixtures covering missing/empty required fields and per-goal shape violations.
+- `tests/fixtures/composites/_walker_only/` — new directory for walker-contract-only fixtures (structurally legal YAML that only the walker can reject). First inhabitant: `goal_terminal_escapes_loop`.
+
+### Changed
+- `schema/authoring/node-types.json` bumped to version 3.2: adds `goal_seek` to the node-type enum, adds `goal_seek_node` `$def`, extends `allOf` dispatch.
+- `scripts/validate-fixtures.sh` excludes `_walker_only/` from schema validation.
+- `blueprint-composites.md` adds the `goal_seek` signature block.
+
+### Related
+- New principle in `hiivmind-blueprint-central`: `goal-seeking-as-bounded-loop` (branch `principle/goal-seeking-as-bounded-loop`).
+
+---
+
 ## [7.1.0] - 2026-04-14
 
 ### Added

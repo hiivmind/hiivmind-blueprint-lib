@@ -2,11 +2,12 @@
 # Semantic type definitions for hiivmind-blueprint
 
 name: hiivmind-blueprint-lib
-version: "7.1.0"
+version: "7.2.0"
 description: |
   Single-file type catalog for hiivmind-blueprint. Defines 22 consequence
   types, 9 precondition types, and 3 node types in blueprint-types.md at
-  the repo root.
+  the repo root. Composite node types (confirm, gated_action, goal_seek)
+  are defined in blueprint-composites.md.
 
   The hiivmind-blueprint skill ships blueprint-types.md as skill-embedded
   reference. There is no per-repo definitions file; all workflow
@@ -18,7 +19,7 @@ license: MIT
 # Schema versions for each authoring system
 schemas:
   workflow: "3.0"
-  node: "3.1"
+  node: "3.2"
 
 # Statistics
 stats:
@@ -26,7 +27,7 @@ stats:
   consequence_types: 22
   precondition_types: 9
   node_types: 3        # primitives only (action, conditional, user_prompt)
-  composite_types: 2   # confirm, gated_action (authoring-time sugar)
+  composite_types: 3   # confirm, gated_action, goal_seek (authoring-time sugar)
   workflows: 1
 
 # Artifacts produced by releases

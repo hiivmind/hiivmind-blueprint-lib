@@ -86,6 +86,7 @@ In addition to the three primitive node types, blueprint supports **composite no
 
 - `confirm` — yes/no prompt with structural state gating
 - `gated_action` — multi-way CASE/WHEN dispatch
+- `goal_seek` — bounded dispatcher loop over a list of goals (iteration budget + per-goal completion predicate)
 
 Composites are walker-expanded into primitive nodes before execution. The walker implementation lives in `hiivmind-blueprint-mcp` (separate repo). **This repo contains only the catalog, schema, and fixture corpus** — no walker code, no Python runtime.
 

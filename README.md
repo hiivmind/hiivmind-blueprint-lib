@@ -170,7 +170,11 @@ See `blueprint-types.md` for signatures, parameters, and enum variants. See `exa
 
 ### Composite Node Catalog — `blueprint-composites.md`
 
-Alongside the runtime type catalog, `blueprint-composites.md` documents **composite node types** — authoring-time syntactic sugar that expands to primitive nodes before the LLM interprets anything. v1 ships `confirm` and `gated_action`.
+Alongside the runtime type catalog, `blueprint-composites.md` documents **composite node types** — authoring-time syntactic sugar that expands to primitive nodes before the LLM interprets anything. Current composites:
+
+- **`confirm`** — yes/no prompt with structural state gating. See `blueprint-composites.md`.
+- **`gated_action`** — multi-way CASE/WHEN dispatch. See `blueprint-composites.md`.
+- **`goal_seek`** — bounded dispatcher loop over a list of goals; each goal has a sub-process that must route back to the `goal_seek` node, and the walker expands the whole thing to primitives. See `blueprint-composites.md` and the `goal-seeking-as-bounded-loop` principle.
 
 The runtime LLM does not read `blueprint-composites.md`. Composite definitions are stripped by the walker (implemented in the `hiivmind-blueprint-mcp` package — Python and TypeScript flavors) before execution begins.
 
