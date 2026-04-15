@@ -56,8 +56,7 @@
         "consequences": {
           "type": "array",
           "items": { "$ref": "#/$defs/consequence" },
-          "minItems": 1,
-          "description": "Consequences to execute sequentially"
+          "description": "Consequences to execute sequentially. Empty array allowed for pass-through returns in goal_seek loops."
         },
         "on_success": {
           "$ref": "../common.json#/$defs/node_reference",

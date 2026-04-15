@@ -1,0 +1,98 @@
+wait_for_readiness__entry:
+  type: conditional
+  condition: "goal_seek.wait_for_readiness.iterations == null"
+  on_true: wait_for_readiness__init
+  on_false: wait_for_readiness__tick
+
+wait_for_readiness__init:
+  type: action
+  consequences:
+    - type: mutate_state
+      operation: set
+      field: goal_seek.wait_for_readiness.iterations
+      value: 0
+    - type: mutate_state
+      operation: set
+      field: goal_seek.wait_for_readiness.goals.service_ready.status
+      value: incomplete
+    - type: mutate_state
+      operation: set
+      field: goal_seek.wait_for_readiness.goals.config_loaded.status
+      value: incomplete
+  on_success: wait_for_readiness__dispatch_case_0
+
+wait_for_readiness__tick:
+  type: action
+  consequences:
+    - type: mutate_state
+      operation: increment
+      field: goal_seek.wait_for_readiness.iterations
+  on_success: wait_for_readiness__check_service_ready
+
+wait_for_readiness__check_service_ready:
+  type: conditional
+  condition: "status.service == 'ready'"
+  on_true: wait_for_readiness__mark_service_ready
+  on_false: wait_for_readiness__budget_check
+
+wait_for_readiness__mark_service_ready:
+  type: action
+  consequences:
+    - type: mutate_state
+      operation: set
+      field: goal_seek.wait_for_readiness.goals.service_ready.status
+      value: satisfied
+  on_success: wait_for_readiness__budget_check
+
+wait_for_readiness__budget_check:
+  type: conditional
+  condition: "goal_seek.wait_for_readiness.iterations > 30"
+  on_true: timeout_handler
+  on_false: wait_for_readiness__abort_check
+
+wait_for_readiness__abort_check:
+  type: conditional
+  condition: "goal_seek.wait_for_readiness.aborted == true"
+  on_true: default_error
+  on_false: wait_for_readiness__complete_check
+
+wait_for_readiness__complete_check:
+  type: conditional
+  condition:
+    all:
+      - type: state_check
+        field: goal_seek.wait_for_readiness.goals.service_ready.status
+        operator: in
+        value: [satisfied, ignored]
+      - type: state_check
+        field: goal_seek.wait_for_readiness.goals.config_loaded.status
+        operator: in
+        value: [satisfied, ignored]
+  on_true: start_work
+  on_false: wait_for_readiness__dispatch_case_0
+
+wait_for_readiness__dispatch_case_0:
+  type: conditional
+  condition: "goal_seek.wait_for_readiness.goals.service_ready.status == 'incomplete'"
+  on_true: poll_service
+  on_false: wait_for_readiness__dispatch_case_1
+
+wait_for_readiness__dispatch_case_1:
+  type: conditional
+  condition: "goal_seek.wait_for_readiness.goals.config_loaded.status == 'incomplete'"
+  on_true: load_config
+  on_false: default_error
+
+wait_for_readiness__return_service_ready:
+  type: action
+  consequences: []
+  on_success: wait_for_readiness__entry
+
+wait_for_readiness__return_config_loaded:
+  type: action
+  consequences:
+    - type: mutate_state
+      operation: set
+      field: goal_seek.wait_for_readiness.goals.config_loaded.status
+      value: satisfied
+  on_success: wait_for_readiness__entry

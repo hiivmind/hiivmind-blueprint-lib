@@ -1,0 +1,11 @@
+wait_for_readiness:
+  type: goal_seek
+  goals:
+    - name: service_ready
+      starting_node: poll_service
+      success_condition: "status.service == 'ready'"
+    - name: config_loaded
+      starting_node: load_config
+  max_iterations: 30
+  on_complete: start_work
+  on_budget_exceeded: timeout_handler
