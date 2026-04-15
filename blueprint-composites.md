@@ -51,3 +51,19 @@ gated_action(when[], else, on_unknown?)
   → First-match-wins CASE/WHEN dispatch. Expansion: chain of conditional
     nodes, each optionally followed by an action for per-branch
     consequences. 3VL short-circuit on unknown.
+
+goal_seek(goals[], max_iterations, on_complete, on_abort?, on_budget_exceeded?)
+  goals              = [{name, starting_node, success_condition?, run_as?}]
+    name                = identifier (namespaced into goal_seek.<node_id>.goals.<name>)
+    starting_node       = node reference; entry point for this goal's sub-process
+    success_condition   = optional precondition re-checked on each loop iteration;
+                          if omitted, walker flips status=satisfied on return
+    run_as              ∈ {inline, subagent}, default inline
+  max_iterations     = positive integer budget (safety rail)
+  on_complete        = next_node when all goals satisfied-or-ignored
+  on_abort           defaults to workflow default_error
+  on_budget_exceeded defaults to workflow default_error
+  → Bounded dispatcher loop. First-incomplete-wins over goals[]. Each goal's
+    sub-process is responsible for routing its terminal back to the goal_seek
+    node; the walker rewrites those edges to status-update return nodes.
+    See principles: composite-primitive-canary, goal-seeking-as-bounded-loop.
