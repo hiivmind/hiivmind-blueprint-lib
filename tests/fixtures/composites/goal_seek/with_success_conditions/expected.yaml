@@ -83,11 +83,6 @@ wait_for_readiness__dispatch_case_1:
   on_true: load_config
   on_false: default_error
 
-wait_for_readiness__return_service_ready:
-  type: action
-  consequences: []
-  on_success: wait_for_readiness__entry
-
 wait_for_readiness__return_config_loaded:
   type: action
   consequences:
