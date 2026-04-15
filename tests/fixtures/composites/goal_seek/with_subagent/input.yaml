@@ -1,0 +1,10 @@
+research_and_summarize:
+  type: goal_seek
+  goals:
+    - name: deep_research
+      starting_node: spawn_research_agent
+      run_as: subagent
+    - name: outline
+      starting_node: draft_outline
+  max_iterations: 5
+  on_complete: publish_report
