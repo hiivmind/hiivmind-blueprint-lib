@@ -1,0 +1,6 @@
+bad:
+  type: goal_seek
+  goals:
+    - name: g1
+      starting_node: start_g1
+  on_complete: done
