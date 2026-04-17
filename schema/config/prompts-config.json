@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/prompts-config.json",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/config/prompts-config.json",
   "$comment": "Schema version 4.0 - Client-agnostic prompt display configuration",
   "title": "Blueprint Prompts Configuration",
   "description": "Schema for configuring user-prompt node display. Supports json mode (structured data, client renders natively) and tabular mode (markdown table with text matching).",
