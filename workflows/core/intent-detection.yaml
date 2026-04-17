@@ -160,13 +160,13 @@ nodes:
     on_success: success_resolved
     on_failure: success_resolved # Fallback should not fail
 
-# ============================================================================
-# ENDINGS
-# ============================================================================
+  # ============================================================================
+  # ENDINGS
+  # ============================================================================
 
-endings:
   success_resolved:
-    type: success
+    type: ending
+    outcome: success
     message: "Intent resolved"
     summary:
       matched_action: "${computed.matched_action}"
