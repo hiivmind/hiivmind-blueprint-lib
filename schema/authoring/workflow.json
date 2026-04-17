@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/workflow.json",
-  "$comment": "Schema version 3.1 - Added default_error for implicit failure routing. Types defined in blueprint-types.md.",
+  "$comment": "Schema version 4.0 - Added trust_mode, data_mcps, payload_types (BL2/BL3/BL4); ending nodes live in nodes: (BL5).",
   "title": "Blueprint Workflow Schema",
   "description": "JSON Schema for hiivmind-blueprint workflow.yaml files",
   "type": "object",
@@ -17,6 +17,27 @@
     "description": {
       "type": "string",
       "description": "Brief description of the workflow's purpose"
+    },
+    "trust_mode": {
+      "type": "string",
+      "enum": ["stateless", "gated"],
+      "default": "stateless",
+      "description": "Workflow-level trust mode (BL3). Declarative metadata consumed by runtimes; blueprint-lib validates the enum only."
+    },
+    "data_mcps": {
+      "type": "object",
+      "description": "Map of alias to MCP server name + semver range (e.g. 'eightball-tools@^1'). Aliases prefix mcp_tool_call tool references (BL4).",
+      "propertyNames": { "pattern": "^[a-z_][a-z0-9_-]*$" },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[\\w-]+@[\\w.\\-\\^~><=*|,\\s]+$"
+      }
+    },
+    "payload_types": {
+      "type": "object",
+      "description": "Workflow-scoped payload type declarations (BL2). Keys are name@version; values are field maps. Referenced by consequences via params_type.",
+      "propertyNames": { "pattern": "^[a-z_][a-z0-9_]*@\\d+$" },
+      "additionalProperties": { "$ref": "payload-types.json#/$defs/payload_type" }
     },
     "entry_preconditions": {
       "type": "array",
