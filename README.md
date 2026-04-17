@@ -83,12 +83,13 @@ nodes:
         store_as: config
     on_success: done
 
-endings:
   done:
-    type: success
+    type: ending
+    outcome: success
     message: "Configuration loaded"
   error_generic:
-    type: error
+    type: ending
+    outcome: error
     message: "Unexpected failure at ${current_node}"
 ```
 
