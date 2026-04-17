@@ -1,0 +1,19 @@
+name: declared-effects-forbidden
+version: "1.0.0"
+description: Workflow explicitly forbidding two aliases — one declared in data_mcps, one documentation-only.
+
+data_mcps:
+  crm: "internal-crm@^2"
+
+declared_effects:
+  crm: forbidden
+  shell: forbidden
+
+start_node: done
+default_error: done
+
+nodes:
+  done:
+    type: ending
+    outcome: success
+    message: "Done."
