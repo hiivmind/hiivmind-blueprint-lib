@@ -5,6 +5,59 @@ All notable changes to hiivmind-blueprint-lib will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.0.0] - 2026-04-17
+
+### Added
+- `ending` node type (BL5). Fourth primitive; lives in `nodes:`. Retires the top-level `endings:` block. Signature: `ending(outcome, message?, summary?, details?, category?, recovery?, behavior?, consequences?)` with `outcome ∈ {success, failure, error, cancelled, indeterminate}` and optional `behavior: {silent | delegate | restart}`.
+- `mcp_tool_call` consequence (BL1). Invokes a tool on a workflow-declared `data_mcps:` alias. Optional `params_type` references a per-workflow payload type declaration.
+- `## Payload Types` section in `blueprint-types.md` (BL2). Documents the *convention* for per-workflow payload type declarations; no central registry of instances.
+- `trust_mode` workflow field (BL3). Enum `{stateless, gated}`, default `stateless`.
+- `data_mcps` workflow field (BL4). Map of alias to `"name@semver-range"`.
+- `payload_types` workflow field (BL2). Map of `<name>@<version>` to field descriptors.
+- `schema/authoring/payload-types.json` (new schema file).
+- `scripts/validate-workflows.sh` — workflow-level schema validation runner.
+- Fixture tree `tests/fixtures/endings/` and `tests/fixtures/workflows/` with positive + negative coverage.
+- New composite example in `examples.md`: `MCP-Delegated Query` using `mcp_tool_call`, `payload_types`, `data_mcps`, `trust_mode`, `ending`.
+
+### Changed (BREAKING)
+- **Removed top-level `endings:` block.** All workflows must now place terminal states as `type: ending` entries under `nodes:`, with the old `type:` field renamed to `outcome:`. A top-level `endings:` key is rejected at load time.
+- `schema/authoring/workflow.json` bumped to schema version 4.0.
+- `schema/authoring/node-types.json` bumped to schema version 4.0 (adds `ending` to enum + dispatch + `ending_node` `$def`).
+- `default_error`: description updated — target must resolve to a node of type `ending`. (Cross-reference enforcement left to consuming runtimes.)
+- `workflows/core/intent-detection.yaml` migrated to v8 shape.
+- `examples.md` migrated: all three composite examples restructured with ending nodes.
+- `README.md` workflow snippets migrated.
+
+### Fixed
+- `schema/config/prompts-config.json` `$id` corrected to match filesystem path (was missing `config/` segment, blocking ajv-cli ref resolution).
+
+### Migration
+
+**No backwards compatibility.** Convert every workflow's `endings:` entries into `nodes:` entries:
+
+    # Before (v7)
+    endings:
+      done:
+        type: success
+        message: "OK"
+
+    # After (v8)
+    nodes:
+      done:
+        type: ending
+        outcome: success
+        message: "OK"
+
+Transitions that previously named ending ids (`on_success: done`) are unchanged — they now resolve within the `nodes:` map.
+
+### Cross-repo
+
+- `hiivmind-blueprint/lib/patterns/authoring-guide.md` — type tables updated; new sections for ending authoring, payload types, `mcp_tool_call`, trust_mode/data_mcps.
+- `hiivmind-blueprint/lib/patterns/execution-guide.md` — dispatch semantics for ending (terminal logic) + `mcp_tool_call` invocation topology (runtime vs LLM-client).
+- Downstream walker in `hiivmind-blueprint-mcp` requires verification pass against new fixtures; no walker-contract changes expected.
+
+---
+
 ## [7.2.0] - 2026-04-15
 
 ### Added
