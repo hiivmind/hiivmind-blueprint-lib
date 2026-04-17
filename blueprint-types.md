@@ -120,6 +120,17 @@ spawn_agent(subagent_type, prompt, store_as, run_in_background?)
 invoke_skill(skill, args?)
   → delegate via Skill tool; typically the last action before a success ending
 
+mcp_tool_call(tool, params, params_type?, store_as?)
+  tool        = "<alias>.<tool_name>" — alias declared in workflow data_mcps:
+  params      = map of literals + ${} state interpolation
+  params_type = optional reference to a payload type declared in the workflow's
+                payload_types: block (name@version)
+  store_as    = optional state field to receive the tool result
+  → invoke an MCP tool via the caller's MCP client; store the tool result at
+    store_as if provided. The catalog describes the *effect*; whether the
+    runtime calls the tool directly or emits a tool reference for the LLM's
+    own MCP client to invoke is an execution-guide concern.
+
 inline(description, pseudocode, store_as?, state_reads?, state_writes?)
   → execute embedded workflow-specific pseudocode against state.
     Prefer a reusable consequence type when possible; state_reads / state_writes
