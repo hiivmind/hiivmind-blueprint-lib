@@ -244,3 +244,49 @@ install_tool(tool, install_command?, skip_if_available?)
 
 compute_hash(from, store_as)
   → sha256 of state.<from>; stored as `sha256:<hex>` at store_as
+
+---
+
+## Payload Types
+
+Workflows declare payload types at the top in a `payload_types:` block. References
+from consequences use the form `<name>@<version>`. No central registry — instances
+live per-workflow only. Blueprint-lib's catalog documents *how* to declare payload
+types; instances travel with the workflow.
+
+### Declaration syntax
+
+    <name>@<version>:
+      <field>: <type descriptor>
+
+### Scalar type descriptors
+
+    string                           — UTF-8 text
+    integer                          — int64
+    boolean                          — true/false
+    object                           — arbitrary map
+    array<T>                         — homogeneous array of T
+    enum{a, b, c}                    — one of the listed literals
+
+### Constraints (optional, parenthesised after the type)
+
+    min_length=N, max_length=N       — string, array
+    min=N, max=N                     — integer
+    pattern="regex"                  — string
+    required / optional              — modifier (default: required)
+
+### Example
+
+    shake_params@1:
+      question: string (min_length=1)
+      context:  string (optional)
+      max_tokens: integer (min=1, max=4096, optional)
+
+### Load-time contract (enforced by downstream runtimes/loaders)
+
+- Every consequence `params_type` reference MUST resolve to a key in the current
+  workflow's `payload_types:` block. Unresolvable reference → `unresolved_params_type`.
+- Entry keys MUST match `^[a-z_][a-z0-9_]*@\d+$` (schema-enforced).
+- Blueprint-lib does NOT validate that a consequence's `params` block conforms to the
+  referenced payload type's field list — that is runtime concern. Blueprint-lib only
+  validates that the reference resolves.
