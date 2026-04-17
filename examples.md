@@ -174,18 +174,21 @@ nodes:
         message: "Clone failed, state restored from checkpoint"
     on_success: error_clone_failed
 
-endings:
   done:
-    type: success
+    type: ending
+    outcome: success
     message: "Source onboarded: ${computed.source_id}"
   error_generic:
-    type: error
+    type: ending
+    outcome: error
     message: "Unexpected failure at ${current_node}"
   error_config_read:
-    type: error
+    type: ending
+    outcome: error
     message: "Failed to read config.yaml"
   error_clone_failed:
-    type: failure
+    type: ending
+    outcome: failure
     message: "Clone failed for ${computed.repo_url}"
 ```
 
@@ -330,27 +333,33 @@ nodes:
         dest: ".cache/${computed.source_id}.md"
     on_success: done_processed
 
-endings:
   done_processed:
-    type: success
+    type: ending
+    outcome: success
     message: "Content processed: ${computed.source_id}"
   done_no_changes:
-    type: success
+    type: ending
+    outcome: success
     message: "No changes detected for ${computed.source_id}"
   done_cached:
-    type: success
+    type: ending
+    outcome: success
     message: "Using cached content for ${computed.source_id}"
   error_generic:
-    type: error
+    type: ending
+    outcome: error
     message: "Unexpected failure at ${current_node}"
   error_no_source:
-    type: error
+    type: ending
+    outcome: error
     message: "Source not cloned: ${computed.source_id}"
   error_no_python:
-    type: error
+    type: ending
+    outcome: error
     message: "Python yaml module not available"
   error_empty_fetch:
-    type: failure
+    type: ending
+    outcome: failure
     message: "Fetch returned empty content"
 ```
 
@@ -542,11 +551,12 @@ nodes:
           - **maintain** — Update, refresh, and check existing work
     on_success: get_input
 
-endings:
   exit_success:
-    type: success
+    type: ending
+    outcome: success
     message: "Session complete. Skills used: ${computed.completed_skills}"
   error_generic:
-    type: error
+    type: ending
+    outcome: error
     message: "Unexpected failure at ${current_node}"
 ```
