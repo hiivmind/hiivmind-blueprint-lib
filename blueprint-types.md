@@ -290,3 +290,41 @@ types; instances travel with the workflow.
 - Blueprint-lib does NOT validate that a consequence's `params` block conforms to the
   referenced payload type's field list — that is runtime concern. Blueprint-lib only
   validates that the reference resolves.
+
+## Declared Effects
+
+Optional workflow-level block narrowing the default inferred effect envelope
+from `data_mcps`. Workflows that omit the block accept any tool exposed by any
+declared alias, invoked arbitrarily many times. Authors who want fine-grained
+control add a `declared_effects:` block at the top level of the workflow YAML.
+
+Each key is an alias (same naming rules as `data_mcps`); each value is either:
+
+| Value form | Meaning |
+|---|---|
+| `forbidden` | Explicit deny — alias MUST NOT be invoked from this workflow. Readable documentation even when the alias is absent from `data_mcps`. |
+| `{ tools: [...] }` | Restrict to a subset of the MCP's tools. Unlisted tools are forbidden. |
+| `{ tools: [...], max_call_count: N }` | As above, with a hard cap on total invocations of this alias across a workflow run. |
+| `{ max_call_count: N }` | Cap invocations without narrowing the tool list. |
+
+### Example
+
+    data_mcps:
+      crm:     "internal-crm@^2.1"
+      billing: "stripe-mcp@~3"
+
+    declared_effects:
+      crm:
+        tools: [search_customers, get_account]
+      billing:
+        tools: [create_invoice]
+        max_call_count: 1
+      shell: forbidden
+
+### Load-time contract (enforced by downstream runtimes)
+
+- Aliases that appear in `declared_effects` with an object value MUST also appear in `data_mcps`.
+- Each entry in `tools` MUST be a tool exported by the aliased MCP server.
+- `max_call_count` is interpreted as a static upper bound across all reachable paths through the workflow DAG.
+- Unknown keys under an alias object are reserved for future vocabulary (data volume caps, time windows, resource classes) and are accepted today without effect.
+- Blueprint-lib validates only the syntactic shape of the block; cross-alias and cross-server checks are the consuming runtime's concern.
