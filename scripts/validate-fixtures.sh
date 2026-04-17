@@ -103,16 +103,33 @@ validate_file() {
     fi
 }
 
+# Positive roots
+POS_ROOTS=(
+  "$REPO_ROOT/tests/fixtures/composites"
+  "$REPO_ROOT/tests/fixtures/endings"
+)
+
+# Negative roots (fixtures living under composites/_negative vs the new top-level _negative)
+NEG_ROOT="$REPO_ROOT/tests/fixtures/_negative"
+NEG_COMPOSITES="$REPO_ROOT/tests/fixtures/composites/_negative"
+
 echo "=== Positive fixtures (must pass) ==="
-while IFS= read -r -d '' f; do
+for root in "${POS_ROOTS[@]}"; do
+  [[ -d "$root" ]] || continue
+  while IFS= read -r -d '' f; do
     validate_file "$f" "true"
-done < <(find "$FIXTURES_DIR" -type f \( -name 'input.yaml' -o -name 'expected.yaml' \) -not -path '*/_negative/*' -not -path '*/_walker_only/*' -print0)
+  done < <(find "$root" -type f \( -name 'input.yaml' -o -name 'expected.yaml' \) \
+           -not -path '*/_negative/*' -not -path '*/_walker_only/*' -print0)
+done
 
 echo ""
 echo "=== Negative fixtures (must fail) ==="
-while IFS= read -r -d '' f; do
+for root in "$NEG_ROOT" "$NEG_COMPOSITES"; do
+  [[ -d "$root" ]] || continue
+  while IFS= read -r -d '' f; do
     validate_file "$f" "false"
-done < <(find "$FIXTURES_DIR/_negative" -type f -name 'input.yaml' -print0 2>/dev/null || true)
+  done < <(find "$root" -type f -name 'input.yaml' -print0)
+done
 
 echo ""
 echo "=== Summary ==="
