@@ -243,15 +243,17 @@ mcp_tool_call(tool, params, params_type?, store_as?)
 
 ### Schema impact
 
-Added to `schema/authoring/node-types.json` as a new `consequence` variant (join the existing oneOf). Required keys: `type: "mcp_tool_call"`, `tool`, `params`. Optional: `params_type`, `store_as`.
+**None, by design.** The `consequence` `$def` in `schema/authoring/node-types.json` is intentionally agnostic (comment on line 425: *"Schema version 2.0 - Consequence-agnostic design. Type validation at runtime."*). It validates only that each consequence has a `type` string; structural validation of specific consequences is delegated to runtime. `mcp_tool_call` follows that pattern — no typed `$def` is added. The catalog entry in `blueprint-types.md` is the authoritative contract.
 
-### Load-time rules
+### Contract rules (enforced by downstream runtimes/loaders, not by JSON Schema)
 
-| Rule | Trigger | Error code |
-|---|---|---|
-| `tool` does not match `^[a-z_][a-z0-9_-]*\.[a-z_][a-z0-9_-]*$` | Schema | `schema_violation` |
-| Alias prefix in `tool` (part before `.`) is not a key of workflow `data_mcps:` | Cross-reference validation | `unresolved_alias` |
-| `params_type` does not resolve in workflow `payload_types:` | Cross-reference validation | `unresolved_params_type` |
+These are specified by blueprint-lib in the catalog and implemented by consuming runtimes (e.g. `hiivmind-blueprint-mcp`):
+
+| Rule | Error code |
+|---|---|
+| `tool` does not match `^[a-z_][a-z0-9_-]*\.[a-z_][a-z0-9_-]*$` | `schema_violation` |
+| Alias prefix in `tool` (part before `.`) is not a key of workflow `data_mcps:` | `unresolved_alias` |
+| `params_type` does not resolve in workflow `payload_types:` | `unresolved_params_type` |
 
 ---
 
@@ -313,7 +315,7 @@ Each change below must be made in the same release:
 | `README.md` | Update any workflow snippets that still show the `endings:` block. |
 | `workflows/core/intent-detection.yaml` | Migrate bundled workflow: move each `endings:` entry into `nodes:` with `type: ending` and renamed `outcome:` field. |
 | `schema/authoring/workflow.json` | Remove `endings` requirement + property + `$def`. Add `trust_mode`, `data_mcps`, `payload_types` properties. Update description on `default_error`. |
-| `schema/authoring/node-types.json` | Add `ending` to node type enum + `ending_node` `$def` + dispatch case. Add `mcp_tool_call` consequence variant. |
+| `schema/authoring/node-types.json` | Add `ending` to node type enum + `ending_node` `$def` + dispatch case. `mcp_tool_call` needs no schema change (consequence schema is type-agnostic by design). |
 | `schema/authoring/payload-types.json` | **New file**. Defines the shape of a single payload-type entry. |
 | `hiivmind-blueprint/lib/patterns/authoring-guide.md` | Update type tables. Add authoring sections for ending nodes, payload types, and `mcp_tool_call`. |
 | `hiivmind-blueprint/lib/patterns/execution-guide.md` | Update dispatch semantics: `ending` node terminal logic; `mcp_tool_call` invocation topology (runtime vs LLM-client). |
