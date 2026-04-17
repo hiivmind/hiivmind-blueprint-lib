@@ -1,0 +1,11 @@
+# tests/fixtures/endings/with_behavior_delegate/input.yaml
+handoff:
+  type: ending
+  outcome: success
+  message: "Handing off to follow-up skill."
+  behavior:
+    type: delegate
+    skill: "hiivmind-corpus-build"
+    args: "${computed.source_id}"
+    context:
+      source: "${computed.source_id}"

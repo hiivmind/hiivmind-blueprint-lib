@@ -1,0 +1,11 @@
+# tests/fixtures/endings/with_consequences/input.yaml
+cleanup_done:
+  type: ending
+  outcome: success
+  message: "Cleanup complete."
+  consequences:
+    - type: log_entry
+      level: info
+      message: "Workflow finished cleanly"
+    - type: display
+      content: "Done."
