@@ -1,0 +1,18 @@
+# NEGATIVE: top-level endings: is forbidden in v8.
+name: bad-endings-block
+version: "1.0.0"
+start_node: n1
+default_error: done
+
+nodes:
+  n1:
+    type: action
+    consequences:
+      - type: display
+        content: "hi"
+    on_success: done
+
+endings:
+  done:
+    type: success
+    message: "This should not be accepted."

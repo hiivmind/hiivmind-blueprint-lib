@@ -1,0 +1,24 @@
+name: v8-minimal
+version: "1.0.0"
+description: Minimal v8 workflow — a single action routing to an ending.
+
+start_node: ack
+default_error: error_generic
+
+nodes:
+  ack:
+    type: action
+    consequences:
+      - type: display
+        content: "Hello."
+    on_success: done
+
+  done:
+    type: ending
+    outcome: success
+    message: "Done."
+
+  error_generic:
+    type: ending
+    outcome: error
+    message: "Error."

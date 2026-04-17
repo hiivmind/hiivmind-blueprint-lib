@@ -1,0 +1,14 @@
+# NEGATIVE: payload_types keys must match ^[a-z_][a-z0-9_]*@\d+$ — 'Foo@1' is wrong case.
+name: bad-payload-type-name
+version: "1.0.0"
+start_node: done
+default_error: done
+
+payload_types:
+  Foo@1:
+    bar: string
+
+nodes:
+  done:
+    type: ending
+    outcome: success

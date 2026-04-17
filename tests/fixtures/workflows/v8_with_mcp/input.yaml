@@ -1,0 +1,38 @@
+name: v8-with-mcp
+version: "1.0.0"
+description: Workflow exercising trust_mode, data_mcps, payload_types, mcp_tool_call, ending.
+
+trust_mode: stateless
+
+data_mcps:
+  eightball: "eightball-tools@^1"
+
+payload_types:
+  shake_params@1:
+    question: "string (min_length=1)"
+    context:  "string (optional)"
+
+start_node: shake
+default_error: error_generic
+
+nodes:
+  shake:
+    type: action
+    consequences:
+      - type: mcp_tool_call
+        tool: eightball.shake
+        params_type: shake_params@1
+        params:
+          question: "${computed.question}"
+        store_as: computed.answer
+    on_success: done
+
+  done:
+    type: ending
+    outcome: success
+    message: "${computed.answer}"
+
+  error_generic:
+    type: ending
+    outcome: error
+    message: "Failed."
