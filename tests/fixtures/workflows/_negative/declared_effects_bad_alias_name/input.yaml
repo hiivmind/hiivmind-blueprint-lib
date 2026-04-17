@@ -1,0 +1,14 @@
+# NEGATIVE: declared_effects alias names must match ^[a-z_][a-z0-9_-]*$ — 'CRM' is uppercase.
+name: bad-declared-effect-alias
+version: "1.0.0"
+start_node: done
+default_error: done
+
+declared_effects:
+  CRM:
+    tools: [search_customers]
+
+nodes:
+  done:
+    type: ending
+    outcome: success
