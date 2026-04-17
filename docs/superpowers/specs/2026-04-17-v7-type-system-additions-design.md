@@ -1,8 +1,8 @@
-# Blueprint-lib v7.0 — Type System Additions (BL1–BL5)
+# Blueprint-lib v8.0 — Type System Additions (BL1–BL5)
 
 > **Status:** DESIGN
 > **Context:** Reconciles blueprint-lib with the gaps identified in [hiivmind-blueprint-central S1 alignment addendum](https://github.com/hiivmind/hiivmind-blueprint-central/blob/main/docs/superpowers/specs/2026-04-16-s1-blueprint-lib-alignment-addendum.md).
-> **Version:** v7.0.0 — major, hard cutover, no deprecation window.
+> **Version:** v8.0.0 — major, hard cutover, no deprecation window. (Current: v7.2.0; `endings:` block removal is breaking, forcing the major.)
 
 ## Scope
 
@@ -132,7 +132,7 @@ endings:
 ```
 
 ```yaml
-# v7.0 (after)
+# v8.0 (after)
 nodes:
   clone_repo:
     type: action
@@ -196,7 +196,7 @@ Example:
     max_tokens: integer (min=1, max=4096, optional)
 ```
 
-No instances ship in v7.0. First real payload types land in workflows as they need them.
+No instances ship in v8.0. First real payload types land in workflows as they need them.
 
 ### Workflow schema change
 
@@ -310,14 +310,16 @@ Each change below must be made in the same release:
 |---|---|
 | `blueprint-types.md` | Add `ending` node entry; add `mcp_tool_call` consequence entry; add new `## Payload Types` section. Update counts/stats. |
 | `examples.md` | Rewrite all three composite examples: endings migrated into `nodes:` map; add an example using `mcp_tool_call` + `payload_types:` + `data_mcps:`. |
+| `README.md` | Update any workflow snippets that still show the `endings:` block. |
+| `workflows/core/intent-detection.yaml` | Migrate bundled workflow: move each `endings:` entry into `nodes:` with `type: ending` and renamed `outcome:` field. |
 | `schema/authoring/workflow.json` | Remove `endings` requirement + property + `$def`. Add `trust_mode`, `data_mcps`, `payload_types` properties. Update description on `default_error`. |
 | `schema/authoring/node-types.json` | Add `ending` to node type enum + `ending_node` `$def` + dispatch case. Add `mcp_tool_call` consequence variant. |
 | `schema/authoring/payload-types.json` | **New file**. Defines the shape of a single payload-type entry. |
 | `hiivmind-blueprint/lib/patterns/authoring-guide.md` | Update type tables. Add authoring sections for ending nodes, payload types, and `mcp_tool_call`. |
 | `hiivmind-blueprint/lib/patterns/execution-guide.md` | Update dispatch semantics: `ending` node terminal logic; `mcp_tool_call` invocation topology (runtime vs LLM-client). |
 | `hiivmind-blueprint` skill bundle | Re-ship `blueprint-types.md` after changes. |
-| `package.yaml` | Bump to v7.0.0. Update stats (node primitive count 3→4; add Payload Types section marker). |
-| `CHANGELOG.md` | v7.0.0 entry: five additions + endings migration guide. |
+| `package.yaml` | Bump to v8.0.0. Update stats (node primitive count 3→4; add Payload Types section marker). |
+| `CHANGELOG.md` | v8.0.0 entry: five additions + endings migration guide. |
 
 ### Follow-up verification (tracked, not in this spec's implementation scope)
 
@@ -332,22 +334,22 @@ A shell/yq helper in `scripts/migrate-v6-to-v7.sh` that rewrites a v6.x workflow
 2. Delete the top-level `endings:` block.
 3. Leaves transitions untouched — they already reference the right names.
 
-Not required for v7.0 to ship; ships alongside if time permits.
+Not required for v8.0 to ship; ships alongside if time permits.
 
 ## Versioning
 
-Major bump from v6.x to v7.0.0. Per `CLAUDE.md`'s versioning rules:
+Major bump from v7.2.0 to v8.0.0. Per `CLAUDE.md`'s versioning rules:
 
 - Removing the top-level `endings:` block is a removal of a schema-level feature → major.
 - Adding four new types + one new catalog section → minor (subsumed by the major).
-- All together: v7.0.0.
+- All together: v8.0.0.
 
 ## Risks and open considerations
 
-1. **Walker divergence risk.** Composite walker in `hiivmind-blueprint-mcp` may hard-code assumptions about the shape of ending targets. Mitigation: fixture-driven pre-release check (run composite expansion tests against v7 workflow fixtures before cutting v7.0).
+1. **Walker divergence risk.** Composite walker in `hiivmind-blueprint-mcp` may hard-code assumptions about the shape of ending targets. Mitigation: fixture-driven pre-release check (run composite expansion tests against v8 workflow fixtures before cutting v8.0).
 2. **Migration friction on existing hiivmind repos.** Every workflow in hiivmind-pulse-gh, hiivmind-corpus-*, and consuming repos must migrate at the same time. Mitigation: migration script + announcement in CHANGELOG; consuming-repo owners notified before cut.
 3. **Payload-type naming collisions within a workflow.** Since `payload_types:` is per-workflow, there is no cross-workflow namespace to worry about. But a single workflow author may accidentally reuse `foo@1` for two different shapes. Mitigation: key is the full `name@version` — duplicate keys are a YAML-level error at load.
-4. **No payload-type reuse in v7.0.** Accepted tradeoff. If real drift pain emerges, a follow-up spec can introduce imports or per-repo shape libraries without breaking the v7.0 convention.
+4. **No payload-type reuse in v8.0.** Accepted tradeoff. If real drift pain emerges, a follow-up spec can introduce imports or per-repo shape libraries without breaking the v8.0 convention.
 
 ## What this spec does not decide
 
