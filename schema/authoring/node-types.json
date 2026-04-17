@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/node-types.json",
-  "$comment": "Schema version 3.2 - Adds goal_seek composite (bounded dispatcher loop). Composites (confirm, gated_action, goal_seek) expand to primitives via walker in hiivmind-blueprint-mcp.",
+  "$comment": "Schema version 4.0 - Adds `ending` primitive node type (BL5). Node primitives: action, conditional, user_prompt, ending. Composites: confirm, gated_action, goal_seek.",
   "title": "Blueprint Node Types Schema",
-  "description": "Definitions for workflow node types: action, conditional, user_prompt",
+  "description": "Definitions for workflow node types: action, conditional, user_prompt, ending",
   "$defs": {
     "node": {
       "type": "object",
@@ -12,8 +12,8 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["action", "conditional", "user_prompt", "confirm", "gated_action", "goal_seek"],
-          "description": "Node type (primitive: action/conditional/user_prompt; composite: confirm/gated_action/goal_seek)"
+          "enum": ["action", "conditional", "user_prompt", "ending", "confirm", "gated_action", "goal_seek"],
+          "description": "Node type (primitive: action/conditional/user_prompt/ending; composite: confirm/gated_action/goal_seek)"
         },
         "description": {
           "type": "string",
@@ -32,6 +32,10 @@
         {
           "if": { "properties": { "type": { "const": "user_prompt" } } },
           "then": { "$ref": "#/$defs/user_prompt_node" }
+        },
+        {
+          "if": { "properties": { "type": { "const": "ending" } } },
+          "then": { "$ref": "#/$defs/ending_node" }
         },
         {
           "if": { "properties": { "type": { "const": "confirm" } } },
@@ -140,6 +144,106 @@
             ]
           }
         }
+      }
+    },
+    "ending_node": {
+      "type": "object",
+      "description": "Terminal node. Reaching an ending emits the declared outcome and stops the FSM. Behavior (silent/delegate/restart) governs post-termination handling.",
+      "required": ["type", "outcome"],
+      "properties": {
+        "type": { "const": "ending" },
+        "description": { "type": "string" },
+        "outcome": {
+          "type": "string",
+          "enum": ["success", "failure", "error", "cancelled", "indeterminate"],
+          "description": "Terminal outcome category."
+        },
+        "category": {
+          "type": "string",
+          "description": "Optional categorization for error outcomes (e.g., safety, validation, configuration, permission, external)."
+        },
+        "message": {
+          "type": "string",
+          "description": "Message to display at termination (supports ${} interpolation)."
+        },
+        "summary": {
+          "type": "object",
+          "description": "Structured summary data to display at termination.",
+          "additionalProperties": true
+        },
+        "details": {
+          "type": "string",
+          "description": "Additional details for error outcomes."
+        },
+        "recovery": {
+          "description": "Recovery guidance for error outcomes. Simple string or structured object.",
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "properties": {
+                "suggestion":    { "type": "string" },
+                "related_skill": { "type": "string" },
+                "retry_node":    { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "consequences": {
+          "type": "array",
+          "description": "Consequences run at termination (best-effort; failures are logged but do not prevent completion).",
+          "items": { "$ref": "#/$defs/consequence" }
+        },
+        "behavior": {
+          "description": "Post-termination behavior. Defaults to display (show message/summary).",
+          "oneOf": [
+            {
+              "type": "object",
+              "description": "Delegate execution to another skill.",
+              "required": ["type", "skill"],
+              "properties": {
+                "type":   { "const": "delegate" },
+                "skill":  { "type": "string" },
+                "args":   { "type": "string" },
+                "context": { "type": "object", "additionalProperties": true }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "description": "Restart the workflow from a target node.",
+              "required": ["type"],
+              "properties": {
+                "type":         { "const": "restart" },
+                "target_node":  { "$ref": "../common.json#/$defs/node_reference" },
+                "reset_state":  { "type": "boolean", "default": false },
+                "max_restarts": { "type": "integer", "minimum": 1, "default": 3 }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "description": "Complete silently with no output.",
+              "required": ["type"],
+              "properties": {
+                "type": { "const": "silent" }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "not": {
+        "anyOf": [
+          { "required": ["on_success"] },
+          { "required": ["on_failure"] },
+          { "required": ["on_true"] },
+          { "required": ["on_false"] },
+          { "required": ["on_unknown"] },
+          { "required": ["on_response"] }
+        ]
       }
     },
     "confirm_node": {
