@@ -6,10 +6,11 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 **hiivmind-blueprint-lib** is a type definition catalog for the [hiivmind-blueprint](https://github.com/hiivmind/hiivmind-blueprint) workflow system. It provides:
 
-- **22 consequence types** - Operations that workflows can execute
+- **23 consequence types** - Operations that workflows can execute (includes mcp_tool_call)
 - **9 precondition types** - Conditions workflows can check
-- **3 node types** - Building blocks for workflow graphs
+- **4 node types** - Building blocks for workflow graphs (action, conditional, user_prompt, ending)
 - **1 reusable workflow** - Intent detection with 3-valued logic
+- **Payload Types** - Per-workflow data-shape declarations
 
 The key paradigm: **LLM-as-execution-engine**. Type definitions include `effect` pseudocode that the LLM interprets directly - no traditional runtime engine required.
 
@@ -82,7 +83,7 @@ Workflow YAML references types via `type: <name>` plus sibling keys for paramete
 
 ### Composite Node Types (Authoring Sugar)
 
-In addition to the three primitive node types, blueprint supports **composite nodes** — author-time syntactic sugar documented in `blueprint-composites.md` (separate from `blueprint-types.md`). v1 composites:
+In addition to the four primitive node types, blueprint supports **composite nodes** — author-time syntactic sugar documented in `blueprint-composites.md` (separate from `blueprint-types.md`). v1 composites:
 
 - `confirm` — yes/no prompt with structural state gating
 - `gated_action` — multi-way CASE/WHEN dispatch
