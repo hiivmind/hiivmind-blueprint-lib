@@ -41,6 +41,14 @@ user_prompt(prompt{question, header, options|options_from_state+options}, on_res
   → present prompt, store selection in state.user_responses, run handler
     consequences, route to handler.next_node
 
+ending(outcome, message?, summary?, details?, category?,
+       recovery?, behavior?, consequences?)
+  outcome  ∈ {success, failure, error, cancelled, indeterminate}
+  behavior = {type: silent | delegate | restart, …}  (optional; default: display message/summary)
+  → terminate the workflow with the given outcome; run consequences
+    (best-effort, logged on failure); then apply behavior.
+    Schema forbids on_success/on_failure/on_true/on_false/on_unknown/on_response.
+
 ---
 
 ## Preconditions
