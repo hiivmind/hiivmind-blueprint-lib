@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/workflow.json",
-  "$comment": "Schema version 4.0 - Added trust_mode, data_mcps, payload_types (BL2/BL3/BL4); ending nodes live in nodes: (BL5).",
+  "$comment": "Schema version 4.1 - BL6: added optional top-level declared_effects block (effect envelope narrowing).",
   "title": "Blueprint Workflow Schema",
   "description": "JSON Schema for hiivmind-blueprint workflow.yaml files",
   "type": "object",
@@ -39,6 +39,33 @@
       "description": "Workflow-scoped payload type declarations (BL2). Keys are name@version; values are field maps. Referenced by consequences via params_type.",
       "propertyNames": { "pattern": "^[a-z_][a-z0-9_]*@\\d+$" },
       "additionalProperties": { "$ref": "payload-types.json#/$defs/payload_type" }
+    },
+    "declared_effects": {
+      "type": "object",
+      "description": "Optional per-alias effect envelope narrowing the inferred default from data_mcps (BL6). Keys are aliases declared in data_mcps (or unused aliases used as forbidden documentation). Values are either the string literal 'forbidden' or an object with optional 'tools' and 'max_call_count'. Cross-alias validation (tools subset, alias-in-data_mcps) is delegated to the consuming runtime.",
+      "propertyNames": { "pattern": "^[a-z_][a-z0-9_-]*$" },
+      "additionalProperties": {
+        "oneOf": [
+          { "const": "forbidden" },
+          {
+            "type": "object",
+            "properties": {
+              "tools": {
+                "type": "array",
+                "items": { "type": "string", "pattern": "^[a-z_][a-z0-9_]*$" },
+                "uniqueItems": true,
+                "description": "Allowed tool names on this alias. Subset of the data-MCP's published tools (runtime-checked)."
+              },
+              "max_call_count": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Hard cap on invocations of this alias per workflow run (static upper bound)."
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      }
     },
     "entry_preconditions": {
       "type": "array",
