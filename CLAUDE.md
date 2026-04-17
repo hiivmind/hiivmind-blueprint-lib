@@ -4,116 +4,100 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## Repository Overview
 
-**hiivmind-blueprint-lib** is a type definition library for the [hiivmind-blueprint](https://github.com/hiivmind/hiivmind-blueprint) workflow system. It provides:
+**hiivmind-blueprint-lib** is a type definition catalog for the [hiivmind-blueprint](https://github.com/hiivmind/hiivmind-blueprint) workflow system. It provides:
 
-- **43 consequence types** - Operations that workflows can execute
-- **27 precondition types** - Conditions workflows can check
-- **5 node types** - Building blocks for workflow graphs
+- **23 consequence types** - Operations that workflows can execute (includes mcp_tool_call)
+- **9 precondition types** - Conditions workflows can check
+- **4 node types** - Building blocks for workflow graphs (action, conditional, user_prompt, ending)
 - **1 reusable workflow** - Intent detection with 3-valued logic
+- **Payload Types** - Per-workflow data-shape declarations
 
 The key paradigm: **LLM-as-execution-engine**. Type definitions include `effect` pseudocode that the LLM interprets directly - no traditional runtime engine required.
 
+The `hiivmind-blueprint` skill ships `blueprint-types.md` from a pinned version of this library. Consuming repos reference types by name in their workflow YAML; there is no per-repo definitions file.
+
 ## File Structure
 
-All types are consolidated into single YAML files per category:
-
 ```
-consequences/consequences.yaml    # All 43 consequence types
-preconditions/preconditions.yaml  # All 27 precondition types
-nodes/workflow_nodes.yaml         # All 5 node types
-execution/engine_execution.yaml   # Execution engine semantics
+blueprint-types.md                # Single-file type catalog (all 34 types)
 ```
-
-Each directory also has:
-- `index.yaml` - Registry pointing to the consolidated file
-- `_deprecated/` - Old directory structure (do not modify)
 
 ### Schema Directory
 
 ```
 schema/
-├── definitions/    # Type definition schemas (consequence, precondition, node, execution)
 ├── authoring/      # Workflow authoring schemas (workflow, node-types, intent-mapping)
 ├── runtime/        # Runtime schemas (logging)
 ├── config/         # Configuration schemas (output-config, prompts-config)
-├── resolution/     # Type loading schemas
 └── common.json     # Shared definitions
 ```
 
 ## HARD REQUIREMENT: Cross-Repository Synchronization
 
-**When modifying YAML type definitions, you MUST also update related files to prevent divergence.**
+**When modifying `blueprint-types.md`, you MUST also update related files to prevent divergence.**
 
-Any change to these files:
-- `consequences/consequences.yaml`
-- `consequences/index.yaml`
-- `preconditions/preconditions.yaml`
-- `preconditions/index.yaml`
-- `nodes/workflow_nodes.yaml`
-- `nodes/index.yaml`
-- `execution/engine_execution.yaml`
-- `execution/index.yaml`
-
-**MUST be synchronized with:**
+Any change to `blueprint-types.md` MUST be synchronized with:
 
 | Location | Purpose |
 |----------|---------|
-| `schema/` (this repo) | JSON schemas must match YAML structure |
-| `examples/` (this repo) | Usage examples must reflect current API |
-| `hiivmind-blueprint-author/references/` | Reference documentation for authors |
-| `hiivmind-blueprint-author/lib/patterns/` | Pattern libraries using these types |
+| `examples.md` (this repo) | Composite workflow examples must use current type names and enum variants |
+| `hiivmind-blueprint/lib/patterns/authoring-guide.md` | Authoring guidance referencing the catalog |
+| `hiivmind-blueprint/lib/patterns/execution-guide.md` | Execution guidance referencing the catalog |
+| `hiivmind-blueprint` skill bundle | The skill ships `blueprint-types.md` at build time; bundle must re-copy after changes |
 
 ### Synchronization Checklist
 
-Before completing any YAML change:
+Before completing any change to `blueprint-types.md`:
 
-1. **Schema sync** - Update JSON schemas in `schema/` if:
-   - New parameters added
-   - Parameter types changed
-   - Required/optional status changed
-   - New type added
-
-2. **Example sync** - Update `examples/` if:
-   - Type behavior changed
-   - New type added
-   - Parameters renamed or removed
-
-3. **External reference sync** - Check and update:
-   - `/home/nathanielramm/git/hiivmind/hiivmind-blueprint-author/references/`
-   - `/home/nathanielramm/git/hiivmind/hiivmind-blueprint-author/lib/patterns/`
+1. **Examples sync** — update `examples.md` if a type, parameter, or enum variant was renamed or removed.
+2. **Patterns sync** — update the two `hiivmind-blueprint/lib/patterns/*` files if the change affects authoring or execution guidance.
+3. **Skill bundle** — ensure the next `hiivmind-blueprint` skill release re-ships the updated file.
 
 ### Analysis Scope
 
-When analyzing or planning changes to type definitions, ALWAYS consider impact on:
-- Schema validation (will existing workflows fail validation?)
+When analyzing or planning changes to `blueprint-types.md`, ALWAYS consider impact on:
+- Existing workflow call sites (will `type: X` still resolve? Will required params still be present?)
 - Examples (do they still work?)
-- External documentation (is it now incorrect?)
-- Pattern libraries (do patterns use the changed type?)
+- The two pattern guides in `hiivmind-blueprint` (are their references still accurate?)
 
 ## Key Concepts
 
-### Type Definition Structure
+### Type Catalog Format
 
-Each type follows this structure:
+All types are defined in a single file: `blueprint-types.md`. Each type is a function-style signature:
 
-```yaml
-type_name:
-  description:
-    brief: One-line description
-    detailed: Extended explanation (optional)
-  category: category_name
-  parameters:
-    - name: param_name
-      type: string|boolean|number|object|array
-      required: true|false
-      default: value (if not required)
-      description: What this parameter does
-  payload:
-    kind: state_mutation|tool_call|composite|display
-    effect: |
-      # Pseudocode that the LLM interprets
-      state.computed[params.store_as] = result
 ```
+type_name(required_param, optional?)
+  param ∈ {enum, variants}   # if applicable
+  → one-line outcome / return meaning
+```
+
+**Conventions:**
+- `?` suffix marks optional parameters.
+- `X ∈ {a, b, c}` lists enum variants.
+- `→` marks the outcome.
+- All string parameters support `${}` state interpolation.
+- Preconditions return true, false, or unknown. Consequences mutate state or the world.
+
+Workflow YAML references types via `type: <name>` plus sibling keys for parameters. See `examples.md` for composite workflow examples.
+
+### Composite Node Types (Authoring Sugar)
+
+In addition to the four primitive node types, blueprint supports **composite nodes** — author-time syntactic sugar documented in `blueprint-composites.md` (separate from `blueprint-types.md`). v1 composites:
+
+- `confirm` — yes/no prompt with structural state gating
+- `gated_action` — multi-way CASE/WHEN dispatch
+- `goal_seek` — bounded dispatcher loop over a list of goals (iteration budget + per-goal completion predicate)
+
+Composites are walker-expanded into primitive nodes before execution. The walker implementation lives in `hiivmind-blueprint-mcp` (separate repo). **This repo contains only the catalog, schema, and fixture corpus** — no walker code, no Python runtime.
+
+When modifying composite definitions, also update:
+
+1. `schema/authoring/node-types.json` — composite sub-schemas
+2. `blueprint-composites.md` — author-facing signature
+3. `tests/fixtures/composites/` — expansion contract fixtures (the authoritative walker target)
+
+When modifying primitives in a way that could affect composite expansion, notify `hiivmind-blueprint-mcp` maintainers — walker expanders may need updates to stay contract-valid.
 
 ### Three-Valued Logic (3VL)
 
@@ -122,37 +106,28 @@ The `intent` category uses Kleene 3-valued logic:
 - `F` (False) - Definite non-match
 - `U` (Unknown) - Uncertain or "don't care" (in rules)
 
-Key types: `evaluate_keywords`, `parse_intent_flags`, `match_3vl_rules`, `dynamic_route`
+Key types: `evaluate_keywords`, `parse_intent_flags`, `match_3vl_rules`
 
 ## Common Tasks
 
 ### Adding a New Type
 
-1. Open the appropriate consolidated file:
-   - `consequences/consequences.yaml` for consequences
-   - `preconditions/preconditions.yaml` for preconditions
-
-2. Add the type definition following the schema structure
-
-3. Update `package.yaml` stats if needed
-
-4. Update README.md type counts if changed
-
-### Modifying Execution Semantics
-
-Edit `execution/engine_execution.yaml`. This contains the complete execution engine pseudocode including:
-- Traversal logic (3-phase model)
-- State management
-- Consequence dispatch
-- Precondition evaluation
-- Logging configuration
+1. Open `blueprint-types.md` at the repo root.
+2. Add the type to the appropriate section (`## Nodes`, `## Preconditions` → `### Core`/`### Extensions`, or `## Consequences` → the appropriate category).
+3. Write the signature in the established format (`name(params) → meaning`, with enum variants indented below if applicable).
+4. Update `package.yaml.stats` if counts changed.
+5. Ensure the type is demonstrated in `examples.md` (add to an existing workflow or note if a new workflow is needed).
+6. Update the two pattern guides in `hiivmind-blueprint/lib/patterns/` if the new type affects authoring or execution guidance.
 
 ### Validating Changes
 
-JSON schemas in `schema/` define valid structures. Key schemas:
-- `schema/definitions/consequence-definition.json`
-- `schema/definitions/precondition-definition.json`
-- `schema/definitions/node-definition.json`
+There is no JSON schema for `blueprint-types.md` — it is a human/LLM reference document, not structured data. Validation is by inspection:
+
+- Does the signature format match the conventions in the file's header?
+- Do the parameters and enum variants match the behavior documented in the `→` line?
+- Are existing examples in `examples.md` still consistent with the type?
+
+Workflow authoring schemas (`schema/authoring/*`) are type-agnostic: they validate workflow structure but delegate type-specific validation to runtime (the LLM). Changes to `blueprint-types.md` never require schema changes.
 
 ## Versioning
 
@@ -171,8 +146,10 @@ Current version: Check `package.yaml`
 ## Git Workflow
 
 - Main branch: `main`
-- Releases are tagged (e.g., `v2.0.0`, `v2.1.0`)
-- Workflows reference specific versions via GitHub raw URLs
+- **PRs to `main` must come from `release/*` or `hotfix/*` branches** — enforced by CI (`Validate PR Source Branch` required check)
+- Use `/prepare-release` to automate: create release branch, bump version, update changelog, and open PR to `main`
+- Releases are tagged (e.g., `v2.0.0`, `v2.1.0`) automatically when PRs to `main` are merged
+- See `RELEASING.md` for the full release process
 
 ## GitHub Operations
 
@@ -188,14 +165,8 @@ Since types are interpreted by LLMs (not compiled code), validation focuses on:
 1. Schema compliance - JSON schemas validate structure
 2. Pseudocode clarity - `effect` blocks must be unambiguous
 3. Parameter completeness - Required params must be documented
-4. Example coverage - Types should have usage examples
+4. Example coverage - Types should appear in `examples.md` workflows
 
 ## Dependencies
 
-This library has no runtime dependencies. It's fetched via raw GitHub URLs:
-
-```
-https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/v2.0.0/
-```
-
-Consuming workflows specify the version in their `definitions` block.
+This library has no runtime dependencies. It serves as a catalog that authors copy from at authoring time.

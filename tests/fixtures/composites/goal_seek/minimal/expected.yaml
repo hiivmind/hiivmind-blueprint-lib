@@ -1,0 +1,87 @@
+gather_user_info__entry:
+  type: conditional
+  condition: "goal_seek.gather_user_info.iterations == null"
+  on_true: gather_user_info__init
+  on_false: gather_user_info__tick
+
+gather_user_info__init:
+  type: action
+  consequences:
+    - type: mutate_state
+      operation: set
+      field: goal_seek.gather_user_info.iterations
+      value: 0
+    - type: mutate_state
+      operation: set
+      field: goal_seek.gather_user_info.goals.user_name.status
+      value: incomplete
+    - type: mutate_state
+      operation: set
+      field: goal_seek.gather_user_info.goals.user_email.status
+      value: incomplete
+  on_success: gather_user_info__dispatch_case_0
+
+gather_user_info__tick:
+  type: action
+  consequences:
+    - type: mutate_state
+      operation: increment
+      field: goal_seek.gather_user_info.iterations
+  on_success: gather_user_info__budget_check
+
+gather_user_info__budget_check:
+  type: conditional
+  condition: "goal_seek.gather_user_info.iterations > 10"
+  on_true: default_error
+  on_false: gather_user_info__abort_check
+
+gather_user_info__abort_check:
+  type: conditional
+  condition: "goal_seek.gather_user_info.aborted == true"
+  on_true: default_error
+  on_false: gather_user_info__complete_check
+
+gather_user_info__complete_check:
+  type: conditional
+  condition:
+    all:
+      - type: state_check
+        field: goal_seek.gather_user_info.goals.user_name.status
+        operator: in
+        value: [satisfied, ignored]
+      - type: state_check
+        field: goal_seek.gather_user_info.goals.user_email.status
+        operator: in
+        value: [satisfied, ignored]
+  on_true: summarize_info
+  on_false: gather_user_info__dispatch_case_0
+
+gather_user_info__dispatch_case_0:
+  type: conditional
+  condition: "goal_seek.gather_user_info.goals.user_name.status == 'incomplete'"
+  on_true: collect_user_name
+  on_false: gather_user_info__dispatch_case_1
+
+gather_user_info__dispatch_case_1:
+  type: conditional
+  condition: "goal_seek.gather_user_info.goals.user_email.status == 'incomplete'"
+  on_true: collect_user_email
+  on_false: default_error
+
+gather_user_info__return_user_name:
+  type: action
+  consequences:
+    - type: mutate_state
+      operation: set
+      field: goal_seek.gather_user_info.goals.user_name.status
+      value: satisfied
+  on_success: gather_user_info__entry
+
+gather_user_info__return_user_email:
+  type: action
+  consequences:
+    - type: mutate_state
+      operation: set
+      field: goal_seek.gather_user_info.goals.user_email.status
+      value: satisfied
+  on_success: gather_user_info__entry

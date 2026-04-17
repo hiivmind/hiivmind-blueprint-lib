@@ -1,0 +1,9 @@
+gather_user_info:
+  type: goal_seek
+  goals:
+    - name: user_name
+      starting_node: collect_user_name
+    - name: user_email
+      starting_node: collect_user_email
+  max_iterations: 10
+  on_complete: summarize_info

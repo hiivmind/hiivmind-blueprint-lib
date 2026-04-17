@@ -1,0 +1,88 @@
+research_and_summarize__entry:
+  type: conditional
+  condition: "goal_seek.research_and_summarize.iterations == null"
+  on_true: research_and_summarize__init
+  on_false: research_and_summarize__tick
+
+research_and_summarize__init:
+  type: action
+  consequences:
+    - type: mutate_state
+      operation: set
+      field: goal_seek.research_and_summarize.iterations
+      value: 0
+    - type: mutate_state
+      operation: set
+      field: goal_seek.research_and_summarize.goals.deep_research.status
+      value: incomplete
+    - type: mutate_state
+      operation: set
+      field: goal_seek.research_and_summarize.goals.outline.status
+      value: incomplete
+  on_success: research_and_summarize__dispatch_case_0
+
+research_and_summarize__tick:
+  type: action
+  consequences:
+    - type: mutate_state
+      operation: increment
+      field: goal_seek.research_and_summarize.iterations
+  on_success: research_and_summarize__budget_check
+
+research_and_summarize__budget_check:
+  type: conditional
+  condition: "goal_seek.research_and_summarize.iterations > 5"
+  on_true: default_error
+  on_false: research_and_summarize__abort_check
+
+research_and_summarize__abort_check:
+  type: conditional
+  condition: "goal_seek.research_and_summarize.aborted == true"
+  on_true: default_error
+  on_false: research_and_summarize__complete_check
+
+research_and_summarize__complete_check:
+  type: conditional
+  condition:
+    all:
+      - type: state_check
+        field: goal_seek.research_and_summarize.goals.deep_research.status
+        operator: in
+        value: [satisfied, ignored]
+      - type: state_check
+        field: goal_seek.research_and_summarize.goals.outline.status
+        operator: in
+        value: [satisfied, ignored]
+  on_true: publish_report
+  on_false: research_and_summarize__dispatch_case_0
+
+research_and_summarize__dispatch_case_0:
+  type: conditional
+  condition: "goal_seek.research_and_summarize.goals.deep_research.status == 'incomplete'"
+  on_true: spawn_research_agent
+  on_false: research_and_summarize__dispatch_case_1
+
+research_and_summarize__dispatch_case_1:
+  type: conditional
+  condition: "goal_seek.research_and_summarize.goals.outline.status == 'incomplete'"
+  on_true: draft_outline
+  on_false: default_error
+
+research_and_summarize__return_deep_research:
+  type: action
+  run_as: subagent
+  consequences:
+    - type: mutate_state
+      operation: set
+      field: goal_seek.research_and_summarize.goals.deep_research.status
+      value: satisfied
+  on_success: research_and_summarize__entry
+
+research_and_summarize__return_outline:
+  type: action
+  consequences:
+    - type: mutate_state
+      operation: set
+      field: goal_seek.research_and_summarize.goals.outline.status
+      value: satisfied
+  on_success: research_and_summarize__entry

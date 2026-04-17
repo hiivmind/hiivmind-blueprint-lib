@@ -1,0 +1,6 @@
+bad:
+  type: goal_seek
+  goals:
+    - name: g1
+  max_iterations: 5
+  on_complete: done

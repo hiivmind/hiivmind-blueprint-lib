@@ -1,0 +1,6 @@
+# tests/fixtures/endings/with_behavior_silent/input.yaml
+silent_exit:
+  type: ending
+  outcome: cancelled
+  behavior:
+    type: silent

@@ -5,6 +5,307 @@ All notable changes to hiivmind-blueprint-lib will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.0.0] - 2026-04-17
+
+### Added
+- `ending` node type (BL5). Fourth primitive; lives in `nodes:`. Retires the top-level `endings:` block. Signature: `ending(outcome, message?, summary?, details?, category?, recovery?, behavior?, consequences?)` with `outcome ∈ {success, failure, error, cancelled, indeterminate}` and optional `behavior: {silent | delegate | restart}`.
+- `mcp_tool_call` consequence (BL1). Invokes a tool on a workflow-declared `data_mcps:` alias. Optional `params_type` references a per-workflow payload type declaration.
+- `## Payload Types` section in `blueprint-types.md` (BL2). Documents the *convention* for per-workflow payload type declarations; no central registry of instances.
+- `trust_mode` workflow field (BL3). Enum `{stateless, gated}`, default `stateless`.
+- `data_mcps` workflow field (BL4). Map of alias to `"name@semver-range"`.
+- `payload_types` workflow field (BL2). Map of `<name>@<version>` to field descriptors.
+- `schema/authoring/payload-types.json` (new schema file).
+- `scripts/validate-workflows.sh` — workflow-level schema validation runner.
+- Fixture tree `tests/fixtures/endings/` and `tests/fixtures/workflows/` with positive + negative coverage.
+- New composite example in `examples.md`: `MCP-Delegated Query` using `mcp_tool_call`, `payload_types`, `data_mcps`, `trust_mode`, `ending`.
+
+### Changed (BREAKING)
+- **Removed top-level `endings:` block.** All workflows must now place terminal states as `type: ending` entries under `nodes:`, with the old `type:` field renamed to `outcome:`. A top-level `endings:` key is rejected at load time.
+- `schema/authoring/workflow.json` bumped to schema version 4.0.
+- `schema/authoring/node-types.json` bumped to schema version 4.0 (adds `ending` to enum + dispatch + `ending_node` `$def`).
+- `default_error`: description updated — target must resolve to a node of type `ending`. (Cross-reference enforcement left to consuming runtimes.)
+- `workflows/core/intent-detection.yaml` migrated to v8 shape.
+- `examples.md` migrated: all three composite examples restructured with ending nodes.
+- `README.md` workflow snippets migrated.
+
+### Fixed
+- `schema/config/prompts-config.json` `$id` corrected to match filesystem path (was missing `config/` segment, blocking ajv-cli ref resolution).
+
+### Migration
+
+**No backwards compatibility.** Convert every workflow's `endings:` entries into `nodes:` entries:
+
+    # Before (v7)
+    endings:
+      done:
+        type: success
+        message: "OK"
+
+    # After (v8)
+    nodes:
+      done:
+        type: ending
+        outcome: success
+        message: "OK"
+
+Transitions that previously named ending ids (`on_success: done`) are unchanged — they now resolve within the `nodes:` map.
+
+### Cross-repo
+
+- `hiivmind-blueprint/lib/patterns/authoring-guide.md` — type tables updated; new sections for ending authoring, payload types, `mcp_tool_call`, trust_mode/data_mcps.
+- `hiivmind-blueprint/lib/patterns/execution-guide.md` — dispatch semantics for ending (terminal logic) + `mcp_tool_call` invocation topology (runtime vs LLM-client).
+- Downstream walker in `hiivmind-blueprint-mcp` requires verification pass against new fixtures; no walker-contract changes expected.
+
+---
+
+## [7.2.0] - 2026-04-15
+
+### Added
+- `goal_seek` composite node type — bounded dispatcher loop over a list of goals, each with an optional `success_condition` precondition and optional `run_as: subagent` delegation hint. Walker-expanded to primitives (`action`, `conditional`), no new primitive introduced.
+- `tests/fixtures/composites/goal_seek/` — four positive fixtures (`minimal`, `with_success_conditions`, `with_subagent`, `with_abort`) pinning down the walker contract including the pass-through return edge when a goal has a `success_condition`.
+- `tests/fixtures/composites/_negative/goal_seek_*` — six negative fixtures covering missing/empty required fields and per-goal shape violations.
+- `tests/fixtures/composites/_walker_only/` — new directory for walker-contract-only fixtures (structurally legal YAML that only the walker can reject). First inhabitant: `goal_terminal_escapes_loop`.
+
+### Changed
+- `schema/authoring/node-types.json` bumped to version 3.2: adds `goal_seek` to the node-type enum, adds `goal_seek_node` `$def`, extends `allOf` dispatch.
+- `scripts/validate-fixtures.sh` excludes `_walker_only/` from schema validation.
+- `blueprint-composites.md` adds the `goal_seek` signature block.
+
+### Related
+- New principle in `hiivmind-blueprint-central`: `goal-seeking-as-bounded-loop` (branch `principle/goal-seeking-as-bounded-loop`).
+
+---
+
+## [7.1.0] - 2026-04-14
+
+### Added
+
+#### Composite node types (authoring-time sugar)
+
+Two new composite node types expand to primitive nodes via a walker implemented in `hiivmind-blueprint-mcp` (separate repo). The LLM at runtime still sees only the three primitive node types (`action`, `conditional`, `user_prompt`) — composites never reach runtime.
+
+- **`confirm`** — yes/no prompt with structural state gating. Required fields: `prompt`, `store_as`, `on_confirmed`, `on_declined`. Expands to `user_prompt → mutate_state → conditional → (optional action)`. The `store_as` field is required and always written `true`/`false` before routing, per the [confirmations-as-explicit-state](https://github.com/hiivmind/hiivmind-blueprint-central/blob/main/02.principles/g.trust-governance/confirmations-as-explicit-state.md) principle.
+- **`gated_action`** — multi-way CASE/WHEN dispatch. Required fields: `when[]` (minItems 1), `else`. Optional: `on_unknown` (defaults to workflow `default_error`). Expands to a chain of `conditional` nodes, each optionally followed by an intermediate `action` for per-branch consequences. First-match-wins, 3VL short-circuit on unknown.
+
+#### New author-time catalog: `blueprint-composites.md`
+
+Composite signatures and expansion shapes live in a new file at the repo root, separate from `blueprint-types.md`. The runtime LLM continues to read only `blueprint-types.md`; the composite catalog is consumed at authoring time.
+
+#### Walker-expansion fixture corpus
+
+`tests/fixtures/composites/` contains paired `input.yaml` / `expected.yaml` fixtures covering:
+
+- `confirm/minimal`, `confirm/with_consequences`, `confirm/custom_labels`
+- `gated_action/basic`, `gated_action/with_consequences`, `gated_action/default_on_unknown`
+- `_negative/` cases: `confirm_missing_store_as`, `gated_action_missing_else`, `gated_action_empty_when`
+
+These are the authoritative contract that future Python and TypeScript walker implementations in `hiivmind-blueprint-mcp` must satisfy (bit-identical expansion from each input).
+
+### Changed
+
+- `schema/authoring/node-types.json` — bumped `$comment` to Schema version 3.1. Adds `confirm` and `gated_action` to the `type` enum plus two new `$defs` (`confirm_node`, `gated_action_node`) with `allOf` dispatch. Existing primitive validation unchanged.
+
+### Related principles
+
+Two new principles codify the discipline governing this feature. Committed in `hiivmind-blueprint-central` on branch `principle/composite-primitive-canary`:
+
+- [composite-primitive-canary](https://github.com/hiivmind/hiivmind-blueprint-central/blob/main/02.principles/c.type-system/composite-primitive-canary.md) — composites are sugar; awkward composites are diagnostic signals that primitives need extension.
+- [confirmations-as-explicit-state](https://github.com/hiivmind/hiivmind-blueprint-central/blob/main/02.principles/g.trust-governance/confirmations-as-explicit-state.md) — confirmations decompose into classify → record → evaluate; structure is the policy.
+
+### Migration
+
+Purely additive. No existing workflow breaks. Authors who want to use the new composites can opt in; hand-written primitive patterns continue to work unchanged.
+
+---
+
+## [7.0.0] - 2026-04-13
+
+### BREAKING CHANGES
+
+#### Type catalog collapsed into a single markdown file
+
+The six catalog YAML files are replaced by one file at the repo root: `blueprint-types.md`. All 34 type definitions (3 nodes + 9 preconditions + 22 consequences) are preserved verbatim — no type names, parameter names, or enum variants changed. The compression is pure: 2,218 lines → ~180 lines.
+
+**Removed:**
+- `consequences/core.yaml`, `consequences/intent.yaml`, `consequences/extensions.yaml`
+- `preconditions/core.yaml`, `preconditions/extensions.yaml`
+- `nodes/workflow_nodes.yaml`
+- `consequences/`, `preconditions/`, `nodes/` directories
+
+**Added:**
+- `blueprint-types.md` at the repo root — single-file type catalog in signature-style prose
+
+**Migration for workflow authors:** None required. Workflow YAML type names, parameter names, and enum variants are all unchanged. Existing workflows continue to work.
+
+#### Obsolete schemas deleted
+
+Three JSON schemas are removed because they no longer have validation targets:
+
+- `schema/definitions/type-definition.json` — validated the catalog YAML files
+- `schema/definitions/execution-definition.json` — orphaned since v6.0.0 when `execution/` was removed
+- `schema/resolution/definitions.json` — validated per-repo `.hiivmind/blueprint/definitions.yaml`, which is eliminated
+
+The `schema/definitions/` and `schema/resolution/` directories are removed. Authoring schemas (`schema/authoring/*`), common definitions, config schemas, and runtime schemas are unaffected.
+
+#### Per-repo `definitions.yaml` eliminated
+
+Previously, consuming repos copied catalog types into `.hiivmind/blueprint/definitions.yaml`. That concept is gone: the `hiivmind-blueprint` skill ships `blueprint-types.md` as skill-embedded reference at build time. Consuming repos should delete any existing `.hiivmind/blueprint/definitions.yaml` after upgrading.
+
+#### Universal `${}` interpolation
+
+String parameters are now uniformly interpolatable. The previous per-parameter `interpolatable: true/false` flags (inconsistent in the old catalog) are gone. Literal strings remain literal; `${...}` always expresses intent to interpolate. This is strictly more flexible than the old behavior.
+
+#### Workflow schema compressed
+
+Six structural changes reduce workflow YAML verbosity by ~30-40%:
+
+1. **`consequences:` everywhere** — `actions:` (on action nodes) and `consequence:` (in response handlers) renamed to `consequences:` for consistency with endings and paralleling `preconditions`.
+2. **Default failure routing** — New required `default_error` field on workflows. `on_failure` on action nodes and `on_unknown` on conditional nodes are now optional; when omitted, they route to `default_error`.
+3. **Ternary conditionals** — Conditionals now support `on_true`, `on_false`, and `on_unknown` as direct keys (flattened from `branches:` wrapper). `on_unknown` handles evaluation failure, distinct from "condition is false."
+4. **Condition shorthand** — `condition: "expression"` is sugar for `{type: evaluate_expression, expression: "..."}`. `condition: {all: [...]}` is sugar for `{type: composite, operator: all, conditions: [...]}`. Full object form still works.
+5. **Response handler shorthand** — `option_id: "node_name"` is sugar for `{next_node: "node_name"}`. `next_node` supports `${}` interpolation for dynamic routing.
+6. **Optional `initial_state`** — When omitted, walker initializes with empty defaults. When provided, no need for empty `flags: {}` or `computed: {}`.
+
+**Renamed:**
+- Action node: `actions:` → `consequences:`
+- Response handler: `consequence:` → `consequences:`
+- Conditional: `branches: {on_true, on_false}` → `on_true`, `on_false` (direct keys)
+
+**Added:**
+- `default_error` (required workflow field)
+- `on_unknown` (optional on conditional nodes)
+- Condition string shorthand and composite shorthand
+- Response handler string shorthand and dynamic `${}` routing
+
+### Changed
+
+- Version: `6.1.0` → `7.0.0`
+- `package.yaml` artifacts: drop `consequences/`, `preconditions/`, `nodes/`; add `blueprint-types.md`
+- `package.yaml` schemas block: drop `definitions: "1.0"` entry
+- `README.md`: File Structure, Type Inventory, Quick Start, How It Works sections updated
+- `CLAUDE.md`: File Structure, Sync Checklist, Key Concepts, Common Tasks sections updated
+- `examples/index.yaml`: removed `source_files:` mapping to deleted YAML files
+- Cross-repo: `hiivmind-blueprint/lib/patterns/authoring-guide.md` and `execution-guide.md` updated to reference `blueprint-types.md`
+
+## [5.0.0] - 2026-02-24
+
+### BREAKING CHANGES
+
+#### `reference` Node Removed
+
+The `reference` node type has been removed entirely. It introduced complexity around remote workflow loading with security/prompt injection risks from loading remote documents and workflows.
+
+**Migration:** Replace `reference` nodes with direct workflow composition or `action` nodes that handle the same logic inline.
+
+**Removed from:**
+- `nodes/workflow_nodes.yaml` — node definition deleted
+- `schema/authoring/node-types.json` — schema definition deleted
+- `schema/authoring/workflow.json` — `input_schema`, `output_schema`, ending `output`, and `schema_parameter` removed (only existed for spawn-mode reference)
+- `execution/engine_execution.yaml` — dispatch case removed
+- `resolution/loader.yaml` — `workflow_loading` section removed (section 4), section 5 renumbered to 4
+- `schema/resolution/loader.json` — `workflowLoader` definition removed
+
+#### `user_prompt` Node Simplified
+
+1. **`option_mapping` merged into `options`**: The `options` field is now polymorphic:
+   - **Array** (static): `options: [{id, label, description}, ...]` — unchanged
+   - **Object** (dynamic mapping): `options: {id: "rule.name", label: "rule.name", ...}` — replaces `option_mapping`
+
+   **Migration:** Rename `option_mapping:` to `options:` in any node that uses `options_from_state`. Remove the old `options:` field (which was absent when using dynamic options).
+
+2. **`mode` renamed to `display`**: The prompt rendering configuration field is now `display` instead of `mode`.
+
+3. **`interactive` renamed to `json`**: The default display mode is now `json` (structured data, client renders natively) instead of `interactive` (which was tied to `AskUserQuestion`).
+
+   **Migration:** In `initial_state.prompts`, change `mode: interactive` to `display: json` and `mode: tabular` to `display: tabular`.
+
+### Changed
+
+- Node type count: 4 → 3 (reference removed)
+- Total type count: 35 → 34
+- `prompts-config.json` schema updated: `mode` → `display`, `interactive` → `json`
+- Loader sections renumbered: 5 sections → 4 sections
+
+## [4.0.0] - 2026-02-24
+
+### BREAKING CHANGES
+
+Radical simplification: 50 types reduced to 36 types, ~56% line reduction across the library. **Existing workflows using v3.x type names must be updated.**
+
+#### Types Removed
+
+| Removed Type | Category | Replacement |
+|-------------|----------|-------------|
+| `init_log` | consequence/logging | Removed (auto-injection eliminated) |
+| `log_session_snapshot` | consequence/logging | Removed |
+| `finalize_log` | consequence/logging | Removed (auto-injection eliminated) |
+| `write_log` | consequence/logging | Removed (auto-injection eliminated) |
+| `apply_log_retention` | consequence/logging | Removed |
+| `output_ci_summary` | consequence/logging | Removed (CI coupling eliminated) |
+| `log_state` | precondition/logging | Removed |
+| `all_of` | precondition/composite | Use `composite` with `operator: all` |
+| `any_of` | precondition/composite | Use `composite` with `operator: any` |
+| `none_of` | precondition/composite | Use `composite` with `operator: none` |
+| `xor_of` | precondition/composite | Use `composite` with `operator: xor` |
+
+#### Parameter Changes
+
+| Type | Change |
+|------|--------|
+| `tool_check` | Removed `authenticated` and `daemon_ready` capabilities |
+| `reference` node | Removed `context` (use `input`), removed `next_node` (use `transitions`) |
+| `user_prompt` node | Removed multi-modal support (voice, visual, autonomous modes) |
+| `conditional` node | Removed `audit` mode |
+| `log_entry` | Simplified to 3 params: `level`, `message`, `context` |
+| `run_command` | Removed `venv` and `env` parameters |
+
+### Changed
+
+- **Execution engine**: Rewritten from 2,547 to 385 lines (-85%). Removed batching, CI annotations, auto-log-injection, interface detection, multi-modal dispatch
+- **Composite preconditions**: 4 types consolidated into single `composite` type with `operator` parameter
+- **Resolution chain**: 5 YAML files merged into `resolution/loader.yaml`. 3 JSON schemas merged into `schema/resolution/loader.json`
+- **Definition schemas**: 3 JSON schemas merged into `schema/definitions/type-definition.json`
+- **Logging schema**: Simplified to log_entry + log_node only (88 lines)
+- **Output config schema**: Removed batch/CI properties (101 lines)
+- **Prompts config schema**: Removed interface detection, multi-modal config (89 lines)
+- **user_prompt node**: Simplified from 553 to ~155 lines, single prompt format
+- **reference node**: Simplified from 344 to ~165 lines, uses `input` instead of `context`
+
+### Removed
+
+- All 4 content index files (`consequences/index.yaml`, `preconditions/index.yaml`, `nodes/index.yaml`, `execution/index.yaml`)
+- 12 resolution/schema files replaced by 3 consolidated files
+- `schema/_deprecated/` directory
+
+## [3.1.1] - 2026-02-08
+
+### Added
+
+- **PR branch validation CI gate**: `.github/workflows/validate-pr-branch.yaml` blocks PRs to `main` unless from `release/*` or `hotfix/*` branches
+- **`/prepare-release` skill**: Automates release branch creation, version bump, changelog, and PR to `main`
+- **`/prepare-release` command**: Command gateway for the prepare-release skill
+
+### Changed
+
+- **RELEASING.md**: Added CI enforcement section and documented `/prepare-release` as recommended release flow
+- **CLAUDE.md**: Updated Git Workflow section with branching requirement and release process reference
+
+## [3.1.0] - 2026-02-08
+
+### Added
+
+- **Shared fetch patterns**: Extracted `resolution/fetch-patterns.yaml` with reusable `source_format`, `source_parsing`, `url_construction`, and `fetching` primitives
+- **Claude Code plugin**: `.claude-plugin/plugin.json` manifest with `pr-version-bump` skill and command
+- **Change classification patterns**: `lib/patterns/change-classification.md` and `lib/patterns/version-discovery.md`
+
+### Changed
+
+- **Bootstrap loaders simplified**: `type-loader.yaml`, `execution-loader.yaml`, and `workflow-loader.yaml` significantly reduced by extracting shared fetch logic
+- **Release workflow overhauled**: `.github/workflows/release.yaml` now supports PR-merge-driven releases with production/rc/beta channels
+- **Node definitions**: Removed embedded examples from `workflow_nodes.yaml` (examples live in `examples/`)
+- **Examples updated**: Schema versions bumped to 3.0, type references updated to v3 consolidated names
+- **Entrypoints**: Added `fetch_patterns` query entry, cleaned up documentation references
+
 ## [3.0.0] - 2026-02-02
 
 ### BREAKING CHANGES

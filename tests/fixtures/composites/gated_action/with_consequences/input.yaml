@@ -1,0 +1,16 @@
+review_decision:
+  type: gated_action
+  when:
+    - condition: "flags.status == 'approved'"
+      consequences:
+        - type: mutate_state
+          operation: set
+          field: approval_ts
+          value: "${now}"
+      next_node: publish
+    - condition: { all: [{ type: state_check, field: flags.merge_ok, operator: "true" }] }
+      next_node: merge_upstream
+    - condition: "flags.status == 'rejected'"
+      next_node: notify_author
+  else: needs_review
+  on_unknown: halt_for_audit

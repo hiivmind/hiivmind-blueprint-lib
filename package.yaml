@@ -1,63 +1,53 @@
 # Blueprint Types Library Package Manifest
-# Semantic type definitions and reusable workflows for hiivmind-blueprint
+# Semantic type definitions for hiivmind-blueprint
 
 name: hiivmind-blueprint-lib
-version: "3.0.0"
+version: "8.0.0"
 description: |
-  Externalized type definitions and reusable workflows for hiivmind-blueprint.
-  Provides 31 consequence types, 14 precondition types, 5 node types, and
-  1 reusable workflow that can be referenced by URL.
+  Single-file type catalog for hiivmind-blueprint. Defines 23 consequence
+  types, 9 precondition types, and 4 node types (action, conditional,
+  user_prompt, ending) in blueprint-types.md at the repo root. Composite
+  node types (confirm, gated_action, goal_seek) are defined in
+  blueprint-composites.md.
+
+  The hiivmind-blueprint skill ships blueprint-types.md as skill-embedded
+  reference. There is no per-repo definitions file; all workflow
+  authoring LLMs read this single canonical document.
 
 repository: https://github.com/hiivmind/hiivmind-blueprint-lib
 license: MIT
 
-# Schema versions for each type system
+# Schema versions for each authoring system
 schemas:
-  consequence: "1.1"
-  precondition: "1.0"
-  node: "1.0"
-  workflow: "1.0"
+  workflow: "4.0"
+  node: "4.0"
+  payload_types: "1.0"
 
 # Statistics
 stats:
-  total_types: 50
-  consequence_types: 31
-  precondition_types: 14
-  node_types: 5
+  total_types: 36
+  consequence_types: 23
+  precondition_types: 9
+  node_types: 4        # primitives: action, conditional, user_prompt, ending
+  composite_types: 3   # confirm, gated_action, goal_seek (authoring-time sugar)
+  payload_type_convention: true
   workflows: 1
 
 # Artifacts produced by releases
 artifacts:
-  - consequences/ # Index and type definitions
-  - preconditions/ # Index and type definitions
-  - nodes/ # Node type definitions
-  - workflows/ # Reusable workflow definitions
-  - logging/ # Logging configuration defaults
-  - schema/ # JSON Schema definitions
+  - blueprint-types.md       # Runtime type catalog (primitives)
+  - blueprint-composites.md  # Authoring-time composite catalog (walker-expanded before runtime)
+  - workflows/               # Reusable workflow definitions
+  - schema/                  # Authoring, config, and runtime JSON schemas
+  - examples.md              # Composite workflow examples
 
 # Compatibility
-minimum_blueprint_version: "3.0.0"
+minimum_blueprint_version: "7.0.0"
 
-# How to reference this package from a workflow
+# How to use this package
 usage: |
-  In your workflow.yaml:
-
-  ```yaml
-  definitions:
-    source: hiivmind/hiivmind-blueprint-lib@v3.0.0
-  ```
-
-  This fetches types from raw GitHub URLs at runtime.
-
-  Reference a reusable workflow:
-
-  ```yaml
-  detect_intent:
-    type: reference
-    workflow: hiivmind/hiivmind-blueprint-lib@v3.0.0:intent-detection
-    context:
-      arguments: "${arguments}"
-      intent_flags: "${intent_flags}"
-      intent_rules: "${intent_rules}"
-    next_node: execute_dynamic_route
-  ```
+  The hiivmind-blueprint skill ships blueprint-types.md at build time
+  from a pinned version of this library. Workflow authors reference
+  types by name in their workflow YAML; the skill (and its LLM) knows
+  what each name means by loading blueprint-types.md. Consuming repos
+  do not keep a local copy of the catalog.

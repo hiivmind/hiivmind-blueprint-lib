@@ -1,0 +1,10 @@
+# tests/fixtures/endings/with_behavior_restart/input.yaml
+retry_from_ask:
+  type: ending
+  outcome: failure
+  message: "Retrying."
+  behavior:
+    type: restart
+    target_node: ask
+    max_restarts: 3
+    reset_state: false

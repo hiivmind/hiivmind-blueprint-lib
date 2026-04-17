@@ -1,0 +1,5 @@
+# tests/fixtures/endings/minimal/input.yaml
+done:
+  type: ending
+  outcome: success
+  message: "Goodbye."

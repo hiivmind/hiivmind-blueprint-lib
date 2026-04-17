@@ -1,0 +1,6 @@
+# NEGATIVE: an ending node may not declare on_success (or any transition slot).
+bad:
+  type: ending
+  outcome: success
+  message: "This should fail."
+  on_success: somewhere

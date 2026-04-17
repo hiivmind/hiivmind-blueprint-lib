@@ -1,0 +1,26 @@
+# Walker-contract violation: the 'collect_name' sub-process terminal
+# routes to 'unrelated_node' instead of back to 'gather_info'. The walker
+# must detect this via subgraph reachability analysis and reject.
+gather_info:
+  type: goal_seek
+  goals:
+    - name: user_name
+      starting_node: collect_name
+  max_iterations: 5
+  on_complete: done
+
+collect_name:
+  type: user_prompt
+  prompt:
+    question: "What is your name?"
+    header: "NAME"
+    options:
+      - { id: "ok", label: "OK" }
+  on_response:
+    "ok":
+      consequences:
+        - type: mutate_state
+          operation: set
+          field: profile.name
+          value: "${user_response}"
+      next_node: unrelated_node   # ← escapes the goal_seek loop

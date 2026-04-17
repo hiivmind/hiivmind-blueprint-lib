@@ -18,7 +18,7 @@ description: >
 # Inputs (must be set in parent workflow's state before invoking)
 # - arguments: string - User input to parse
 # - intent_flags: object - Flag definitions (keywords, negative_keywords)
-# - intent_rules: array - Rules with conditions, action, priority
+# - intent_rules: array - Rules with conditions and action
 # - fallback_action: string - Action when no rules match (default: "show_main_menu")
 
 # Outputs (set in state after execution)
@@ -34,6 +34,7 @@ initial_state:
     intent_matches: null
 
 start_node: check_has_input
+default_error: success_resolved
 
 nodes:
   # ============================================================================
@@ -46,9 +47,8 @@ nodes:
     condition:
       type: evaluate_expression
       expression: "arguments != null && arguments.trim() != ''"
-    branches:
-      on_true: parse_intent_flags
-      on_false: use_fallback
+    on_true: parse_intent_flags
+    on_false: use_fallback
 
   # ============================================================================
   # PHASE 2: Flag Parsing
@@ -57,7 +57,7 @@ nodes:
   parse_intent_flags:
     type: action
     description: Parse user input into 3VL flags (T/F/U)
-    actions:
+    consequences:
       - type: parse_intent_flags
         input: "${arguments}"
         flag_definitions: "${intent_flags}"
@@ -72,7 +72,7 @@ nodes:
   match_intent_rules:
     type: action
     description: Match parsed flags against intent rules
-    actions:
+    consequences:
       - type: match_3vl_rules
         flags: "${computed.intent_flags}"
         rules: "${intent_rules}"
@@ -90,15 +90,15 @@ nodes:
     condition:
       type: evaluate_expression
       expression: "computed.intent_matches.clear_winner == true"
-    branches:
-      on_true: set_winner_action
-      on_false: check_has_candidates
+    on_true: set_winner_action
+    on_false: check_has_candidates
 
   set_winner_action:
     type: action
     description: Set the winning rule's action as the matched action
-    actions:
-      - type: set_state
+    consequences:
+      - type: mutate_state
+        operation: set
         field: computed.matched_action
         value: "${computed.intent_matches.winner.action}"
     on_success: success_resolved
@@ -110,9 +110,8 @@ nodes:
     condition:
       type: evaluate_expression
       expression: "computed.intent_matches.top_candidates.length > 0"
-    branches:
-      on_true: show_disambiguation
-      on_false: use_fallback
+    on_true: show_disambiguation
+    on_false: use_fallback
 
   # ============================================================================
   # PHASE 5: Disambiguation
@@ -125,21 +124,23 @@ nodes:
       question: "Multiple intents detected. Which did you mean?"
       header: "Clarify"
       options_from_state: computed.intent_matches.top_candidates
-      option_mapping:
+      options:
         id: rule.name
         label: rule.name
         description: rule.description
     on_response:
       selected:
-        consequence:
-          - type: set_state
+        consequences:
+          - type: mutate_state
+            operation: set
             field: computed.matched_action
             value: "${user_responses.show_disambiguation.selected.rule.action}"
         next_node: success_resolved
       other:
         # User typed custom text - could re-parse or use fallback
-        consequence:
-          - type: set_state
+        consequences:
+          - type: mutate_state
+            operation: set
             field: arguments
             value: "${user_responses.show_disambiguation.text}"
         next_node: parse_intent_flags # Re-parse with new input
@@ -151,20 +152,21 @@ nodes:
   use_fallback:
     type: action
     description: Use fallback action when no rules match
-    actions:
-      - type: set_state
+    consequences:
+      - type: mutate_state
+        operation: set
         field: computed.matched_action
         value: "${fallback_action ?? 'show_main_menu'}"
     on_success: success_resolved
     on_failure: success_resolved # Fallback should not fail
 
-# ============================================================================
-# ENDINGS
-# ============================================================================
+  # ============================================================================
+  # ENDINGS
+  # ============================================================================
 
-endings:
   success_resolved:
-    type: success
+    type: ending
+    outcome: success
     message: "Intent resolved"
     summary:
       matched_action: "${computed.matched_action}"

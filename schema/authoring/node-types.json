@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/node-types.json",
-  "$comment": "Schema version 2.0 - Node type definitions. validation_gate deprecated in favor of conditional with audit.",
+  "$comment": "Schema version 4.0 - Adds `ending` primitive node type (BL5). Node primitives: action, conditional, user_prompt, ending. Composites: confirm, gated_action, goal_seek.",
   "title": "Blueprint Node Types Schema",
-  "description": "Definitions for workflow node types: action, conditional, user_prompt, reference",
+  "description": "Definitions for workflow node types: action, conditional, user_prompt, ending",
   "$defs": {
     "node": {
       "type": "object",
@@ -12,8 +12,8 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["action", "conditional", "user_prompt", "reference"],
-          "description": "Node type"
+          "enum": ["action", "conditional", "user_prompt", "ending", "confirm", "gated_action", "goal_seek"],
+          "description": "Node type (primitive: action/conditional/user_prompt/ending; composite: confirm/gated_action/goal_seek)"
         },
         "description": {
           "type": "string",
@@ -34,18 +34,30 @@
           "then": { "$ref": "#/$defs/user_prompt_node" }
         },
         {
-          "if": { "properties": { "type": { "const": "reference" } } },
-          "then": { "$ref": "#/$defs/reference_node" }
+          "if": { "properties": { "type": { "const": "ending" } } },
+          "then": { "$ref": "#/$defs/ending_node" }
+        },
+        {
+          "if": { "properties": { "type": { "const": "confirm" } } },
+          "then": { "$ref": "#/$defs/confirm_node" }
+        },
+        {
+          "if": { "properties": { "type": { "const": "gated_action" } } },
+          "then": { "$ref": "#/$defs/gated_action_node" }
+        },
+        {
+          "if": { "properties": { "type": { "const": "goal_seek" } } },
+          "then": { "$ref": "#/$defs/goal_seek_node" }
         }
       ]
     },
     "action_node": {
       "type": "object",
-      "required": ["actions", "on_success", "on_failure"],
+      "required": ["consequences", "on_success"],
       "properties": {
         "type": { "const": "action" },
         "description": { "type": "string" },
-        "actions": {
+        "consequences": {
           "type": "array",
           "items": { "$ref": "#/$defs/consequence" },
           "minItems": 1,
@@ -57,19 +69,34 @@
         },
         "on_failure": {
           "$ref": "../common.json#/$defs/node_reference",
-          "description": "Node or ending to transition to on failure"
+          "description": "Node or ending to transition to on failure. When omitted, routes to workflow default_error."
         }
       }
     },
     "conditional_node": {
       "type": "object",
-      "required": ["condition", "branches"],
+      "required": ["condition", "on_true", "on_false"],
       "properties": {
         "type": { "const": "conditional" },
         "description": { "type": "string" },
         "condition": {
-          "$ref": "#/$defs/precondition",
-          "description": "Condition to evaluate (often a composite like all_of, any_of, xor_of)"
+          "oneOf": [
+            { "type": "string" },
+            { "type": "object" }
+          ],
+          "description": "Condition to evaluate. String = evaluate_expression shorthand. Object with all/any/none/xor key (no type key) = composite shorthand. Object with type key = canonical precondition."
+        },
+        "on_true": {
+          "$ref": "../common.json#/$defs/node_reference",
+          "description": "Node to transition to if condition is true"
+        },
+        "on_false": {
+          "$ref": "../common.json#/$defs/node_reference",
+          "description": "Node to transition to if condition is false"
+        },
+        "on_unknown": {
+          "$ref": "../common.json#/$defs/node_reference",
+          "description": "Node to transition to if condition result is unknown (3VL)"
         },
         "audit": {
           "type": "object",
@@ -94,22 +121,6 @@
             }
           },
           "additionalProperties": false
-        },
-        "branches": {
-          "type": "object",
-          "description": "Branch targets for true/false conditions",
-          "required": ["on_true", "on_false"],
-          "properties": {
-            "on_true": {
-              "$ref": "../common.json#/$defs/node_reference",
-              "description": "Node to transition to if condition is true"
-            },
-            "on_false": {
-              "$ref": "../common.json#/$defs/node_reference",
-              "description": "Node to transition to if condition is false"
-            }
-          },
-          "additionalProperties": false
         }
       }
     },
@@ -125,52 +136,321 @@
         },
         "on_response": {
           "type": "object",
-          "description": "Map of option IDs to response handlers",
+          "description": "Map of option IDs to response handlers. String value = next_node shorthand (no consequences).",
           "additionalProperties": {
-            "$ref": "#/$defs/response_handler"
+            "oneOf": [
+              { "type": "string" },
+              { "$ref": "#/$defs/response_handler" }
+            ]
           }
         }
       }
     },
-    "reference_node": {
+    "ending_node": {
       "type": "object",
-      "required": ["doc", "next_node"],
+      "description": "Terminal node. Reaching an ending emits the declared outcome and stops the FSM. Behavior (silent/delegate/restart) governs post-termination handling.",
+      "required": ["type", "outcome"],
       "properties": {
-        "type": { "const": "reference" },
+        "type": { "const": "ending" },
         "description": { "type": "string" },
-        "doc": {
+        "outcome": {
           "type": "string",
-          "description": "Path to pattern document"
+          "enum": ["success", "failure", "error", "cancelled", "indeterminate"],
+          "description": "Terminal outcome category."
         },
-        "section": {
+        "category": {
           "type": "string",
-          "description": "Specific section to execute"
+          "description": "Optional categorization for error outcomes (e.g., safety, validation, configuration, permission, external)."
         },
-        "context": {
+        "message": {
+          "type": "string",
+          "description": "Message to display at termination (supports ${} interpolation)."
+        },
+        "summary": {
           "type": "object",
-          "description": "Variables to pass to the pattern",
+          "description": "Structured summary data to display at termination.",
           "additionalProperties": true
         },
-        "next_node": {
-          "$ref": "../common.json#/$defs/node_reference",
-          "description": "Node to transition to after reference executes"
+        "details": {
+          "type": "string",
+          "description": "Additional details for error outcomes."
+        },
+        "recovery": {
+          "description": "Recovery guidance for error outcomes. Simple string or structured object.",
+          "oneOf": [
+            { "type": "string" },
+            {
+              "type": "object",
+              "properties": {
+                "suggestion":    { "type": "string" },
+                "related_skill": { "type": "string" },
+                "retry_node":    { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "consequences": {
+          "type": "array",
+          "description": "Consequences run at termination (best-effort; failures are logged but do not prevent completion).",
+          "items": { "$ref": "#/$defs/consequence" }
+        },
+        "behavior": {
+          "description": "Post-termination behavior. Defaults to display (show message/summary).",
+          "oneOf": [
+            {
+              "type": "object",
+              "description": "Delegate execution to another skill.",
+              "required": ["type", "skill"],
+              "properties": {
+                "type":   { "const": "delegate" },
+                "skill":  { "type": "string" },
+                "args":   { "type": "string" },
+                "context": { "type": "object", "additionalProperties": true }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "description": "Restart the workflow from a target node.",
+              "required": ["type"],
+              "properties": {
+                "type":         { "const": "restart" },
+                "target_node":  { "$ref": "../common.json#/$defs/node_reference" },
+                "reset_state":  { "type": "boolean", "default": false },
+                "max_restarts": { "type": "integer", "minimum": 1, "default": 3 }
+              },
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "description": "Complete silently with no output.",
+              "required": ["type"],
+              "properties": {
+                "type": { "const": "silent" }
+              },
+              "additionalProperties": false
+            }
+          ]
         }
+      },
+      "additionalProperties": false,
+      "not": {
+        "anyOf": [
+          { "required": ["on_success"] },
+          { "required": ["on_failure"] },
+          { "required": ["on_true"] },
+          { "required": ["on_false"] },
+          { "required": ["on_unknown"] },
+          { "required": ["on_response"] }
+        ]
       }
+    },
+    "confirm_node": {
+      "type": "object",
+      "description": "Confirmation composite — yes/no prompt with structural state gating. Expands to user_prompt → mutate_state → conditional → (optional action). See principle: confirmations-as-explicit-state.",
+      "required": ["prompt", "store_as", "on_confirmed", "on_declined"],
+      "properties": {
+        "type": { "const": "confirm" },
+        "description": { "type": "string" },
+        "prompt": {
+          "type": "string",
+          "description": "Question to ask the user"
+        },
+        "header": {
+          "type": "string",
+          "maxLength": 12,
+          "default": "CONFIRM",
+          "description": "Short header/tag (max 12 chars). Defaults to CONFIRM if omitted."
+        },
+        "store_as": {
+          "$ref": "../common.json#/$defs/state_path",
+          "description": "Dot-notation state field to hold the boolean decision (convention: confirmations.<name>). REQUIRED — the confirm composite always writes this field true|false before routing."
+        },
+        "on_confirmed": {
+          "type": "object",
+          "required": ["next_node"],
+          "properties": {
+            "label": {
+              "type": "string",
+              "default": "Yes",
+              "description": "Label for the yes option. Defaults to 'Yes'."
+            },
+            "consequences": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/consequence" },
+              "description": "Optional consequences to run AFTER the conditional gate, before routing to next_node."
+            },
+            "next_node": {
+              "$ref": "../common.json#/$defs/node_reference",
+              "description": "Node to transition to when the user confirms."
+            }
+          },
+          "additionalProperties": false
+        },
+        "on_declined": {
+          "type": "object",
+          "required": ["next_node"],
+          "properties": {
+            "label": {
+              "type": "string",
+              "default": "No",
+              "description": "Label for the no option. Defaults to 'No'."
+            },
+            "next_node": {
+              "$ref": "../common.json#/$defs/node_reference",
+              "description": "Node to transition to when the user declines."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "gated_action_node": {
+      "type": "object",
+      "description": "Multi-way CASE/WHEN dispatch composite. First-match-wins over an ordered list of conditions, each with optional consequences and a routing target. Expands to a chain of conditional nodes, each optionally followed by an action.",
+      "required": ["when", "else"],
+      "properties": {
+        "type": { "const": "gated_action" },
+        "description": { "type": "string" },
+        "when": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["condition", "next_node"],
+            "properties": {
+              "condition": {
+                "oneOf": [
+                  { "type": "string" },
+                  { "type": "object" }
+                ],
+                "description": "Condition to evaluate. Same polymorphism as conditional nodes: string = evaluate_expression shorthand; object with all/any/none/xor key = composite shorthand; object with type key = canonical precondition."
+              },
+              "consequences": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/consequence" },
+                "description": "Optional consequences to run when this branch is taken, before routing to next_node."
+              },
+              "next_node": {
+                "$ref": "../common.json#/$defs/node_reference",
+                "description": "Node to transition to when this condition matches."
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "else": {
+          "$ref": "../common.json#/$defs/node_reference",
+          "description": "Fallthrough destination when no when-clause matches. Required — no silent fall-through."
+        },
+        "on_unknown": {
+          "$ref": "../common.json#/$defs/node_reference",
+          "description": "Destination when any condition returns unknown (3VL short-circuit). Optional — defaults to workflow default_error."
+        }
+      },
+      "additionalProperties": false
+    },
+    "goal_seek_node": {
+      "type": "object",
+      "description": "Goal-seeking composite. Walker expands to a bounded dispatcher loop that iterates sub-processes until every goal's status is 'satisfied' or 'ignored', the abort flag is set, or the iteration budget is exhausted. See blueprint-composites.md and principle: goal-seeking-as-bounded-loop.",
+      "required": ["goals", "max_iterations", "on_complete"],
+      "properties": {
+        "type": { "const": "goal_seek" },
+        "description": { "type": "string" },
+        "goals": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "starting_node"],
+            "properties": {
+              "name": {
+                "$ref": "../common.json#/$defs/identifier",
+                "description": "Goal identifier. Namespaced into goal_seek.<node_id>.goals.<name>.status."
+              },
+              "starting_node": {
+                "$ref": "../common.json#/$defs/node_reference",
+                "description": "Entry node for this goal's sub-process. Sub-process terminals must route back to the goal_seek node id."
+              },
+              "success_condition": {
+                "oneOf": [
+                  { "type": "string" },
+                  { "type": "object" }
+                ],
+                "description": "Optional precondition re-checked on every loop iteration. If omitted, the walker flips status to 'satisfied' as soon as the sub-process returns. If present, the return edge is a pass-through and the loop continues until the condition holds."
+              },
+              "run_as": {
+                "type": "string",
+                "enum": ["inline", "subagent"],
+                "default": "inline",
+                "description": "Execution mode for this goal's sub-process. 'subagent' delegates to a separate agent context at runtime (declared here, honored by hiivmind-blueprint-mcp). Default 'inline'."
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "max_iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Hard cap on loop iterations. When exceeded, routes to on_budget_exceeded (or workflow default_error)."
+        },
+        "on_complete": {
+          "$ref": "../common.json#/$defs/node_reference",
+          "description": "Destination when every goal's status is 'satisfied' or 'ignored'."
+        },
+        "on_abort": {
+          "$ref": "../common.json#/$defs/node_reference",
+          "description": "Destination when any sub-process sets goal_seek.<node_id>.aborted = true. Optional — defaults to workflow default_error."
+        },
+        "on_budget_exceeded": {
+          "$ref": "../common.json#/$defs/node_reference",
+          "description": "Destination when iterations exceed max_iterations. Optional — defaults to workflow default_error."
+        }
+      },
+      "additionalProperties": false
     },
     "prompt": {
       "type": "object",
       "required": ["question", "header"],
       "oneOf": [
         {
+          "$comment": "Static options: options is array, no options_from_state",
           "required": ["options"],
           "properties": {
+            "options": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/prompt_option" },
+              "minItems": 2,
+              "maxItems": 4
+            },
             "options_from_state": { "not": {} }
           }
         },
         {
-          "required": ["options_from_state", "option_mapping"],
+          "$comment": "Dynamic options: options is mapping template object, options_from_state required",
+          "required": ["options_from_state", "options"],
           "properties": {
-            "options": { "not": {} }
+            "options": {
+              "type": "object",
+              "required": ["id", "label", "description"],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Expression for option ID (e.g., 'rule.name')"
+                },
+                "label": {
+                  "type": "string",
+                  "description": "Expression for display label"
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Expression for option description"
+                }
+              },
+              "additionalProperties": false
+            }
           }
         }
       ],
@@ -185,35 +465,11 @@
           "description": "Short header/tag (max 12 characters)"
         },
         "options": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/prompt_option" },
-          "minItems": 2,
-          "maxItems": 4,
-          "description": "Static choices (2-4 options). Mutually exclusive with options_from_state."
+          "description": "Polymorphic: array for static choices (2-4 options), object for mapping template (with options_from_state)"
         },
         "options_from_state": {
           "type": "string",
-          "description": "State path to array of items for dynamic options. Mutually exclusive with options."
-        },
-        "option_mapping": {
-          "type": "object",
-          "description": "Expressions to transform each item from options_from_state into an option",
-          "required": ["id", "label", "description"],
-          "properties": {
-            "id": {
-              "type": "string",
-              "description": "Expression for option ID (e.g., 'rule.name')"
-            },
-            "label": {
-              "type": "string",
-              "description": "Expression for display label"
-            },
-            "description": {
-              "type": "string",
-              "description": "Expression for option description"
-            }
-          },
-          "additionalProperties": false
+          "description": "State path to array of items for dynamic options. When present, options must be a mapping template object."
         }
       }
     },
@@ -239,14 +495,14 @@
     "response_handler": {
       "type": "object",
       "properties": {
-        "consequence": {
+        "consequences": {
           "type": "array",
           "items": { "$ref": "#/$defs/consequence" },
           "description": "Consequences to apply when this option is selected"
         },
         "next_node": {
           "$ref": "../common.json#/$defs/node_reference",
-          "description": "Node to transition to"
+          "description": "Node to transition to. Supports ${} interpolation for dynamic routing."
         }
       }
     },

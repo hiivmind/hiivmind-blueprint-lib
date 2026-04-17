@@ -1,0 +1,9 @@
+route_on_env:
+  type: gated_action
+  when:
+    - condition: "env.stage == 'production'"
+      next_node: prod_flow
+    - condition: "env.stage == 'staging'"
+      next_node: stage_flow
+  else: dev_flow
+  # on_unknown intentionally omitted — walker must default to workflow default_error
