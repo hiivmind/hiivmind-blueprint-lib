@@ -1,0 +1,4 @@
+# NEGATIVE: an ending node must declare an outcome.
+bad:
+  type: ending
+  message: "No outcome — should fail."

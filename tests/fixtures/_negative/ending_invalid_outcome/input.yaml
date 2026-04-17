@@ -1,0 +1,5 @@
+# NEGATIVE: `outcome` must be one of success/failure/error/cancelled/indeterminate.
+bad:
+  type: ending
+  outcome: maybe
+  message: "Unknown outcome — should fail."
