@@ -2,7 +2,7 @@
 # Semantic type definitions for hiivmind-blueprint
 
 name: hiivmind-blueprint-lib
-version: "8.0.0"
+version: "8.1.0"
 description: |
   Single-file type catalog for hiivmind-blueprint. Defines 23 consequence
   types, 9 precondition types, and 4 node types (action, conditional,
@@ -19,7 +19,7 @@ license: MIT
 
 # Schema versions for each authoring system
 schemas:
-  workflow: "4.0"
+  workflow: "4.1"
   node: "4.0"
   payload_types: "1.0"
 
