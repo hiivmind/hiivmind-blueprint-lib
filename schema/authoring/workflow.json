@@ -42,7 +42,7 @@
     },
     "declared_effects": {
       "type": "object",
-      "description": "Optional per-alias effect envelope narrowing the inferred default from data_mcps (BL6). Keys are aliases declared in data_mcps (or unused aliases used as forbidden documentation). Values are either the string literal 'forbidden' or an object with optional 'tools' and 'max_call_count'. Cross-alias validation (tools subset, alias-in-data_mcps) is delegated to the consuming runtime.",
+      "description": "Optional per-alias effect envelope narrowing the inferred default from data_mcps (BL6). Keys are aliases declared in data_mcps (or unused aliases used as forbidden documentation). Values are either the string literal 'forbidden' or an object with optional 'tools' and 'max_call_count'. Cross-alias validation (tools ⊆ data_mcps.<alias>.tools, alias ∈ data_mcps) is delegated to the consuming runtime.",
       "propertyNames": { "pattern": "^[a-z_][a-z0-9_-]*$" },
       "additionalProperties": {
         "oneOf": [
