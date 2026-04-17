@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/hiivmind/hiivmind-blueprint-lib/main/schema/authoring/payload-types.json",
+  "$comment": "Schema version 1.0 - Payload Types (BL2). Workflow-scoped data-shape declarations referenced by consequences via params_type.",
+  "title": "Blueprint Payload Types Schema",
+  "description": "Shape of a single payload type entry inside a workflow's payload_types: block.",
+  "$defs": {
+    "payload_type": {
+      "type": "object",
+      "description": "A map of field name to type descriptor. Field values may be scalar type strings or structured constraint objects.",
+      "propertyNames": { "pattern": "^[a-z_][a-z0-9_]*$" },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "Scalar type descriptor. Recognized forms: string, integer, boolean, object, array<T>, enum{a,b,c}. Whitespace-delimited constraints may follow (e.g. 'string (min_length=1, optional)').",
+            "pattern": "^(string|integer|boolean|object|array<[a-zA-Z_][a-zA-Z0-9_]*>|enum\\{[^}]+\\})(\\s*\\([^)]*\\))?$"
+          },
+          {
+            "type": "object",
+            "description": "Structured field descriptor.",
+            "required": ["type"],
+            "properties": {
+              "type":       { "type": "string" },
+              "required":   { "type": "boolean", "default": true },
+              "default":    {},
+              "min":        { "type": "integer" },
+              "max":        { "type": "integer" },
+              "min_length": { "type": "integer" },
+              "max_length": { "type": "integer" },
+              "pattern":    { "type": "string" },
+              "enum":       { "type": "array" },
+              "items":      {}
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  }
+}
