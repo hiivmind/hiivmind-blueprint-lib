@@ -5,7 +5,8 @@
   "title": "Blueprint Workflow Schema",
   "description": "JSON Schema for hiivmind-blueprint workflow.yaml files",
   "type": "object",
-  "required": ["name", "version", "start_node", "default_error", "nodes", "endings"],
+  "required": ["name", "version", "start_node", "default_error", "nodes"],
+  "additionalProperties": false,
   "properties": {
     "name": {
       "type": "string",
@@ -79,7 +80,7 @@
     },
     "default_error": {
       "$ref": "../common.json#/$defs/node_reference",
-      "description": "Default ending for unhandled failures. Action nodes without on_failure and conditional nodes without on_unknown route here. Must reference a valid ending."
+      "description": "Default node reference for unhandled failures. Must reference a node of type `ending`. Action nodes without on_failure and conditional nodes without on_unknown route here."
     },
     "nodes": {
       "type": "object",
@@ -87,144 +88,7 @@
       "additionalProperties": {
         "$ref": "node-types.json#/$defs/node"
       }
-    },
-    "endings": {
-      "type": "object",
-      "description": "Map of ending IDs to ending definitions",
-      "additionalProperties": {
-        "$ref": "#/$defs/ending"
-      }
     }
   },
-  "$defs": {
-    "ending": {
-      "type": "object",
-      "required": ["type"],
-      "properties": {
-        "type": {
-          "type": "string",
-          "enum": ["success", "failure", "error", "cancelled", "indeterminate"],
-          "description": "Ending outcome type"
-        },
-        "category": {
-          "type": "string",
-          "description": "Optional categorization for error endings (e.g., 'safety', 'validation', 'configuration', 'permission', 'external')"
-        },
-        "message": {
-          "type": "string",
-          "description": "Message to display (supports ${} interpolation)"
-        },
-        "summary": {
-          "type": "object",
-          "description": "Summary data to display",
-          "additionalProperties": true
-        },
-        "details": {
-          "type": "string",
-          "description": "Additional details for error endings"
-        },
-        "recovery": {
-          "description": "Recovery guidance for error endings. Can be a simple string or structured object.",
-          "oneOf": [
-            {
-              "type": "string",
-              "description": "Simple recovery suggestion text"
-            },
-            {
-              "type": "object",
-              "description": "Structured recovery guidance",
-              "properties": {
-                "suggestion": {
-                  "type": "string",
-                  "description": "Human-readable recovery suggestion"
-                },
-                "related_skill": {
-                  "type": "string",
-                  "description": "Skill to suggest for recovery"
-                },
-                "retry_node": {
-                  "type": "string",
-                  "description": "Node to retry from"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
-        "consequences": {
-          "type": "array",
-          "description": "Consequence operations to execute before completing. Failures are logged but do not prevent completion.",
-          "items": {
-            "$ref": "node-types.json#/$defs/consequence"
-          }
-        },
-        "behavior": {
-          "description": "Terminal behavior. Defaults to display (show message/summary) when omitted.",
-          "oneOf": [
-            {
-              "type": "object",
-              "description": "Delegate execution to another skill",
-              "required": ["type", "skill"],
-              "properties": {
-                "type": {
-                  "const": "delegate"
-                },
-                "skill": {
-                  "type": "string",
-                  "description": "Skill to invoke (supports ${} interpolation)"
-                },
-                "args": {
-                  "type": "string",
-                  "description": "Arguments to pass (supports ${} interpolation)"
-                },
-                "context": {
-                  "type": "object",
-                  "description": "Context object to pass (values support ${} interpolation)",
-                  "additionalProperties": true
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "description": "Restart the workflow from a target node",
-              "required": ["type"],
-              "properties": {
-                "type": {
-                  "const": "restart"
-                },
-                "target_node": {
-                  "$ref": "../common.json#/$defs/node_reference",
-                  "description": "Node to restart from (defaults to workflow start_node)"
-                },
-                "reset_state": {
-                  "type": "boolean",
-                  "description": "Whether to reset state to initial_state (preserves _restart_count)",
-                  "default": false
-                },
-                "max_restarts": {
-                  "type": "integer",
-                  "description": "Maximum restart iterations before forcing failure",
-                  "default": 3,
-                  "minimum": 1
-                }
-              },
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "description": "Complete silently with no output",
-              "required": ["type"],
-              "properties": {
-                "type": {
-                  "const": "silent"
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        }
-      }
-    }
-  }
+  "$defs": {}
 }
