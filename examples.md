@@ -560,3 +560,88 @@ nodes:
     outcome: error
     message: "Unexpected failure at ${current_node}"
 ```
+
+---
+
+## 4. MCP-Delegated Query
+
+Ask the user for a question, invoke an external MCP tool, display the answer.
+
+**Types demonstrated:** `action`, `user_prompt`, `ending`, `mcp_tool_call`,
+`mutate_state`, `display`
+
+**New in v8:** workflow-level `trust_mode`, `data_mcps`, `payload_types`.
+
+````yaml
+name: mcp-delegated-query
+version: "1.0.0"
+description: Ask a yes/no question; delegate to an external MCP tool; display the result.
+
+trust_mode: stateless
+
+data_mcps:
+  eightball: "eightball-tools@^1"
+
+payload_types:
+  shake_params@1:
+    question: string (min_length=1)
+    context:  string (optional)
+
+start_node: ask
+default_error: error_generic
+
+nodes:
+  ask:
+    type: user_prompt
+    prompt:
+      question: "What is your yes/no question?"
+      header: "8-Ball"
+      options:
+        - id: asked
+          label: "Ask"
+        - id: declined
+          label: "Cancel"
+    on_response:
+      asked:
+        consequences:
+          - type: mutate_state
+            operation: set
+            field: computed.question
+            value: "${user_responses.ask}"
+        next_node: shake
+      declined: cancelled
+
+  shake:
+    type: action
+    consequences:
+      - type: mcp_tool_call
+        tool: eightball.shake
+        params_type: shake_params@1
+        params:
+          question: "${computed.question}"
+        store_as: computed.answer
+    on_success: reveal
+
+  reveal:
+    type: action
+    consequences:
+      - type: display
+        format: markdown
+        content: "**8-ball says:** ${computed.answer}"
+    on_success: done
+
+  done:
+    type: ending
+    outcome: success
+    message: "Done."
+
+  cancelled:
+    type: ending
+    outcome: cancelled
+    message: "No question asked."
+
+  error_generic:
+    type: ending
+    outcome: error
+    message: "Unexpected failure at ${current_node}"
+````
