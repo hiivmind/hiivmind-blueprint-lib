@@ -1,0 +1,38 @@
+name: declared-effects-narrow
+version: "1.0.0"
+description: Workflow with a narrowed effect envelope — tools subset plus call count cap.
+
+data_mcps:
+  crm: "internal-crm@^2.1"
+  billing: "stripe-mcp@~3"
+
+declared_effects:
+  crm:
+    tools: [search_customers, get_account]
+  billing:
+    tools: [create_invoice]
+    max_call_count: 1
+
+start_node: search
+default_error: error_generic
+
+nodes:
+  search:
+    type: action
+    consequences:
+      - type: mcp_tool_call
+        tool: crm.search_customers
+        params:
+          q: "${computed.query}"
+        store_as: computed.hits
+    on_success: done
+
+  done:
+    type: ending
+    outcome: success
+    message: "Done."
+
+  error_generic:
+    type: ending
+    outcome: error
+    message: "Error."

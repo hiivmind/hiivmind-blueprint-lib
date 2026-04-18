@@ -1,0 +1,21 @@
+name: declared-effects-unknown-key
+version: "1.0.0"
+description: Forward-compat — unknown keys under an alias object are accepted (reserved for future vocabulary).
+
+data_mcps:
+  crm: "internal-crm@^2"
+
+declared_effects:
+  crm:
+    tools: [search_customers]
+    data_volume_cap_mb: 100
+    time_window_sec: 60
+
+start_node: done
+default_error: done
+
+nodes:
+  done:
+    type: ending
+    outcome: success
+    message: "Done."

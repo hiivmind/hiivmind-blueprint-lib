@@ -1,0 +1,13 @@
+# NEGATIVE: declared_effects value must be either "forbidden" string or an object.
+name: bad-declared-effect-value
+version: "1.0.0"
+start_node: done
+default_error: done
+
+declared_effects:
+  crm: true
+
+nodes:
+  done:
+    type: ending
+    outcome: success

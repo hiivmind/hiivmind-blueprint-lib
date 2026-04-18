@@ -1,0 +1,17 @@
+# NEGATIVE: max_call_count must be >= 0.
+name: bad-declared-effect-max-count
+version: "1.0.0"
+start_node: done
+default_error: done
+
+data_mcps:
+  crm: "internal-crm@^2"
+
+declared_effects:
+  crm:
+    max_call_count: -1
+
+nodes:
+  done:
+    type: ending
+    outcome: success

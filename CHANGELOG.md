@@ -5,6 +5,24 @@ All notable changes to hiivmind-blueprint-lib will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.1.0] - 2026-04-17
+
+### Added
+- `declared_effects:` optional workflow-level block (BL6). Per-alias narrowing of the default inferred effect envelope from `data_mcps`. Each alias value is either the string literal `forbidden` or an object with optional `tools: [...]` and `max_call_count: N`. Unknown keys under the alias object are reserved for future vocabulary and accepted today without effect. Cross-alias validation (tools subset, alias ∈ `data_mcps`) is delegated to the consuming runtime.
+- New `## Declared Effects` top-level section in `blueprint-types.md`.
+- Fixtures: `tests/fixtures/workflows/v8_declared_effects_{narrow,forbidden,unknown_key}/` (positive); `tests/fixtures/workflows/_negative/declared_effects_{bad_value,bad_alias_name,negative_max_count}/` (negative).
+
+### Changed
+- `schema/authoring/workflow.json` bumped to schema version 4.1 (purely additive — omitting the new block preserves 8.0.0 behavior exactly).
+- `examples.md` example §4 (`MCP-Delegated Query`) extended with a `declared_effects:` block.
+
+### Cross-repo sync
+- `hiivmind-blueprint/lib/patterns/authoring-guide.md` documents the new block.
+- `hiivmind-blueprint/lib/patterns/execution-guide.md` notes that load-time envelope enforcement is the consuming runtime's responsibility.
+
+### Migration
+- None. v8.0.0 workflows remain valid under v8.1.0 unchanged.
+
 ## [8.0.0] - 2026-04-17
 
 ### Added

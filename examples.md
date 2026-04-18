@@ -570,7 +570,7 @@ Ask the user for a question, invoke an external MCP tool, display the answer.
 **Types demonstrated:** `action`, `user_prompt`, `ending`, `mcp_tool_call`,
 `mutate_state`, `display`
 
-**New in v8:** workflow-level `trust_mode`, `data_mcps`, `payload_types`.
+**New in v8:** workflow-level `trust_mode`, `data_mcps`, `payload_types`, `declared_effects`.
 
 ````yaml
 name: mcp-delegated-query
@@ -581,6 +581,11 @@ trust_mode: stateless
 
 data_mcps:
   eightball: "eightball-tools@^1"
+
+declared_effects:
+  eightball:
+    tools: [shake]
+    max_call_count: 1
 
 payload_types:
   shake_params@1:
